@@ -3,7 +3,9 @@ package com.sourzap.app.service
 import android.app.Notification
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.ProxyInfo
 import android.net.VpnService
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
 import com.sourzap.app.MainActivity
@@ -12,6 +14,7 @@ import com.sourzap.app.SourZapApp
 import com.sourzap.app.data.model.ConnectionLog
 import com.sourzap.app.service.core.ByteArrayPool
 import com.sourzap.app.service.core.DohResolver
+import com.sourzap.app.service.core.LocalDpiProxyServer
 import com.sourzap.app.service.core.TunTcpRelay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +33,8 @@ class SourZapVpnService : VpnService() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private var notificationJob: Job? = null
     private var isRunning = false
+
+    private var proxyServer: LocalDpiProxyServer? = null
     private var tcpRelay: TunTcpRelay? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -54,14 +59,25 @@ class SourZapVpnService : VpnService() {
 
         serviceScope.launch {
             try {
+                // 1. Start Local Zapret Transparent Proxy Server on 127.0.0.1
+                val proxy = LocalDpiProxyServer(this@SourZapVpnService, serviceScope)
+                val proxyPort = proxy.start()
+                proxyServer = proxy
+
                 val settingsRepo = SourZapApp.instance.settingsRepository
                 val builder = Builder().apply {
                     setSession("SourZap Turbo DPI")
                     addAddress("10.0.0.2", 24)
                     addRoute("0.0.0.0", 0)
-                    addDnsServer("10.0.0.1")
+                    addDnsServer("1.1.1.1")
+                    addDnsServer("8.8.8.8")
                     setMtu(1500)
                     setBlocking(true)
+
+                    // Set Local Direct Proxy on Android API 21+ for instant browser & app traffic interception
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        setHttpProxy(ProxyInfo.buildDirectProxy("127.0.0.1", proxyPort))
+                    }
 
                     // Per-App Split Tunneling
                     val disallowed = settingsRepo.disallowedPackages.value
@@ -90,6 +106,7 @@ class SourZapVpnService : VpnService() {
         isRunning = false
         TrafficMonitor.stopMonitoring()
         notificationJob?.cancel()
+        proxyServer?.stop()
         tcpRelay?.closeAll()
         serviceScope.cancel()
 
@@ -185,7 +202,7 @@ class SourZapVpnService : VpnService() {
                         }
                     }
                 } else if (dstPort == 443 && strategy.blockQuic) {
-                    // Drop QUIC UDP 443 to force YouTube, Discord, and browsers to fallback to desynced TCP
+                    // Drop QUIC UDP 443 to force YouTube, Chrome, DuckDuckGo to fallback to desynced TCP
                     TrafficMonitor.addConnectionLog(
                         ConnectionLog(
                             domain = dstIp.hostAddress ?: "QUIC Endpoint",

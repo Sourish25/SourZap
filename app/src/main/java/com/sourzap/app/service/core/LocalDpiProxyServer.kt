@@ -1,0 +1,263 @@
+package com.sourzap.app.service.core
+
+import android.net.VpnService
+import com.sourzap.app.SourZapApp
+import com.sourzap.app.data.model.ConnectionLog
+import com.sourzap.app.service.TrafficMonitor
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * High-Performance Local Transparent Proxy Server for Android VpnService.
+ * Seamlessly accepts HTTP/HTTPS traffic from all Android applications (Chrome, YouTube, DuckDuckGo, system apps),
+ * applies Zapret DPI desynchronization on upstream connections, and proxies bidirectional streams at Gigabit line speed.
+ */
+class LocalDpiProxyServer(
+    private val vpnService: VpnService,
+    private val scope: CoroutineScope
+) {
+    private var serverSocket: ServerSocket? = null
+    private val isRunning = AtomicBoolean(false)
+    var port: Int = 0
+        private set
+
+    fun start(): Int {
+        val server = ServerSocket(0, 128, InetAddress.getByName("127.0.0.1"))
+        serverSocket = server
+        port = server.localPort
+        isRunning.set(true)
+
+        scope.launch(Dispatchers.IO) {
+            while (isRunning.get() && scope.isActive) {
+                try {
+                    val clientSocket = server.accept()
+                    scope.launch(Dispatchers.IO) {
+                        handleClientConnection(clientSocket)
+                    }
+                } catch (_: Exception) {
+                    if (!isRunning.get()) break
+                }
+            }
+        }
+        return port
+    }
+
+    fun stop() {
+        isRunning.set(false)
+        try {
+            serverSocket?.close()
+        } catch (_: Exception) {}
+    }
+
+    private fun handleClientConnection(clientSocket: Socket) {
+        TrafficMonitor.onConnectionOpened()
+        var upstreamSocket: Socket? = null
+
+        try {
+            clientSocket.tcpNoDelay = true
+            clientSocket.soTimeout = 15000
+
+            val clientIn = clientSocket.getInputStream()
+            val clientOut = clientSocket.getOutputStream()
+
+            // Read the initial request line/headers
+            val headerBuffer = ByteArray(8192)
+            var totalRead = 0
+            var headerEnd = -1
+
+            while (totalRead < headerBuffer.size) {
+                val b = clientIn.read()
+                if (b == -1) break
+                headerBuffer[totalRead++] = b.toByte()
+
+                if (totalRead >= 4 &&
+                    headerBuffer[totalRead - 4] == '\r'.code.toByte() &&
+                    headerBuffer[totalRead - 3] == '\n'.code.toByte() &&
+                    headerBuffer[totalRead - 2] == '\r'.code.toByte() &&
+                    headerBuffer[totalRead - 1] == '\n'.code.toByte()
+                ) {
+                    headerEnd = totalRead
+                    break
+                }
+            }
+
+            if (totalRead == 0) return
+
+            val headerStr = String(headerBuffer, 0, totalRead, Charsets.US_ASCII)
+            val firstLine = headerStr.lineSequence().firstOrNull() ?: ""
+
+            if (firstLine.startsWith("CONNECT ", ignoreCase = true)) {
+                // --- HTTPS CONNECT Tunneling ---
+                val parts = firstLine.split(" ")
+                if (parts.size < 2) return
+
+                val target = parts[1]
+                val targetHost = target.substringBefore(":")
+                val targetPort = target.substringAfter(":", "443").toIntOrNull() ?: 443
+
+                // Connect to remote upstream with protected socket
+                val upstream = Socket().apply {
+                    receiveBufferSize = 1048576 // 1 MB Receive Buffer for 4K/8K Video
+                    sendBufferSize = 524288     // 512 KB Send Buffer
+                    tcpNoDelay = true
+                    keepAlive = true
+                    trafficClass = 0x08         // IPTOS_THROUGHPUT
+                    setPerformancePreferences(0, 1, 2)
+                }
+                upstreamSocket = upstream
+
+                vpnService.protect(upstream)
+                upstream.connect(InetSocketAddress(targetHost, targetPort), 5000)
+
+                // Respond 200 Connection Established to Android client app
+                val response200 = "HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.US_ASCII)
+                clientOut.write(response200)
+                clientOut.flush()
+
+                // Client will now send TLS ClientHello
+                val clientHelloBuffer = ByteArray(16384)
+                val clientHelloLen = clientIn.read(clientHelloBuffer)
+                if (clientHelloLen > 0) {
+                    val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
+                    var appliedTechnique = "DIRECT"
+
+                    val sniResult = TlsParser.parseClientHello(clientHelloBuffer, clientHelloLen)
+                    val logDomain = sniResult.hostname ?: targetHost
+
+                    val upstreamOut = upstream.getOutputStream()
+
+                    // Apply Zapret DPI Desync on ClientHello
+                    DpiEngine.desyncAndSend(
+                        socket = upstream,
+                        outputStream = upstreamOut,
+                        payload = clientHelloBuffer,
+                        length = clientHelloLen,
+                        strategy = strategy,
+                        onTechniqueApplied = { appliedTechnique = it }
+                    )
+
+                    TrafficMonitor.addConnectionLog(
+                        ConnectionLog(
+                            domain = logDomain,
+                            port = targetPort,
+                            protocol = "TLS",
+                            technique = appliedTechnique,
+                            bytesTransferred = clientHelloLen.toLong()
+                        )
+                    )
+
+                    // Pump remaining traffic bidirectionally at full Gigabit speed
+                    val upstreamIn = upstream.getInputStream()
+                    pumpBidirectional(clientIn, clientOut, upstreamIn, upstreamOut)
+                }
+            } else {
+                // --- Plain HTTP Request ---
+                val hostLine = headerStr.lineSequence().firstOrNull { it.startsWith("Host:", ignoreCase = true) }
+                val targetHost = hostLine?.substringAfter(":")?.trim()?.substringBefore(":") ?: ""
+                val targetPort = 80
+
+                if (targetHost.isNotEmpty()) {
+                    val upstream = Socket().apply {
+                        tcpNoDelay = true
+                        keepAlive = true
+                    }
+                    upstreamSocket = upstream
+
+                    vpnService.protect(upstream)
+                    upstream.connect(InetSocketAddress(targetHost, targetPort), 5000)
+
+                    val upstreamOut = upstream.getOutputStream()
+                    val upstreamIn = upstream.getInputStream()
+
+                    val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
+                    val desyncedHeader = if (strategy.httpHostMod) {
+                        HttpParser.desyncHttpPayload(headerBuffer, totalRead)
+                    } else {
+                        headerBuffer.copyOfRange(0, totalRead)
+                    }
+
+                    upstreamOut.write(desyncedHeader)
+                    upstreamOut.flush()
+
+                    TrafficMonitor.addConnectionLog(
+                        ConnectionLog(
+                            domain = targetHost,
+                            port = targetPort,
+                            protocol = "HTTP",
+                            technique = if (strategy.httpHostMod) "HTTP_HOST_CASE" else "DIRECT",
+                            bytesTransferred = totalRead.toLong()
+                        )
+                    )
+
+                    pumpBidirectional(clientIn, clientOut, upstreamIn, upstreamOut)
+                }
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { clientSocket.close() } catch (_: Exception) {}
+            try { upstreamSocket?.close() } catch (_: Exception) {}
+            TrafficMonitor.onConnectionClosed()
+        }
+    }
+
+    private fun pumpBidirectional(
+        clientIn: InputStream,
+        clientOut: OutputStream,
+        upstreamIn: InputStream,
+        upstreamOut: OutputStream
+    ) {
+        val clientJob = scope.launch(Dispatchers.IO) {
+            val buf = ByteArrayPool.obtainStreamBuffer()
+            try {
+                var len = clientIn.read(buf)
+                while (len != -1 && isRunning.get()) {
+                    if (len > 0) {
+                        upstreamOut.write(buf, 0, len)
+                        upstreamOut.flush()
+                        TrafficMonitor.recordTxBytes(len.toLong())
+                    }
+                    len = clientIn.read(buf)
+                }
+            } catch (_: Exception) {
+            } finally {
+                ByteArrayPool.recycleStreamBuffer(buf)
+                try { upstreamOut.close() } catch (_: Exception) {}
+            }
+        }
+
+        val upstreamJob = scope.launch(Dispatchers.IO) {
+            val buf = ByteArrayPool.obtainStreamBuffer()
+            try {
+                var len = upstreamIn.read(buf)
+                while (len != -1 && isRunning.get()) {
+                    if (len > 0) {
+                        clientOut.write(buf, 0, len)
+                        clientOut.flush()
+                        TrafficMonitor.recordRxBytes(len.toLong())
+                    }
+                    len = upstreamIn.read(buf)
+                }
+            } catch (_: Exception) {
+            } finally {
+                ByteArrayPool.recycleStreamBuffer(buf)
+                try { clientOut.close() } catch (_: Exception) {}
+            }
+        }
+
+        // Wait until one direction completes
+        while (clientJob.isActive && upstreamJob.isActive && isRunning.get()) {
+            Thread.sleep(50)
+        }
+        clientJob.cancel()
+        upstreamJob.cancel()
+    }
+}
