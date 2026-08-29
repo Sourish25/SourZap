@@ -29,10 +29,14 @@ jobs:
       - name: Build APKs
         run: ./gradlew assembleDebug
 
+      - name: Prepare Named Release APK
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk "SourZap-${{ github.ref_name }}.apk"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/debug/app-debug.apk
+          files: SourZap-${{ github.ref_name }}.apk
           name: SourZap ${{ github.ref_name }}
           draft: false
           prerelease: false
