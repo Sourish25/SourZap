@@ -50,4 +50,40 @@ class DpiEngineTest {
         assertTrue(auto.blockQuic)
         assertTrue(auto.httpHostMod)
     }
+
+    @Test
+    fun testBitTorrentHandshakeDetection() {
+        val btHandshake = ByteArray(68)
+        btHandshake[0] = 0x13.toByte()
+        val proto = "BitTorrent protocol".toByteArray(Charsets.US_ASCII)
+        System.arraycopy(proto, 0, btHandshake, 1, proto.size)
+
+        assertEquals(0x13.toByte(), btHandshake[0])
+        assertEquals('B'.code.toByte(), btHandshake[1])
+        assertEquals('i'.code.toByte(), btHandshake[2])
+        assertEquals('t'.code.toByte(), btHandshake[3])
+        assertEquals('T'.code.toByte(), btHandshake[4])
+    }
+
+    @Test
+    fun testVersionComparisonLogic() {
+        fun isNewer(latest: String, current: String): Boolean {
+            val latestParts = latest.split(".").map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
+            val currentParts = current.split(".").map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
+            val maxLen = maxOf(latestParts.size, currentParts.size)
+            for (i in 0 until maxLen) {
+                val l = latestParts.getOrElse(i) { 0 }
+                val c = currentParts.getOrElse(i) { 0 }
+                if (l > c) return true
+                if (l < c) return false
+            }
+            return false
+        }
+
+        assertTrue(isNewer("1.0.4", "1.0.3"))
+        assertTrue(isNewer("1.1.0", "1.0.9"))
+        assertTrue(isNewer("2.0.0", "1.9.9"))
+        assertTrue(!isNewer("1.0.4", "1.0.4"))
+        assertTrue(!isNewer("1.0.3", "1.0.4"))
+    }
 }

@@ -150,7 +150,7 @@ fun DashboardScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "ðŸš€ Update Available: ${release.tagName}",
+                                text = "🚀 Update Available: ${release.tagName}",
                                 fontWeight = FontWeight.Black,
                                 fontSize = 15.sp,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer

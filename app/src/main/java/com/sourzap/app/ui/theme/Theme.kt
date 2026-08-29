@@ -57,12 +57,22 @@ fun SourZapTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.surface.toArgb()
-            window.navigationBarColor = colorScheme.surfaceContainer.toArgb()
-            val insetsController = WindowCompat.getInsetsController(window, view)
-            insetsController.isAppearanceLightStatusBars = !darkTheme
-            insetsController.isAppearanceLightNavigationBars = !darkTheme
+            var ctx = view.context
+            var activity: Activity? = null
+            while (ctx is android.content.ContextWrapper) {
+                if (ctx is Activity) {
+                    activity = ctx
+                    break
+                }
+                ctx = ctx.baseContext
+            }
+            activity?.window?.let { window ->
+                window.statusBarColor = colorScheme.surface.toArgb()
+                window.navigationBarColor = colorScheme.surfaceContainer.toArgb()
+                val insetsController = WindowCompat.getInsetsController(window, view)
+                insetsController.isAppearanceLightStatusBars = !darkTheme
+                insetsController.isAppearanceLightNavigationBars = !darkTheme
+            }
         }
     }
 

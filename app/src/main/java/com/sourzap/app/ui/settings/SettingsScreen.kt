@@ -428,7 +428,7 @@ fun SettingsScreen(
                                     .padding(14.dp)
                             ) {
                                 Text(
-                                    text = "âœ¨ You are on the latest version of SourZap!",
+                                    text = "✨ You are on the latest version of SourZap!",
                                     fontWeight = FontWeight.Medium,
                                     fontSize = 13.sp,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -451,7 +451,7 @@ fun SettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "ðŸš€ New Version: ${state.release.tagName}",
+                                        text = "🚀 New Version: ${state.release.tagName}",
                                         fontWeight = FontWeight.Black,
                                         fontSize = 16.sp,
                                         color = MaterialTheme.colorScheme.onSurface
@@ -550,7 +550,7 @@ fun SettingsScreen(
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Text(
-                                    text = "ðŸŽ‰ Update package downloaded & verified!",
+                                    text = "🎉 Update package downloaded & verified!",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -581,7 +581,7 @@ fun SettingsScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "âš ï¸ ${state.message}",
+                                    text = "⚠️ ${state.message}",
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onErrorContainer,
                                     modifier = Modifier.weight(1f)
@@ -597,6 +597,14 @@ fun SettingsScreen(
 
         // About & Open Source Tile
         item {
+            val appVersionName = remember {
+                try {
+                    context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.4"
+                } catch (_: Exception) {
+                    "1.0.4"
+                }
+            }
+
             ExpressiveCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
@@ -612,7 +620,7 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "SourZap v1.0.1",
+                            text = "SourZap v$appVersionName",
                             fontWeight = FontWeight.Black,
                             fontSize = 18.sp,
                             color = MaterialTheme.colorScheme.onSurface
