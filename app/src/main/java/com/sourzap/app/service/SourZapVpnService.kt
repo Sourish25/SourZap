@@ -208,13 +208,28 @@ class SourZapVpnService : VpnService() {
                         }
                     }
                 } else if (dstPort == 443 && strategy.blockQuic) {
-                    // Drop QUIC UDP 443 to force YouTube, Chrome, DuckDuckGo to fallback to desynced TCP
+                    // Instantly reject QUIC with ICMP Port Unreachable (RFC 792 Type 3 Code 3).
+                    // This causes Google Chrome & YouTube to immediately fallback to fast TCP in 0ms with zero timeout delay!
+                    val icmpPacket = buildIcmpPortUnreachablePacket(
+                        originalBuffer = buffer,
+                        originalLength = length,
+                        ipHeaderLen = ipHeaderLen,
+                        srcIp = srcIp,
+                        dstIp = dstIp
+                    )
+                    try {
+                        synchronized(vpnOutput) {
+                            vpnOutput.write(icmpPacket)
+                            vpnOutput.flush()
+                        }
+                    } catch (_: Exception) {}
+
                     TrafficMonitor.addConnectionLog(
                         ConnectionLog(
                             domain = dstIp.hostAddress ?: "QUIC Endpoint",
                             port = 443,
                             protocol = "QUIC",
-                            technique = "BLOCK_QUIC",
+                            technique = "ICMP_FAST_REJECT",
                             bytesTransferred = length.toLong()
                         )
                     )
@@ -225,6 +240,63 @@ class SourZapVpnService : VpnService() {
                 }
             }
         }
+    }
+
+    /**
+     * Synthesizes an RFC 792 compliant ICMP Destination Unreachable (Port Unreachable: Type 3, Code 3) packet.
+     */
+    private fun buildIcmpPortUnreachablePacket(
+        originalBuffer: ByteArray,
+        originalLength: Int,
+        ipHeaderLen: Int,
+        srcIp: InetAddress,
+        dstIp: InetAddress
+    ): ByteArray {
+        val includedOriginalLen = (ipHeaderLen + 8).coerceAtMost(originalLength)
+        val ipTotalLen = 20 + 8 + includedOriginalLen
+        val packet = ByteArray(ipTotalLen)
+
+        // 1. IPv4 Header (20 bytes)
+        packet[0] = 0x45.toByte() // IPv4, IHL = 5
+        packet[1] = 0x00.toByte() // TOS
+        packet[2] = ((ipTotalLen shr 8) and 0xFF).toByte()
+        packet[3] = (ipTotalLen and 0xFF).toByte()
+        packet[4] = 0x00.toByte()
+        packet[5] = 0x00.toByte()
+        packet[6] = 0x40.toByte() // Don't Fragment
+        packet[7] = 0x00.toByte()
+        packet[8] = 64.toByte()   // TTL
+        packet[9] = 1.toByte()    // Protocol = 1 (ICMP)
+        packet[10] = 0x00.toByte()
+        packet[11] = 0x00.toByte()
+
+        System.arraycopy(dstIp.address, 0, packet, 12, 4)
+        System.arraycopy(srcIp.address, 0, packet, 16, 4)
+
+        val ipChecksum = computeChecksum(packet, 0, 20)
+        packet[10] = ((ipChecksum.toInt() shr 8) and 0xFF).toByte()
+        packet[11] = (ipChecksum.toInt() and 0xFF).toByte()
+
+        // 2. ICMP Header (8 bytes)
+        packet[20] = 3.toByte() // Type 3: Destination Unreachable
+        packet[21] = 3.toByte() // Code 3: Port Unreachable
+        packet[22] = 0x00.toByte()
+        packet[23] = 0x00.toByte()
+        packet[24] = 0x00.toByte() // 4 unused bytes
+        packet[25] = 0x00.toByte()
+        packet[26] = 0x00.toByte()
+        packet[27] = 0x00.toByte()
+
+        // 3. ICMP Data (Original IP Header + first 8 bytes of original UDP payload)
+        System.arraycopy(originalBuffer, 0, packet, 28, includedOriginalLen)
+
+        // ICMP Checksum
+        val icmpLen = 8 + includedOriginalLen
+        val icmpChecksum = computeChecksum(packet, 20, icmpLen)
+        packet[22] = ((icmpChecksum.toInt() shr 8) and 0xFF).toByte()
+        packet[23] = (icmpChecksum.toInt() and 0xFF).toByte()
+
+        return packet
     }
 
     /**

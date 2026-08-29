@@ -76,23 +76,30 @@ class LocalDpiProxyServer(
             val clientIn = clientSocket.getInputStream()
             val clientOut = clientSocket.getOutputStream()
 
-            // Read the initial request line/headers
+            // Read the initial request line/headers using chunked buffer (eliminates 800+ JNI context switches)
             val headerBuffer = ByteArray(8192)
             var totalRead = 0
+            val tempBuf = ByteArray(1024)
 
             while (totalRead < headerBuffer.size) {
-                val b = clientIn.read()
-                if (b == -1) break
-                headerBuffer[totalRead++] = b.toByte()
+                val count = clientIn.read(tempBuf)
+                if (count <= 0) break
+                System.arraycopy(tempBuf, 0, headerBuffer, totalRead, count)
+                totalRead += count
 
-                if (totalRead >= 4 &&
-                    headerBuffer[totalRead - 4] == '\r'.code.toByte() &&
-                    headerBuffer[totalRead - 3] == '\n'.code.toByte() &&
-                    headerBuffer[totalRead - 2] == '\r'.code.toByte() &&
-                    headerBuffer[totalRead - 1] == '\n'.code.toByte()
-                ) {
-                    break
+                // Check for \r\n\r\n
+                var foundEnd = false
+                for (i in 3 until totalRead) {
+                    if (headerBuffer[i - 3] == '\r'.code.toByte() &&
+                        headerBuffer[i - 2] == '\n'.code.toByte() &&
+                        headerBuffer[i - 1] == '\r'.code.toByte() &&
+                        headerBuffer[i] == '\n'.code.toByte()
+                    ) {
+                        foundEnd = true
+                        break
+                    }
                 }
+                if (foundEnd) break
             }
 
             if (totalRead == 0) return
