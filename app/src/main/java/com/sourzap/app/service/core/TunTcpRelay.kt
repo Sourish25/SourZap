@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.FileOutputStream
@@ -22,7 +23,8 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * High-Throughput Rootless Userspace TCP Stack for Android VpnService.
  * Uses sequential FIFO channels to guarantee 100% in-order packet streaming
- * for WhatsApp Noise Protocol, TLS, SSH, XMPP, and all Android socket traffic.
+ * for WhatsApp Noise Protocol, TLS, SSH, BitTorrent TCP, and all Android socket traffic.
+ * Features automated dead-session scavenging to prevent memory leaks and socket buildup.
  */
 class TunTcpRelay(
     private val vpnService: VpnService,
@@ -30,6 +32,9 @@ class TunTcpRelay(
     private val scope: CoroutineScope
 ) {
     private val sessions = ConcurrentHashMap<String, TcpSession>()
+    private val isRunning = AtomicBoolean(true)
+    private var scavengerJob: Job? = null
+    private val MAX_SESSIONS = 2048
 
     data class TcpSession(
         val key: String,
@@ -40,6 +45,7 @@ class TunTcpRelay(
         val clientSeq: AtomicLong,
         val serverSeq: AtomicLong,
         var clientAck: Long = 0L,
+        var lastActivity: Long = System.currentTimeMillis(),
         val isConnected: AtomicBoolean = AtomicBoolean(false),
         val isHandshakeDesynced: AtomicBoolean = AtomicBoolean(false),
         val sendQueue: Channel<ByteArray> = Channel(Channel.UNLIMITED),
@@ -48,6 +54,23 @@ class TunTcpRelay(
         var streamJob: Job? = null
     )
 
+    init {
+        scavengerJob = scope.launch(Dispatchers.IO) {
+            while (isActive && isRunning.get()) {
+                delay(30000)
+                val now = System.currentTimeMillis()
+                val iterator = sessions.entries.iterator()
+                while (iterator.hasNext()) {
+                    val entry = iterator.next()
+                    val session = entry.value
+                    if (now - session.lastActivity > 120000) { // 2 minutes idle
+                        closeSession(session.key)
+                    }
+                }
+            }
+        }
+    }
+
     fun handleTcpPacket(
         buffer: ByteArray,
         length: Int,
@@ -55,7 +78,7 @@ class TunTcpRelay(
         srcIp: InetAddress,
         dstIp: InetAddress
     ) {
-        if (length < ipHeaderLen + 20) return
+        if (length < ipHeaderLen + 20 || !isRunning.get()) return
 
         val tcpOffset = ipHeaderLen
         val srcPort = ((buffer[tcpOffset].toInt() and 0xFF) shl 8) or (buffer[tcpOffset + 1].toInt() and 0xFF)
@@ -85,6 +108,12 @@ class TunTcpRelay(
         val sessionKey = "${srcIp.hostAddress}:$srcPort->${dstIp.hostAddress}:$dstPort"
 
         if (isSyn && !isAck) {
+            // Guard against session flood
+            if (sessions.size >= MAX_SESSIONS) {
+                val oldestKey = sessions.minByOrNull { it.value.lastActivity }?.key
+                if (oldestKey != null) closeSession(oldestKey)
+            }
+
             // 1. New TCP Connection Initiation (SYN)
             val session = TcpSession(
                 key = sessionKey,
@@ -93,7 +122,8 @@ class TunTcpRelay(
                 srcPort = srcPort,
                 dstPort = dstPort,
                 clientSeq = AtomicLong((seqNum + 1) and 0xFFFFFFFFL),
-                serverSeq = AtomicLong(1000000L)
+                serverSeq = AtomicLong(1000000L),
+                lastActivity = System.currentTimeMillis()
             )
             sessions[sessionKey] = session
 
@@ -117,6 +147,7 @@ class TunTcpRelay(
         }
 
         val session = sessions[sessionKey] ?: return
+        session.lastActivity = System.currentTimeMillis()
 
         if (isRst) {
             closeSession(sessionKey)
@@ -176,13 +207,13 @@ class TunTcpRelay(
                     sendBufferSize = 524288     // 512KB Send Buffer
                     tcpNoDelay = true
                     keepAlive = true
-                    soTimeout = 0               // Persistent keepalive for WhatsApp/messaging
+                    soTimeout = 0               // Persistent keepalive
                     trafficClass = 0x08         // IPTOS_THROUGHPUT
                     setPerformancePreferences(0, 1, 2)
                 }
 
                 vpnService.protect(socket)
-                socket.connect(InetSocketAddress(session.dstIp, session.dstPort), 6000)
+                socket.connect(InetSocketAddress(session.dstIp, session.dstPort), 4500)
 
                 session.socket = socket
                 val upstreamOut = socket.getOutputStream()
@@ -193,7 +224,8 @@ class TunTcpRelay(
                 scope.launch(Dispatchers.IO) {
                     try {
                         for (payload in session.sendQueue) {
-                            if (!session.isConnected.get() || !scope.isActive) break
+                            if (!session.isConnected.get() || !scope.isActive || !isRunning.get()) break
+                            session.lastActivity = System.currentTimeMillis()
 
                             if (!session.isHandshakeDesynced.getAndSet(true)) {
                                 val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
@@ -235,8 +267,9 @@ class TunTcpRelay(
                 val readBuffer = ByteArray(1400)
 
                 var bytesRead = input.read(readBuffer)
-                while (scope.isActive && bytesRead != -1 && session.isConnected.get()) {
+                while (scope.isActive && bytesRead != -1 && session.isConnected.get() && isRunning.get()) {
                     if (bytesRead > 0) {
+                        session.lastActivity = System.currentTimeMillis()
                         TrafficMonitor.recordRxBytes(bytesRead.toLong())
 
                         val responseData = if (bytesRead == readBuffer.size) readBuffer else readBuffer.copyOfRange(0, bytesRead)
@@ -309,6 +342,8 @@ class TunTcpRelay(
     }
 
     fun closeAll() {
+        isRunning.set(false)
+        scavengerJob?.cancel()
         sessions.keys().toList().forEach { closeSession(it) }
     }
 
@@ -405,7 +440,11 @@ class TunTcpRelay(
     private fun computeIpChecksum(data: ByteArray, offset: Int, length: Int): Short {
         var sum = 0
         for (i in offset until offset + length step 2) {
-            val word = ((data[i].toInt() and 0xFF) shl 8) or (data[i + 1].toInt() and 0xFF)
+            val word = if (i + 1 < offset + length) {
+                ((data[i].toInt() and 0xFF) shl 8) or (data[i + 1].toInt() and 0xFF)
+            } else {
+                ((data[i].toInt() and 0xFF) shl 8)
+            }
             sum += word
         }
         while ((sum shr 16) > 0) {

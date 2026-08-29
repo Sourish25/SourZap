@@ -3,6 +3,7 @@ package com.sourzap.app.service
 import android.app.Notification
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.ProxyInfo
 import android.net.VpnService
 import android.os.Build
@@ -20,7 +21,6 @@ import com.sourzap.app.service.core.TunUdpRelay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -31,7 +31,8 @@ import java.net.InetAddress
 class SourZapVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
-    private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
+    private var serviceJob = Job()
+    private var serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
     private var notificationJob: Job? = null
     private var isRunning = false
 
@@ -53,6 +54,11 @@ class SourZapVpnService : VpnService() {
     }
 
     private fun startVpn() {
+        if (serviceJob.isCancelled || serviceJob.isCompleted) {
+            serviceJob = Job()
+            serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
+        }
+
         isRunning = true
         TrafficMonitor.startMonitoring()
 
@@ -114,7 +120,7 @@ class SourZapVpnService : VpnService() {
         proxyServer?.stop()
         tcpRelay?.closeAll()
         udpRelay?.closeAll()
-        serviceScope.cancel()
+        serviceJob.cancel()
 
         try {
             vpnInterface?.close()
@@ -201,7 +207,7 @@ class SourZapVpnService : VpnService() {
                                     domain = "DNS Resolution (DoH)",
                                     port = 53,
                                     protocol = "UDP",
-                                    technique = "DOH_FAILOVER",
+                                    technique = "PARALLEL_DOH",
                                     bytesTransferred = responseWire.size.toLong()
                                 )
                             )
@@ -234,7 +240,7 @@ class SourZapVpnService : VpnService() {
                         )
                     )
                 } else if (udpPayloadLen > 0) {
-                    // Forward general UDP traffic (WhatsApp Voice/Calling, WebRTC, STUN/TURN, Telegram)
+                    // Forward general UDP traffic (BitTorrent DHT/uTP, WhatsApp Calling, WebRTC, STUN/TURN, Telegram)
                     val udpPayload = buffer.copyOfRange(udpPayloadOffset, length)
                     udpRelay?.handleUdpPacket(srcIp, dstIp, srcPort, dstPort, udpPayload)
                 }
@@ -353,7 +359,11 @@ class SourZapVpnService : VpnService() {
     private fun computeChecksum(data: ByteArray, offset: Int, length: Int): Short {
         var sum = 0
         for (i in offset until offset + length step 2) {
-            val word = ((data[i].toInt() and 0xFF) shl 8) or (data[i + 1].toInt() and 0xFF)
+            val word = if (i + 1 < offset + length) {
+                ((data[i].toInt() and 0xFF) shl 8) or (data[i + 1].toInt() and 0xFF)
+            } else {
+                ((data[i].toInt() and 0xFF) shl 8)
+            }
             sum += word
         }
         while ((sum shr 16) > 0) {
