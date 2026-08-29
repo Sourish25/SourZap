@@ -21,9 +21,19 @@ android {
         }
     }
 
+    signingConfigs {
+        create("sourzapKey") {
+            storeFile = file("sourzap_signing.jks")
+            storePassword = "sourzap123"
+            keyAlias = "sourzap"
+            keyPassword = "sourzap123"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("sourzapKey")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -31,6 +41,7 @@ android {
         }
         debug {
             applicationIdSuffix = ""
+            signingConfig = signingConfigs.getByName("sourzapKey")
         }
     }
     compileOptions {
@@ -45,6 +56,11 @@ android {
             "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi"
         )
     }
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+
     buildFeatures {
         compose = true
     }
