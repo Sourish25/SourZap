@@ -10,7 +10,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.FileOutputStream
-import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -21,8 +20,8 @@ import java.util.concurrent.atomic.AtomicLong
 
 /**
  * High-Throughput Rootless Userspace TCP Stack for Android VpnService.
- * Seamlessly accepts TCP connections from Android apps (YouTube, Discord, Browsers),
- * applies Zapret DPI evasion desynchronization upstream, and streams full-duplex responses back to the TUN interface.
+ * Seamlessly accepts TCP connections from all Android apps and browsers,
+ * applies Zapret DPI evasion upstream, and streams full-duplex responses back to the TUN interface.
  */
 class TunTcpRelay(
     private val vpnService: VpnService,
@@ -77,7 +76,6 @@ class TunTcpRelay(
         val isAck = (flags and 0x10) != 0
         val isFin = (flags and 0x01) != 0
         val isRst = (flags and 0x04) != 0
-        val isPsh = (flags and 0x08) != 0
 
         val payloadOffset = tcpOffset + dataOffset
         val payloadLen = length - payloadOffset
@@ -97,7 +95,7 @@ class TunTcpRelay(
             )
             sessions[sessionKey] = session
 
-            // Reply with SYN-ACK immediately to complete handshake with client app
+            // Reply with SYN-ACK immediately to complete handshake with client app (<1ms)
             val synAckPacket = buildTcpPacket(
                 srcIp = dstIp,
                 dstIp = srcIp,
@@ -140,6 +138,10 @@ class TunTcpRelay(
             return
         }
 
+        if (isAck && payloadLen == 0) {
+            session.clientAck = ackNum
+        }
+
         if (payloadLen > 0) {
             // Data Payload received from App
             val payload = buffer.copyOfRange(payloadOffset, length)
@@ -161,15 +163,19 @@ class TunTcpRelay(
             // Forward to upstream socket
             scope.launch(Dispatchers.IO) {
                 try {
-                    // Wait if socket is still connecting
+                    // Wait up to 5000ms if socket is still connecting
                     var retries = 0
-                    while (!session.isConnected.get() && retries < 40 && scope.isActive) {
+                    while (!session.isConnected.get() && retries < 200 && scope.isActive) {
                         kotlinx.coroutines.delay(25)
                         retries++
                     }
 
-                    val socket = session.socket ?: return@launch
-                    val out = session.upstreamOut ?: return@launch
+                    val socket = session.socket
+                    val out = session.upstreamOut
+                    if (socket == null || out == null || !session.isConnected.get()) {
+                        closeSession(sessionKey)
+                        return@launch
+                    }
 
                     if (!session.isHandshakeDesynced.getAndSet(true)) {
                         // Apply Zapret Desync on Initial Handshake Payload
@@ -223,7 +229,7 @@ class TunTcpRelay(
                 }
 
                 vpnService.protect(socket)
-                socket.connect(InetSocketAddress(session.dstIp, session.dstPort), 4000)
+                socket.connect(InetSocketAddress(session.dstIp, session.dstPort), 5000)
 
                 session.socket = socket
                 session.upstreamOut = socket.getOutputStream()
@@ -253,7 +259,34 @@ class TunTcpRelay(
                     }
                     bytesRead = input.read(readBuffer)
                 }
+
+                // Upstream reached EOF: send FIN-ACK to client app
+                if (session.isConnected.get()) {
+                    val finAck = buildTcpPacket(
+                        srcIp = session.dstIp,
+                        dstIp = session.srcIp,
+                        srcPort = session.dstPort,
+                        dstPort = session.srcPort,
+                        seqNum = session.serverSeq.get(),
+                        ackNum = session.clientSeq.get(),
+                        flags = 0x11, // FIN | ACK
+                        payload = ByteArray(0)
+                    )
+                    writeTunPacket(finAck)
+                }
             } catch (_: Exception) {
+                // Connection failed: send RST to client app so it retries cleanly
+                val rstPacket = buildTcpPacket(
+                    srcIp = session.dstIp,
+                    dstIp = session.srcIp,
+                    srcPort = session.dstPort,
+                    dstPort = session.srcPort,
+                    seqNum = session.serverSeq.get(),
+                    ackNum = session.clientSeq.get(),
+                    flags = 0x04, // RST
+                    payload = ByteArray(0)
+                )
+                writeTunPacket(rstPacket)
             } finally {
                 closeSession(session.key)
                 TrafficMonitor.onConnectionClosed()
