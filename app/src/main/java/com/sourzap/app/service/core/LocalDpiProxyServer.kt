@@ -63,9 +63,15 @@ class LocalDpiProxyServer(
         var upstreamSocket: Socket? = null
 
         try {
-            clientSocket.tcpNoDelay = true
-            clientSocket.keepAlive = true
-            clientSocket.soTimeout = 0 // Infinite timeout for persistent WhatsApp/Telegram messaging streams
+            clientSocket.apply {
+                receiveBufferSize = 2097152 // 2 MB Client Receive Buffer
+                sendBufferSize = 2097152    // 2 MB Client Send Buffer
+                tcpNoDelay = true
+                keepAlive = true
+                soTimeout = 0               // Persistent keepalive
+                trafficClass = 0x08         // IPTOS_THROUGHPUT
+                setPerformancePreferences(0, 1, 2)
+            }
 
             val clientIn = clientSocket.getInputStream()
             val clientOut = clientSocket.getOutputStream()
@@ -105,8 +111,8 @@ class LocalDpiProxyServer(
 
                 // Connect to remote upstream with protected socket
                 val upstream = Socket().apply {
-                    receiveBufferSize = 1048576 // 1 MB Receive Buffer
-                    sendBufferSize = 524288     // 512 KB Send Buffer
+                    receiveBufferSize = 2097152 // 2 MB Turbo Video Buffer for 4K/8K Media
+                    sendBufferSize = 1048576    // 1 MB Send Buffer
                     tcpNoDelay = true
                     keepAlive = true
                     soTimeout = 0               // Persistent keepalive
@@ -183,9 +189,13 @@ class LocalDpiProxyServer(
 
                 if (targetHost.isNotEmpty()) {
                     val upstream = Socket().apply {
+                        receiveBufferSize = 1048576
+                        sendBufferSize = 524288
                         tcpNoDelay = true
                         keepAlive = true
                         soTimeout = 0
+                        trafficClass = 0x08
+                        setPerformancePreferences(0, 1, 2)
                     }
                     upstreamSocket = upstream
 
@@ -240,7 +250,6 @@ class LocalDpiProxyServer(
                 while (len != -1 && isRunning.get()) {
                     if (len > 0) {
                         upstreamOut.write(buf, 0, len)
-                        upstreamOut.flush()
                         TrafficMonitor.recordTxBytes(len.toLong())
                     }
                     len = clientIn.read(buf)
@@ -259,7 +268,6 @@ class LocalDpiProxyServer(
                 while (len != -1 && isRunning.get()) {
                     if (len > 0) {
                         clientOut.write(buf, 0, len)
-                        clientOut.flush()
                         TrafficMonitor.recordRxBytes(len.toLong())
                     }
                     len = upstreamIn.read(buf)

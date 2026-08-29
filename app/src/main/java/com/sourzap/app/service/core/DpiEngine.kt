@@ -72,17 +72,17 @@ object DpiEngine {
         }
 
         // 2. Auto-Pilot Dynamic Intelligence: Inspect domain target
-        val effectiveStrategy = if (strategy.id == "auto_pilot") {
-            when {
-                // Streaming & Video Services -> Max Throughput SNI boundary split
-                hostname.contains("googlevideo") || hostname.contains("youtube") ||
+        val isStreamingMedia = hostname.contains("googlevideo") || hostname.contains("youtube") ||
                 hostname.contains("ytimg") || hostname.contains("twitch") ||
                 hostname.contains("netflix") || hostname.contains("instagram") ||
                 hostname.contains("fbcdn") || hostname.contains("tiktok") ||
                 hostname.contains("twitter") || hostname.contains("x.com") ||
-                hostname.contains("reddit") -> {
-                    BypassStrategy.STREAMING_TURBO
-                }
+                hostname.contains("reddit")
+
+        val effectiveStrategy = if (strategy.id == "auto_pilot") {
+            when {
+                // Streaming & Video Services -> Low-overhead Split 2 for full 4K line speed
+                isStreamingMedia -> BypassStrategy.STREAMING_TURBO
 
                 // Voice, Gaming & RTC -> Low-latency Split Offset 2
                 hostname.contains("discord") || hostname.contains("gateway") ||
@@ -92,16 +92,16 @@ object DpiEngine {
                 }
 
                 // Strict Censorship / General Blocked Hosts -> Deep Universal Split
-                else -> {
-                    BypassStrategy.STRICT_FIREWALL
-                }
+                else -> BypassStrategy.STRICT_FIREWALL
             }
         } else {
             strategy
         }
 
-        // Calculate Split Position
-        val splitPos = when {
+        // Calculate Split Position (Use Split 2 for Video CDNs to maximize hardware buffer throughput)
+        val splitPos = if (isStreamingMedia || effectiveStrategy.id == "streaming_turbo" || effectiveStrategy.id == "gaming_voice") {
+            2 // Zapret standard split2: splits TLS Record Header (0x16 0x03 | 0x01 ...) with 0ms buffering
+        } else when {
             effectiveStrategy.tlsSplitOffset == -1 && sniResult.sniExtensionOffset > 5 -> {
                 sniResult.sniExtensionOffset.coerceIn(2, length - 2)
             }
@@ -109,11 +109,11 @@ object DpiEngine {
                 effectiveStrategy.tlsSplitOffset.coerceIn(1, length - 1)
             }
             else -> {
-                if (sniResult.sniExtensionOffset > 0) sniResult.sniExtensionOffset.coerceIn(2, length - 2) else (length / 2).coerceIn(2, length - 2)
+                if (sniResult.sniExtensionOffset > 0) sniResult.sniExtensionOffset.coerceIn(2, length - 2) else 2
             }
         }
 
-        if (effectiveStrategy.useMultisplit && length > 12) {
+        if (effectiveStrategy.useMultisplit && length > 12 && !isStreamingMedia) {
             val p1 = 5.coerceAtMost(splitPos - 1)
             val p2 = splitPos.coerceIn(p1 + 1, length - 1)
 
@@ -123,28 +123,26 @@ object DpiEngine {
 
             outputStream.write(c1)
             outputStream.flush()
-            Thread.sleep(1)
 
             outputStream.write(c2)
             outputStream.flush()
-            Thread.sleep(1)
 
             outputStream.write(c3)
             outputStream.flush()
 
             onTechniqueApplied(if (strategy.id == "auto_pilot") "AUTO:MULTISPLIT" else "MULTISPLIT(5,$p2)")
         } else {
+            // Turbo Split (0ms latency, separate TCP segments via TCP_NODELAY)
             val c1 = payload.copyOfRange(0, splitPos)
             val c2 = payload.copyOfRange(splitPos, length)
 
             outputStream.write(c1)
             outputStream.flush()
-            Thread.sleep(1)
 
             outputStream.write(c2)
             outputStream.flush()
 
-            onTechniqueApplied(if (strategy.id == "auto_pilot") "AUTO:SNI_SPLIT" else "SNI_SPLIT($splitPos)")
+            onTechniqueApplied(if (strategy.id == "auto_pilot") "TURBO_SPLIT($splitPos)" else "SNI_SPLIT($splitPos)")
         }
     }
 
@@ -163,7 +161,7 @@ object DpiEngine {
 
             outputStream.write(c1)
             outputStream.flush()
-            Thread.sleep(1)
+
             outputStream.write(c2)
             outputStream.flush()
             onTechniqueApplied("HTTP_SPLIT+CASE_MOD")
