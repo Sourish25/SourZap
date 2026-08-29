@@ -12,14 +12,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -29,7 +24,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,9 +32,7 @@ import com.sourzap.app.data.model.BypassStrategy
 import com.sourzap.app.data.model.DohProvider
 import com.sourzap.app.ui.components.ExpressiveCard
 import com.sourzap.app.ui.components.ExpressiveChip
-import com.sourzap.app.ui.components.ScallopedBadge
 import com.sourzap.app.ui.components.SegmentedPillSwitch
-import com.sourzap.app.ui.theme.ExpressiveShapes
 
 @Composable
 fun StrategiesScreen(
@@ -57,7 +49,7 @@ fun StrategiesScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 20.dp, bottom = 100.dp),
+        contentPadding = PaddingValues(top = 24.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Header
@@ -68,41 +60,41 @@ fun StrategiesScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Bypass Engine",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        ScallopedBadge(
-                            text = "PRESETS",
-                            backgroundColor = MaterialTheme.colorScheme.primaryContainer,
-                            textColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-
                     Text(
-                        text = "Select DPI circumvention preset or build custom desync",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "Bypass Engine",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 32.sp,
+                        letterSpacing = (-1).sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Zapret DPI Circumvention Modes",
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                ExpressiveChip(
+                    text = "PRESETS",
+                    backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                    textColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
             }
         }
 
-        // Preset Section Header
+        // Section Title
         item {
             Text(
                 text = "CURATED PRESETS",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontWeight = FontWeight.Black,
+                fontSize = 12.sp,
+                letterSpacing = 0.8.sp,
+                color = MaterialTheme.colorScheme.primary
             )
         }
 
-        // Preset Cards
+        // Preset Large Tiles
         items(BypassStrategy.DEFAULT_PRESETS) { strategy ->
             val isSelected = currentStrategy.id == strategy.id
 
@@ -110,80 +102,51 @@ fun StrategiesScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { strategyRepo.selectStrategy(strategy) },
-                shape = ExpressiveShapes.AsymmetricPillLarge,
+                shape = RoundedCornerShape(24.dp),
                 backgroundColor = if (isSelected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
-                borderColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                borderColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp)
+                        .padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(ExpressiveShapes.Squircle)
-                                    .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = strategy.iconEmoji,
-                                    fontSize = 20.sp
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Column {
-                                Text(
-                                    text = strategy.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = strategy.description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        if (isSelected) {
-                            Icon(
-                                imageVector = Icons.Rounded.CheckCircle,
-                                contentDescription = "Selected",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = strategy.name,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 18.sp,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
-                        } else {
-                            ExpressiveChip(
-                                text = strategy.tag,
-                                backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                textColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            Text(
+                                text = strategy.description,
+                                fontWeight = FontWeight.Normal,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+
+                        ExpressiveChip(
+                            text = if (isSelected) "SELECTED" else strategy.tag,
+                            backgroundColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                            textColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Technique Breakdown
+                    // Technique Breakdown Tags
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         if (strategy.tlsSplitOffset != 0) {
                             ExpressiveChip(
-                                text = if (strategy.tlsSplitOffset == -1) "SNI Split" else "Split @ ${strategy.tlsSplitOffset}",
+                                text = if (strategy.tlsSplitOffset == -1) "SNI Split" else "Split Pos ${strategy.tlsSplitOffset}",
                                 backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
                                 textColor = MaterialTheme.colorScheme.onSecondaryContainer
                             )
@@ -191,7 +154,7 @@ fun StrategiesScreen(
 
                         if (strategy.fakeSni.isNotEmpty()) {
                             ExpressiveChip(
-                                text = "Fake: ${strategy.fakeSni}",
+                                text = "Fake ${strategy.fakeSni.substringBefore(".")}",
                                 backgroundColor = MaterialTheme.colorScheme.tertiaryContainer,
                                 textColor = MaterialTheme.colorScheme.onTertiaryContainer
                             )
@@ -199,7 +162,7 @@ fun StrategiesScreen(
 
                         if (strategy.useDisorder) {
                             ExpressiveChip(
-                                text = "Disorder",
+                                text = "TCP Disorder",
                                 backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                                 textColor = MaterialTheme.colorScheme.onSurface
                             )
@@ -212,10 +175,11 @@ fun StrategiesScreen(
         // Custom Strategy Configurator
         item {
             Text(
-                text = "CUSTOM STRATEGY BUILDER",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = "CUSTOM ENGINE BUILDER",
+                fontWeight = FontWeight.Black,
+                fontSize = 12.sp,
+                letterSpacing = 0.8.sp,
+                color = MaterialTheme.colorScheme.primary
             )
         }
 
@@ -224,52 +188,34 @@ fun StrategiesScreen(
 
             ExpressiveCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = ExpressiveShapes.AsymmetricPillInverse,
+                shape = RoundedCornerShape(28.dp),
                 backgroundColor = if (isCustomSelected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
                 borderColor = if (isCustomSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(ExpressiveShapes.Squircle)
-                                    .background(MaterialTheme.colorScheme.primaryContainer),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Tune,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Column {
-                                Text(
-                                    text = customStrategy.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "Tailored packet desync parameters",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                        Column {
+                            Text(
+                                text = customStrategy.name,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 18.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Tailored packet desync parameters",
+                                fontWeight = FontWeight.Normal,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
 
                         Switch(
@@ -284,24 +230,24 @@ fun StrategiesScreen(
                         )
                     }
 
-                    // TLS Split Offset Chooser
+                    // TLS Split Offset
                     Column {
                         Text(
                             text = "TLS Split Offset",
-                            style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         SegmentedPillSwitch(
                             items = listOf(-1, 2, 1, 0),
                             selectedItem = customStrategy.tlsSplitOffset,
                             itemLabel = {
                                 when (it) {
                                     -1 -> "SNI Start"
-                                    2 -> "Pos 2"
-                                    1 -> "Pos 1"
-                                    else -> "None"
+                                    2 -> "Offset 2"
+                                    1 -> "Offset 1"
+                                    else -> "Disabled"
                                 }
                             },
                             onItemSelected = {
@@ -310,15 +256,15 @@ fun StrategiesScreen(
                         )
                     }
 
-                    // Fake SNI Host Chooser
+                    // Fake SNI Injection
                     Column {
                         Text(
                             text = "Fake SNI Host Injection",
-                            style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         SegmentedPillSwitch(
                             items = listOf("www.google.com", "cloudflare.com", "yandex.ru", ""),
                             selectedItem = customStrategy.fakeSni,
@@ -327,7 +273,7 @@ fun StrategiesScreen(
                                     "www.google.com" -> "Google"
                                     "cloudflare.com" -> "Cloudflare"
                                     "yandex.ru" -> "Yandex"
-                                    else -> "Disabled"
+                                    else -> "None"
                                 }
                             },
                             onItemSelected = {
@@ -344,14 +290,14 @@ fun StrategiesScreen(
                         ) {
                             Text(
                                 text = "Fake Packet TTL",
-                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 text = "${customStrategy.fakeTtl} hops",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 14.sp,
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -366,7 +312,7 @@ fun StrategiesScreen(
                         )
                     }
 
-                    // TCP Disorder & QUIC Block
+                    // TCP Disorder & QUIC Switch Tiles
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -374,14 +320,15 @@ fun StrategiesScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "TCP Disorder (Out-of-Order)",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
+                                text = "TCP Disorder",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Sends payload segments out of sequence",
-                                style = MaterialTheme.typography.bodySmall,
+                                text = "Sends payload segments out of order to evade DPI",
+                                fontWeight = FontWeight.Normal,
+                                fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -402,13 +349,14 @@ fun StrategiesScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Block QUIC (UDP 443)",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Forces apps to fallback to TCP where DPI desync applies",
-                                style = MaterialTheme.typography.bodySmall,
+                                text = "Forces apps to fallback to desynced TCP",
+                                fontWeight = FontWeight.Normal,
+                                fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -421,15 +369,15 @@ fun StrategiesScreen(
                         )
                     }
 
-                    // DoH Provider Chooser
+                    // DNS over HTTPS Chooser
                     Column {
                         Text(
                             text = "Encrypted DNS-over-HTTPS (DoH)",
-                            style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         SegmentedPillSwitch(
                             items = listOf(DohProvider.CLOUDFLARE, DohProvider.GOOGLE, DohProvider.QUAD9),
                             selectedItem = customStrategy.dohProvider,

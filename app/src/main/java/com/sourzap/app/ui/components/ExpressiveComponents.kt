@@ -25,21 +25,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.BarChart
-import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.PowerSettingsNew
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -50,7 +40,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -61,7 +50,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -70,16 +58,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sourzap.app.ui.theme.ExpressiveShapes
 import com.sourzap.app.ui.theme.NumberDisplayLarge
-import com.sourzap.app.ui.theme.ScallopedShape
-import com.sourzap.app.ui.theme.WavyCircularShape
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Tactile Material 3 Expressive Hero Connect Button
- * Features smooth spring bouncing, organic breathing rings, and clean dynamic theming.
+ * Large Smartphone-Tailored Hero Connect Control
+ * Designed for human thumb ergonomics: large surface, bold typography, tactile spring response.
  */
 @Composable
 fun HeroConnectButton(
@@ -87,135 +73,97 @@ fun HeroConnectButton(
     onToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "HeroBreathing")
-
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (isConnected) 1.12f else 1.03f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(if (isConnected) 1800 else 2400, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "PulseScale"
-    )
-
-    val waveRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(12000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "WaveRotation"
-    )
-
     val scaleAnim = remember { Animatable(1f) }
     val scope = rememberCoroutineScope()
 
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val activeColor = MaterialTheme.colorScheme.tertiary
-    val onPrimaryColor = MaterialTheme.colorScheme.onPrimary
-    val onActiveColor = MaterialTheme.colorScheme.onTertiary
+    val targetContainerColor = if (isConnected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
+    val targetBorderColor = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    val targetTextColor = if (isConnected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    val targetSubtextColor = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
 
-    val targetButtonColor = if (isConnected) activeColor else primaryColor
-    val targetTextColor = if (isConnected) onActiveColor else onPrimaryColor
-
-    val buttonBgColor by animateColorAsState(
-        targetValue = targetButtonColor,
+    val containerColor by animateColorAsState(
+        targetValue = targetContainerColor,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "ButtonColor"
+        label = "HeroBg"
+    )
+
+    val borderColor by animateColorAsState(
+        targetValue = targetBorderColor,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "HeroBorder"
     )
 
     val textColor by animateColorAsState(
         targetValue = targetTextColor,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "TextColor"
+        label = "HeroText"
     )
 
+    val subtextColor by animateColorAsState(
+        targetValue = targetSubtextColor,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "HeroSubtext"
+    )
+
+    val heroShape = RoundedCornerShape(36.dp)
+
     Box(
-        modifier = modifier.size(210.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(160.dp)
+            .scale(scaleAnim.value)
+            .shadow(
+                elevation = if (isConnected) 8.dp else 2.dp,
+                shape = heroShape,
+                spotColor = containerColor,
+                ambientColor = containerColor
+            )
+            .clip(heroShape)
+            .border(2.dp, borderColor, heroShape)
+            .background(containerColor)
+            .pointerInput(isConnected) {
+                detectTapGestures(
+                    onPress = {
+                        scope.launch {
+                            scaleAnim.animateTo(0.94f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium))
+                        }
+                        tryAwaitRelease()
+                        scope.launch {
+                            scaleAnim.animateTo(1f, spring(dampingRatio = 0.50f, stiffness = Spring.StiffnessLow))
+                        }
+                        onToggle()
+                    }
+                )
+            },
         contentAlignment = Alignment.Center
     ) {
-        // Breathing Concentric Aura Rings
-        if (isConnected) {
-            Box(
-                modifier = Modifier
-                    .size(200.dp)
-                    .scale(pulseScale)
-                    .rotate(waveRotation)
-                    .clip(WavyCircularShape(numWaves = 12, waveAmplitudePx = 8f))
-                    .background(activeColor.copy(alpha = 0.18f))
-            )
-
-            Box(
-                modifier = Modifier
-                    .size(176.dp)
-                    .rotate(-waveRotation * 1.4f)
-                    .clip(WavyCircularShape(numWaves = 10, waveAmplitudePx = 6f))
-                    .background(activeColor.copy(alpha = 0.12f))
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(185.dp)
-                    .scale(pulseScale)
-                    .clip(CircleShape)
-                    .background(primaryColor.copy(alpha = 0.10f))
-            )
-        }
-
-        // Tactile Squircle Button
-        val buttonShape = if (isConnected) RoundedCornerShape(44.dp) else RoundedCornerShape(52.dp)
-
-        Box(
-            modifier = Modifier
-                .size(150.dp)
-                .scale(scaleAnim.value)
-                .shadow(
-                    elevation = if (isConnected) 12.dp else 8.dp,
-                    shape = buttonShape,
-                    spotColor = buttonBgColor,
-                    ambientColor = buttonBgColor
-                )
-                .clip(buttonShape)
-                .background(buttonBgColor)
-                .pointerInput(isConnected) {
-                    detectTapGestures(
-                        onPress = {
-                            scope.launch {
-                                scaleAnim.animateTo(0.90f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium))
-                            }
-                            tryAwaitRelease()
-                            scope.launch {
-                                scaleAnim.animateTo(1f, spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessLow))
-                            }
-                            onToggle()
-                        }
-                    )
-                },
-            contentAlignment = Alignment.Center
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(24.dp)
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier.padding(12.dp)
+            Text(
+                text = if (isConnected) "ACTIVE" else "DISCONNECTED",
+                fontWeight = FontWeight.Black,
+                fontSize = 32.sp,
+                letterSpacing = 1.sp,
+                color = textColor,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Surface(
+                shape = ExpressiveShapes.SuperPill,
+                color = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
-                Icon(
-                    imageVector = if (isConnected) Icons.Rounded.PowerSettingsNew else Icons.Rounded.Bolt,
-                    contentDescription = if (isConnected) "Disconnect" else "Connect",
-                    tint = textColor,
-                    modifier = Modifier.size(48.dp)
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
                 Text(
-                    text = if (isConnected) "ACTIVE" else "ZAP DPI",
+                    text = if (isConnected) "DPI BYPASS RUNNING" else "TAP TO ACTIVATE ZAPRET",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    letterSpacing = 1.sp,
-                    color = textColor,
-                    textAlign = TextAlign.Center
+                    fontSize = 13.sp,
+                    letterSpacing = 0.5.sp,
+                    color = if (isConnected) MaterialTheme.colorScheme.onPrimary else subtextColor,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                 )
             }
         }
@@ -223,40 +171,29 @@ fun HeroConnectButton(
 }
 
 /**
- * Flexible Material 3 Expressive Pill Chip
- * Auto-sizes to fit any technique or status string with clean tonal contrast.
+ * Large, Non-Clipping Expressive Pill Chip
+ * Clean typographic badge without cluttered icons.
  */
 @Composable
 fun ExpressiveChip(
     text: String,
     modifier: Modifier = Modifier,
     backgroundColor: Color = MaterialTheme.colorScheme.secondaryContainer,
-    textColor: Color = MaterialTheme.colorScheme.onSecondaryContainer,
-    icon: ImageVector? = null
+    textColor: Color = MaterialTheme.colorScheme.onSecondaryContainer
 ) {
     Surface(
         modifier = modifier.clip(ExpressiveShapes.SuperPill),
         shape = ExpressiveShapes.SuperPill,
         color = backgroundColor
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+        Box(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center
         ) {
-            if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = textColor,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-            }
             Text(
                 text = text,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
                 color = textColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -266,44 +203,15 @@ fun ExpressiveChip(
 }
 
 /**
- * Scalloped Starburst Badge
- * Used strictly for short 2-5 character highlights (e.g. "4x", "LIVE", "TURBO").
- */
-@Composable
-fun ScallopedBadge(
-    text: String,
-    modifier: Modifier = Modifier,
-    backgroundColor: Color = MaterialTheme.colorScheme.tertiaryContainer,
-    textColor: Color = MaterialTheme.colorScheme.onTertiaryContainer,
-    numPetals: Int = 12
-) {
-    Box(
-        modifier = modifier
-            .clip(ScallopedShape(numPetals = numPetals, petalDepthRatio = 0.14f))
-            .background(backgroundColor)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            fontWeight = FontWeight.Black,
-            fontSize = 11.sp,
-            letterSpacing = 0.6.sp,
-            color = textColor,
-            maxLines = 1
-        )
-    }
-}
-
-/**
  * Material 3 Expressive Container Card
+ * Generous smartphone padding and large rounded corners.
  */
 @Composable
 fun ExpressiveCard(
     modifier: Modifier = Modifier,
     backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainer,
-    borderColor: Color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-    shape: Shape = ExpressiveShapes.AsymmetricPillLarge,
+    borderColor: Color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+    shape: Shape = RoundedCornerShape(28.dp),
     content: @Composable () -> Unit
 ) {
     Surface(
@@ -318,14 +226,11 @@ fun ExpressiveCard(
 }
 
 /**
- * Speedometer Arc Gauge
+ * Large Speedometer Arc Gauge with Big Typography
  */
 @Composable
 fun ExpressiveSpeedGauge(
     speedMbps: Float,
-    pingMs: Float,
-    jitterMs: Float,
-    isTesting: Boolean,
     statusText: String,
     modifier: Modifier = Modifier
 ) {
@@ -343,18 +248,18 @@ fun ExpressiveSpeedGauge(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(250.dp),
+            .height(240.dp),
         contentAlignment = Alignment.Center
     ) {
         val sizePx = minOf(maxWidth.value, maxHeight.value).dp
 
         Canvas(
-            modifier = Modifier.size(sizePx * 0.85f)
+            modifier = Modifier.size(sizePx * 0.88f)
         ) {
-            val strokeWidth = 18.dp.toPx()
+            val strokeWidth = 20.dp.toPx()
             val diameter = size.minDimension - strokeWidth
             val radius = diameter / 2f
-            val center = Offset(size.width / 2f, size.height / 2f + 8.dp.toPx())
+            val center = Offset(size.width / 2f, size.height / 2f + 10.dp.toPx())
 
             val startAngle = 150f
             val sweepTotal = 240f
@@ -393,7 +298,7 @@ fun ExpressiveSpeedGauge(
 
             drawCircle(
                 color = onSurfaceColor,
-                radius = 8.dp.toPx(),
+                radius = 9.dp.toPx(),
                 center = needleTip
             )
         }
@@ -402,27 +307,27 @@ fun ExpressiveSpeedGauge(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.offset(y = 8.dp)
+            modifier = Modifier.padding(top = 16.dp)
         ) {
             Text(
                 text = String.format("%.1f", animatedSpeed),
-                style = NumberDisplayLarge,
+                style = NumberDisplayLarge.copy(fontSize = 56.sp),
                 color = onSurfaceColor
             )
 
             Text(
                 text = "Mbps",
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
+                fontWeight = FontWeight.Black,
+                fontSize = 18.sp,
                 color = primaryColor
             )
 
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             Text(
                 text = statusText,
-                fontWeight = FontWeight.Medium,
-                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
                 color = onSurfaceVariantColor
             )
         }
@@ -430,19 +335,19 @@ fun ExpressiveSpeedGauge(
 }
 
 /**
- * Animated Traffic Waveform
+ * Large Telemetry Waveform
  */
 @Composable
 fun ExpressiveTrafficWave(
     speedHistory: List<Float>,
     modifier: Modifier = Modifier,
     lineColor: Color = MaterialTheme.colorScheme.primary,
-    fillColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+    fillColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
 ) {
     Canvas(
         modifier = modifier
             .fillMaxWidth()
-            .height(65.dp)
+            .height(75.dp)
     ) {
         if (speedHistory.size < 2) return@Canvas
 
@@ -488,13 +393,14 @@ fun ExpressiveTrafficWave(
         drawPath(
             path = path,
             color = lineColor,
-            style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
+            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
         )
     }
 }
 
 /**
- * Segmented Pill Switch
+ * Large Smartphone Segmented Pill Switch (56dp height)
+ * Generous touch targets with clear text labels and no icon clutter.
  */
 @Composable
 fun <T> SegmentedPillSwitch(
@@ -507,32 +413,33 @@ fun <T> SegmentedPillSwitch(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = ExpressiveShapes.SuperPill,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
+        color = MaterialTheme.colorScheme.surfaceContainerHighest
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                .padding(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             items.forEach { item ->
                 val isSelected = item == selectedItem
-                val bgColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                val textColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                val bgColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+                val textColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
 
                 Box(
                     modifier = Modifier
                         .weight(1f)
+                        .height(48.dp)
                         .clip(ExpressiveShapes.SuperPill)
                         .background(bgColor)
                         .clickable { onItemSelected(item) }
-                        .padding(vertical = 10.dp, horizontal = 4.dp),
+                        .padding(horizontal = 6.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = itemLabel(item),
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        fontSize = 13.sp,
+                        fontWeight = if (isSelected) FontWeight.Black else FontWeight.SemiBold,
+                        fontSize = 14.sp,
                         color = textColor,
                         textAlign = TextAlign.Center,
                         maxLines = 1,
@@ -545,7 +452,7 @@ fun <T> SegmentedPillSwitch(
 }
 
 /**
- * Floating Navigation Dock
+ * Clean Floating Navigation Dock Tailored for Thumbs (No Icons)
  */
 @Composable
 fun FloatingExpressiveDock(
@@ -554,11 +461,11 @@ fun FloatingExpressiveDock(
     modifier: Modifier = Modifier
 ) {
     val items = listOf(
-        DockItem("dashboard", "Home", Icons.Rounded.Home),
-        DockItem("speedtest", "Speed", Icons.Rounded.Speed),
-        DockItem("strategies", "Bypass", Icons.Rounded.Tune),
-        DockItem("traffic", "Traffic", Icons.Rounded.BarChart),
-        DockItem("settings", "Settings", Icons.Rounded.Settings)
+        DockItem("dashboard", "Home"),
+        DockItem("speedtest", "Speed"),
+        DockItem("strategies", "Bypass"),
+        DockItem("traffic", "Traffic"),
+        DockItem("settings", "Settings")
     )
 
     Box(
@@ -569,7 +476,7 @@ fun FloatingExpressiveDock(
     ) {
         Surface(
             shape = ExpressiveShapes.SuperPill,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.96f),
+            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.98f),
             shadowElevation = 8.dp,
             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
             modifier = Modifier.fillMaxWidth()
@@ -583,45 +490,27 @@ fun FloatingExpressiveDock(
             ) {
                 items.forEach { item ->
                     val isSelected = currentRoute == item.route
-                    val animatedScale by animateFloatAsState(
-                        targetValue = if (isSelected) 1.04f else 1f,
-                        animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
-                        label = "DockScale"
-                    )
 
                     val pillBg = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
                     val itemColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
 
                     Box(
                         modifier = Modifier
-                            .scale(animatedScale)
+                            .weight(1f)
+                            .height(44.dp)
                             .clip(ExpressiveShapes.SuperPill)
                             .background(pillBg)
                             .clickable { onNavigate(item.route) }
-                            .padding(horizontal = if (isSelected) 14.dp else 10.dp, vertical = 8.dp),
+                            .padding(horizontal = 4.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = item.icon,
-                                contentDescription = item.label,
-                                tint = itemColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-
-                            if (isSelected) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = item.label,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    color = itemColor
-                                )
-                            }
-                        }
+                        Text(
+                            text = item.label,
+                            fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = itemColor,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }
@@ -629,4 +518,4 @@ fun FloatingExpressiveDock(
     }
 }
 
-data class DockItem(val route: String, val label: String, val icon: ImageVector)
+data class DockItem(val route: String, val label: String)

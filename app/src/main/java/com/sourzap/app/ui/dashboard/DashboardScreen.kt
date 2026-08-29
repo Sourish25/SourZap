@@ -20,14 +20,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowDownward
-import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,8 +42,8 @@ import com.sourzap.app.ui.components.ExpressiveCard
 import com.sourzap.app.ui.components.ExpressiveChip
 import com.sourzap.app.ui.components.ExpressiveTrafficWave
 import com.sourzap.app.ui.components.HeroConnectButton
-import com.sourzap.app.ui.components.ScallopedBadge
 import com.sourzap.app.ui.theme.ExpressiveShapes
+import com.sourzap.app.ui.theme.NumberDisplayMedium
 import com.sourzap.app.ui.theme.NumberDisplaySmall
 
 @Composable
@@ -110,10 +105,10 @@ fun DashboardScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 20.dp, bottom = 100.dp),
+        contentPadding = PaddingValues(top = 24.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // App Header
+        // Human Material You Top Bar
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -121,246 +116,187 @@ fun DashboardScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "SourZap",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        ScallopedBadge(
-                            text = "DPI",
-                            backgroundColor = MaterialTheme.colorScheme.primaryContainer,
-                            textColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-
                     Text(
-                        text = "Rootless DPI bypass & traffic monitor",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "SourZap",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 32.sp,
+                        letterSpacing = (-1).sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Rootless DPI Evasion",
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                // Status Pill Chip
                 ExpressiveChip(
-                    text = if (isConnected) "CONNECTED" else "DISCONNECTED",
-                    backgroundColor = if (isConnected) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    textColor = if (isConnected) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                    text = if (isConnected) "RUNNING" else "OFF",
+                    backgroundColor = if (isConnected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                    textColor = if (isConnected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        // Hero Connect Area
+        // Large Smartphone Hero Control
         item {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                HeroConnectButton(
-                    isConnected = isConnected,
-                    onToggle = { toggleVpn() }
-                )
-            }
+            HeroConnectButton(
+                isConnected = isConnected,
+                onToggle = { toggleVpn() }
+            )
         }
 
-        // Active Strategy Card
+        // Active Strategy Large Tile
         item {
             ExpressiveCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onNavigateToStrategies() },
-                shape = ExpressiveShapes.AsymmetricPillLarge,
+                shape = RoundedCornerShape(28.dp),
                 backgroundColor = MaterialTheme.colorScheme.surfaceContainer,
-                borderColor = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(ExpressiveShapes.Squircle)
-                                .background(MaterialTheme.colorScheme.primaryContainer),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = currentStrategy.iconEmoji,
-                                fontSize = 22.sp
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = currentStrategy.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                ExpressiveChip(
-                                    text = currentStrategy.tag,
-                                    backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
-                                    textColor = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = currentStrategy.description,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
-                            )
-                        }
-                    }
-
-                    Icon(
-                        imageVector = Icons.Rounded.Tune,
-                        contentDescription = "Configure Strategy",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-        }
-
-        // Real-Time Throughput Card
-        item {
-            ExpressiveCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onNavigateToTraffic() },
-                shape = ExpressiveShapes.AsymmetricPillInverse,
-                backgroundColor = MaterialTheme.colorScheme.surfaceContainer,
-                borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                borderColor = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp)
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.Speed,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "LIVE THROUGHPUT",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
+                        Text(
+                            text = "BYPASS STRATEGY",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 12.sp,
+                            letterSpacing = 0.8.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
 
                         Text(
-                            text = " active sockets",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "Tap to change",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Download Speed
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Rounded.ArrowDownward,
-                                    contentDescription = "Download",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "DOWNLOAD",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Text(
-                                text = stats.formattedDownloadSpeed(),
-                                style = NumberDisplaySmall,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
+                        Text(
+                            text = currentStrategy.name,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 20.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
 
-                        // Upload Speed
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Rounded.ArrowUpward,
-                                    contentDescription = "Upload",
-                                    tint = MaterialTheme.colorScheme.secondary,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "UPLOAD",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Text(
-                                text = stats.formattedUploadSpeed(),
-                                style = NumberDisplaySmall,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        // Session Transferred
-                        Column {
-                            Text(
-                                text = "SESSION",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = stats.formattedSessionDownload(),
-                                style = NumberDisplaySmall,
-                                color = MaterialTheme.colorScheme.tertiary
-                            )
-                        }
+                        ExpressiveChip(
+                            text = currentStrategy.tag,
+                            backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                            textColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Live Waveform Canvas
-                    ExpressiveTrafficWave(
-                        speedHistory = stats.recentSpeedHistory,
-                        lineColor = MaterialTheme.colorScheme.primary,
-                        fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+                    Text(
+                        text = currentStrategy.description,
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
 
-        // Live Evasion Stream Ticker
+        // Real-Time Throughput Large Tile
+        item {
+            ExpressiveCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onNavigateToTraffic() },
+                shape = RoundedCornerShape(28.dp),
+                backgroundColor = MaterialTheme.colorScheme.surfaceContainer
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "LIVE THROUGHPUT",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 12.sp,
+                            letterSpacing = 0.8.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Text(
+                            text = "${stats.activeConnections} active sockets",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = "DOWNLOAD",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = stats.formattedDownloadSpeed(),
+                                style = NumberDisplayMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "UPLOAD",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = stats.formattedUploadSpeed(),
+                                style = NumberDisplayMedium,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    ExpressiveTrafficWave(
+                        speedHistory = stats.recentSpeedHistory,
+                        lineColor = MaterialTheme.colorScheme.primary,
+                        fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                    )
+                }
+            }
+        }
+
+        // Recent Intercepted Packets
         item {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -369,16 +305,17 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "RECENT PACKET DESYNC",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
+                        text = "INTERCEPTED FLOWS",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 12.sp,
+                        letterSpacing = 0.8.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     Text(
                         text = "View Inspector",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable { onNavigateToTraffic() }
                     )
@@ -390,51 +327,50 @@ fun DashboardScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(ExpressiveShapes.Squircle)
+                            .clip(RoundedCornerShape(20.dp))
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                            .padding(16.dp),
+                            .padding(20.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (isConnected) "Listening for DPI traffic..." else "Connect to start desyncing packets",
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = if (isConnected) "Listening for DPI packets..." else "Activate Zapret to bypass DPI",
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         recentLogs.take(3).forEach { log ->
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(ExpressiveShapes.SuperPill)
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                            ExpressiveCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(20.dp),
+                                backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
                             ) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Bolt,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = log.domain,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.SemiBold,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
                                             color = MaterialTheme.colorScheme.onSurface,
                                             maxLines = 1
                                         )
+                                        Text(
+                                            text = "${log.protocol} : ${log.port}",
+                                            fontWeight = FontWeight.Normal,
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
 
                                     ExpressiveChip(
                                         text = log.technique,
@@ -449,65 +385,25 @@ fun DashboardScreen(
             }
         }
 
-        // Speed Test CTA
+        // Large Thumb Action Button for Speed Test
         item {
-            ExpressiveCard(
+            Button(
+                onClick = { onNavigateToSpeedTest() },
+                shape = RoundedCornerShape(24.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onNavigateToSpeedTest() },
-                shape = ExpressiveShapes.SuperPill,
-                backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    .height(60.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.tertiaryContainer),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Speed,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column {
-                            Text(
-                                text = "Test Internet Speed",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Benchmark unthrottled bandwidth",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    ExpressiveChip(
-                        text = "START",
-                        backgroundColor = MaterialTheme.colorScheme.tertiary,
-                        textColor = MaterialTheme.colorScheme.onTertiary
-                    )
-                }
+                Text(
+                    text = "TEST INTERNET SPEED",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 15.sp,
+                    letterSpacing = 0.5.sp
+                )
             }
         }
     }

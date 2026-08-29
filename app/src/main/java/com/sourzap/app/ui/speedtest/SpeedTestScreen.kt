@@ -1,8 +1,5 @@
 package com.sourzap.app.ui.speedtest
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,22 +11,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowDownward
-import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -48,8 +33,6 @@ import com.sourzap.app.data.model.SpeedTestPhase
 import com.sourzap.app.ui.components.ExpressiveCard
 import com.sourzap.app.ui.components.ExpressiveChip
 import com.sourzap.app.ui.components.ExpressiveSpeedGauge
-import com.sourzap.app.ui.components.ScallopedBadge
-import com.sourzap.app.ui.theme.ExpressiveShapes
 import com.sourzap.app.ui.theme.NumberDisplayMedium
 import kotlinx.coroutines.launch
 
@@ -74,7 +57,7 @@ fun SpeedTestScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 20.dp, bottom = 100.dp),
+        contentPadding = PaddingValues(top = 24.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Header
@@ -85,31 +68,23 @@ fun SpeedTestScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Speed Test",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        ScallopedBadge(
-                            text = "TURBO",
-                            backgroundColor = MaterialTheme.colorScheme.primaryContainer,
-                            textColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-
                     Text(
-                        text = "Benchmark network line speed & latency",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "Speed Test",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 32.sp,
+                        letterSpacing = (-1).sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Bandwidth & Latency Benchmark",
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
                 ExpressiveChip(
                     text = currentStrategy.name,
-                    icon = Icons.Rounded.Speed,
                     backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
                     textColor = MaterialTheme.colorScheme.onSecondaryContainer
                 )
@@ -120,39 +95,36 @@ fun SpeedTestScreen(
         item {
             ExpressiveCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = ExpressiveShapes.AsymmetricPillLarge,
+                shape = RoundedCornerShape(32.dp),
                 backgroundColor = MaterialTheme.colorScheme.surfaceContainer
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     ExpressiveSpeedGauge(
                         speedMbps = state.activeGaugeSpeedMbps,
-                        pingMs = state.currentPingMs,
-                        jitterMs = state.currentJitterMs,
-                        isTesting = isRunning,
                         statusText = state.statusMessage
                     )
 
                     if (isRunning) {
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
                         LinearProgressIndicator(
                             progress = { state.progress },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp)),
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
                             color = MaterialTheme.colorScheme.primary,
                             trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
 
-                    // Start / Stop Button
+                    // Large Smartphone Action Button (64dp height)
                     Button(
                         onClick = {
                             if (isRunning) {
@@ -161,57 +133,46 @@ fun SpeedTestScreen(
                                 scope.launch { speedEngine.runSpeedTest() }
                             }
                         },
-                        shape = ExpressiveShapes.SuperPill,
+                        shape = RoundedCornerShape(24.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (isRunning) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primary,
                             contentColor = if (isRunning) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimary
                         ),
                         modifier = Modifier
-                            .fillMaxWidth(0.7f)
-                            .height(52.dp)
+                            .fillMaxWidth()
+                            .height(64.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = if (isRunning) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (isRunning) "CANCEL TEST" else "START TEST",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                letterSpacing = 0.5.sp
-                            )
-                        }
+                        Text(
+                            text = if (isRunning) "CANCEL TEST" else "START SPEED TEST",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 16.sp,
+                            letterSpacing = 0.8.sp
+                        )
                     }
                 }
             }
         }
 
-        // Metric Readout Grid (Ping, Jitter, Download, Upload)
+        // Large 2x2 Metric Tiles
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Ping
+                // Ping Tile
                 ExpressiveCard(
                     modifier = Modifier.weight(1f),
-                    shape = ExpressiveShapes.Squircle,
+                    shape = RoundedCornerShape(24.dp),
                     backgroundColor = MaterialTheme.colorScheme.surfaceContainer
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        modifier = Modifier.padding(18.dp),
+                        horizontalAlignment = Alignment.Start
                     ) {
                         Text(
                             text = "PING",
-                            style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(4.dp))
@@ -223,20 +184,20 @@ fun SpeedTestScreen(
                     }
                 }
 
-                // Jitter
+                // Jitter Tile
                 ExpressiveCard(
                     modifier = Modifier.weight(1f),
-                    shape = ExpressiveShapes.Squircle,
+                    shape = RoundedCornerShape(24.dp),
                     backgroundColor = MaterialTheme.colorScheme.surfaceContainer
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        modifier = Modifier.padding(18.dp),
+                        horizontalAlignment = Alignment.Start
                     ) {
                         Text(
                             text = "JITTER",
-                            style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(4.dp))
@@ -253,33 +214,24 @@ fun SpeedTestScreen(
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Download
+                // Download Tile
                 ExpressiveCard(
                     modifier = Modifier.weight(1f),
-                    shape = ExpressiveShapes.Squircle,
+                    shape = RoundedCornerShape(24.dp),
                     backgroundColor = MaterialTheme.colorScheme.surfaceContainer
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        modifier = Modifier.padding(18.dp),
+                        horizontalAlignment = Alignment.Start
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.ArrowDownward,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "DOWNLOAD",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Text(
+                            text = "DOWNLOAD",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = if (state.currentDownloadMbps > 0) String.format("%.1f", state.currentDownloadMbps) else "--",
@@ -289,31 +241,22 @@ fun SpeedTestScreen(
                     }
                 }
 
-                // Upload
+                // Upload Tile
                 ExpressiveCard(
                     modifier = Modifier.weight(1f),
-                    shape = ExpressiveShapes.Squircle,
+                    shape = RoundedCornerShape(24.dp),
                     backgroundColor = MaterialTheme.colorScheme.surfaceContainer
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        modifier = Modifier.padding(18.dp),
+                        horizontalAlignment = Alignment.Start
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.ArrowUpward,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.tertiary,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "UPLOAD",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Text(
+                            text = "UPLOAD",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = if (state.currentUploadMbps > 0) String.format("%.1f", state.currentUploadMbps) else "--",
@@ -325,30 +268,32 @@ fun SpeedTestScreen(
             }
         }
 
-        // Test History
+        // Test History Section
         item {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "RECENT BENCHMARKS",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 12.sp,
+                    letterSpacing = 0.8.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 if (history.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(ExpressiveShapes.Squircle)
+                            .clip(RoundedCornerShape(20.dp))
                             .background(MaterialTheme.colorScheme.surfaceContainer)
-                            .padding(16.dp),
+                            .padding(20.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No tests recorded yet. Run your first speed test above.",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "No speed tests recorded yet",
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -357,41 +302,43 @@ fun SpeedTestScreen(
                         history.take(4).forEach { test ->
                             ExpressiveCard(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = ExpressiveShapes.Squircle,
+                                shape = RoundedCornerShape(20.dp),
                                 backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
                             ) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(12.dp),
+                                        .padding(16.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column {
                                         Text(
                                             text = test.strategyName,
-                                            style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp,
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                         Text(
                                             text = test.formattedDate(),
-                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Normal,
+                                            fontSize = 12.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
 
-                                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                         Column(horizontalAlignment = Alignment.End) {
                                             Text(
-                                                text = String.format("↓ %.1f Mbps", test.downloadMbps),
-                                                style = MaterialTheme.typography.bodyMedium,
+                                                text = String.format("DL %.1f Mbps", test.downloadMbps),
                                                 fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
                                                 color = MaterialTheme.colorScheme.primary
                                             )
                                             Text(
-                                                text = String.format("↑ %.1f Mbps", test.uploadMbps),
-                                                style = MaterialTheme.typography.bodySmall,
+                                                text = String.format("UL %.1f Mbps", test.uploadMbps),
+                                                fontWeight = FontWeight.Medium,
+                                                fontSize = 12.sp,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
