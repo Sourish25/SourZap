@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * High-Performance Local Transparent Proxy Server for Android VpnService.
- * Seamlessly accepts HTTP/HTTPS traffic from all Android applications (Chrome, YouTube, DuckDuckGo, system apps),
+ * Seamlessly accepts HTTP/HTTPS traffic from all Android applications (Chrome, YouTube, WhatsApp, DuckDuckGo, system apps),
  * applies Zapret DPI desynchronization on upstream connections, and proxies bidirectional streams at Gigabit line speed.
  */
 class LocalDpiProxyServer(
@@ -31,7 +31,7 @@ class LocalDpiProxyServer(
         private set
 
     fun start(): Int {
-        val server = ServerSocket(0, 128, InetAddress.getByName("127.0.0.1"))
+        val server = ServerSocket(0, 256, InetAddress.getByName("127.0.0.1"))
         serverSocket = server
         port = server.localPort
         isRunning.set(true)
@@ -64,7 +64,8 @@ class LocalDpiProxyServer(
 
         try {
             clientSocket.tcpNoDelay = true
-            clientSocket.soTimeout = 15000
+            clientSocket.keepAlive = true
+            clientSocket.soTimeout = 0 // Infinite timeout for persistent WhatsApp/Telegram messaging streams
 
             val clientIn = clientSocket.getInputStream()
             val clientOut = clientSocket.getOutputStream()
@@ -72,7 +73,6 @@ class LocalDpiProxyServer(
             // Read the initial request line/headers
             val headerBuffer = ByteArray(8192)
             var totalRead = 0
-            var headerEnd = -1
 
             while (totalRead < headerBuffer.size) {
                 val b = clientIn.read()
@@ -85,7 +85,6 @@ class LocalDpiProxyServer(
                     headerBuffer[totalRead - 2] == '\r'.code.toByte() &&
                     headerBuffer[totalRead - 1] == '\n'.code.toByte()
                 ) {
-                    headerEnd = totalRead
                     break
                 }
             }
@@ -96,7 +95,7 @@ class LocalDpiProxyServer(
             val firstLine = headerStr.lineSequence().firstOrNull() ?: ""
 
             if (firstLine.startsWith("CONNECT ", ignoreCase = true)) {
-                // --- HTTPS CONNECT Tunneling ---
+                // --- HTTPS & Messaging CONNECT Tunneling (WhatsApp, Chrome, YouTube, Discord) ---
                 val parts = firstLine.split(" ")
                 if (parts.size < 2) return
 
@@ -106,57 +105,74 @@ class LocalDpiProxyServer(
 
                 // Connect to remote upstream with protected socket
                 val upstream = Socket().apply {
-                    receiveBufferSize = 1048576 // 1 MB Receive Buffer for 4K/8K Video
+                    receiveBufferSize = 1048576 // 1 MB Receive Buffer
                     sendBufferSize = 524288     // 512 KB Send Buffer
                     tcpNoDelay = true
                     keepAlive = true
+                    soTimeout = 0               // Persistent keepalive
                     trafficClass = 0x08         // IPTOS_THROUGHPUT
                     setPerformancePreferences(0, 1, 2)
                 }
                 upstreamSocket = upstream
 
                 vpnService.protect(upstream)
-                upstream.connect(InetSocketAddress(targetHost, targetPort), 5000)
+                upstream.connect(InetSocketAddress(targetHost, targetPort), 6000)
 
                 // Respond 200 Connection Established to Android client app
                 val response200 = "HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.US_ASCII)
                 clientOut.write(response200)
                 clientOut.flush()
 
-                // Client will now send TLS ClientHello
-                val clientHelloBuffer = ByteArray(16384)
-                val clientHelloLen = clientIn.read(clientHelloBuffer)
-                if (clientHelloLen > 0) {
+                // Client will now send initial payload (TLS ClientHello, or WhatsApp Noise Handshake)
+                val initialBuffer = ByteArray(16384)
+                val initialLen = clientIn.read(initialBuffer)
+                if (initialLen > 0) {
                     val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
-                    var appliedTechnique = "DIRECT"
-
-                    val sniResult = TlsParser.parseClientHello(clientHelloBuffer, clientHelloLen)
-                    val logDomain = sniResult.hostname ?: targetHost
-
                     val upstreamOut = upstream.getOutputStream()
-
-                    // Apply Zapret DPI Desync on ClientHello
-                    DpiEngine.desyncAndSend(
-                        socket = upstream,
-                        outputStream = upstreamOut,
-                        payload = clientHelloBuffer,
-                        length = clientHelloLen,
-                        strategy = strategy,
-                        onTechniqueApplied = { appliedTechnique = it }
-                    )
-
-                    TrafficMonitor.addConnectionLog(
-                        ConnectionLog(
-                            domain = logDomain,
-                            port = targetPort,
-                            protocol = "TLS",
-                            technique = appliedTechnique,
-                            bytesTransferred = clientHelloLen.toLong()
-                        )
-                    )
-
-                    // Pump remaining traffic bidirectionally at full Gigabit speed
                     val upstreamIn = upstream.getInputStream()
+
+                    val sniResult = TlsParser.parseClientHello(initialBuffer, initialLen)
+
+                    if (sniResult.isClientHello) {
+                        // Standard TLS Handshake -> Apply Zapret DPI desync
+                        var appliedTechnique = "DIRECT"
+                        val logDomain = sniResult.hostname ?: targetHost
+
+                        DpiEngine.desyncAndSend(
+                            socket = upstream,
+                            outputStream = upstreamOut,
+                            payload = initialBuffer,
+                            length = initialLen,
+                            strategy = strategy,
+                            onTechniqueApplied = { appliedTechnique = it }
+                        )
+
+                        TrafficMonitor.addConnectionLog(
+                            ConnectionLog(
+                                domain = logDomain,
+                                port = targetPort,
+                                protocol = "TLS",
+                                technique = appliedTechnique,
+                                bytesTransferred = initialLen.toLong()
+                            )
+                        )
+                    } else {
+                        // Non-TLS / WhatsApp Noise Protocol Handshake -> Passthrough cleanly
+                        upstreamOut.write(initialBuffer, 0, initialLen)
+                        upstreamOut.flush()
+
+                        TrafficMonitor.addConnectionLog(
+                            ConnectionLog(
+                                domain = targetHost,
+                                port = targetPort,
+                                protocol = "NOISE_STREAM",
+                                technique = "PASSTHROUGH",
+                                bytesTransferred = initialLen.toLong()
+                            )
+                        )
+                    }
+
+                    // Pump remaining stream bidirectionally
                     pumpBidirectional(clientIn, clientOut, upstreamIn, upstreamOut)
                 }
             } else {
@@ -169,11 +185,12 @@ class LocalDpiProxyServer(
                     val upstream = Socket().apply {
                         tcpNoDelay = true
                         keepAlive = true
+                        soTimeout = 0
                     }
                     upstreamSocket = upstream
 
                     vpnService.protect(upstream)
-                    upstream.connect(InetSocketAddress(targetHost, targetPort), 5000)
+                    upstream.connect(InetSocketAddress(targetHost, targetPort), 6000)
 
                     val upstreamOut = upstream.getOutputStream()
                     val upstreamIn = upstream.getInputStream()
@@ -253,11 +270,13 @@ class LocalDpiProxyServer(
             }
         }
 
-        // Wait until one direction completes
-        while (clientJob.isActive && upstreamJob.isActive && isRunning.get()) {
-            Thread.sleep(50)
+        scope.launch(Dispatchers.IO) {
+            try {
+                clientJob.join()
+            } catch (_: Exception) {}
+            try {
+                upstreamJob.join()
+            } catch (_: Exception) {}
         }
-        clientJob.cancel()
-        upstreamJob.cancel()
     }
 }

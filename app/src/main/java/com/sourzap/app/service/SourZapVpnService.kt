@@ -16,6 +16,7 @@ import com.sourzap.app.service.core.ByteArrayPool
 import com.sourzap.app.service.core.DohResolver
 import com.sourzap.app.service.core.LocalDpiProxyServer
 import com.sourzap.app.service.core.TunTcpRelay
+import com.sourzap.app.service.core.TunUdpRelay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -36,6 +37,7 @@ class SourZapVpnService : VpnService() {
 
     private var proxyServer: LocalDpiProxyServer? = null
     private var tcpRelay: TunTcpRelay? = null
+    private var udpRelay: TunUdpRelay? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
@@ -108,6 +110,7 @@ class SourZapVpnService : VpnService() {
         notificationJob?.cancel()
         proxyServer?.stop()
         tcpRelay?.closeAll()
+        udpRelay?.closeAll()
         serviceScope.cancel()
 
         try {
@@ -125,6 +128,7 @@ class SourZapVpnService : VpnService() {
         val packetBuffer = ByteArrayPool.obtainPacketBuffer()
 
         tcpRelay = TunTcpRelay(this, outputStream, serviceScope)
+        udpRelay = TunUdpRelay(this, outputStream, serviceScope)
 
         try {
             while (serviceScope.isActive && isRunning) {
@@ -174,7 +178,6 @@ class SourZapVpnService : VpnService() {
                         if (responseWire != null) {
                             TrafficMonitor.recordRxBytes(responseWire.size.toLong())
 
-                            // Synthesize IPv4 UDP DNS response packet and write back to TUN interface
                             val replyPacket = buildUdpIpPacket(
                                 srcIp = dstIp,
                                 dstIp = srcIp,
@@ -212,6 +215,10 @@ class SourZapVpnService : VpnService() {
                             bytesTransferred = length.toLong()
                         )
                     )
+                } else if (udpPayloadLen > 0) {
+                    // Forward general UDP traffic (WhatsApp Voice/Calling, WebRTC, STUN/TURN, Telegram)
+                    val udpPayload = buffer.copyOfRange(udpPayloadOffset, length)
+                    udpRelay?.handleUdpPacket(srcIp, dstIp, srcPort, dstPort, udpPayload)
                 }
             }
         }
