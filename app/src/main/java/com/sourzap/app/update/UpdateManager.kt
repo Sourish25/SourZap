@@ -11,12 +11,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.runBlocking
+import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
+import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
 data class AppReleaseInfo(
@@ -33,7 +36,7 @@ sealed class UpdateState {
     object Idle : UpdateState()
     object Checking : UpdateState()
     data class Available(val release: AppReleaseInfo) : UpdateState()
-    object UpToDate : UpdateState()
+    data class UpToDate(val release: AppReleaseInfo? = null) : UpdateState()
     data class Downloading(val progress: Float, val downloadedBytes: Long, val totalBytes: Long) : UpdateState()
     data class ReadyToInstall(val apkFile: File) : UpdateState()
     data class Error(val message: String) : UpdateState()
@@ -41,44 +44,51 @@ sealed class UpdateState {
 
 class UpdateManager(private val context: Context) {
 
+    // Custom DoH DNS for OkHttp: resolves GitHub APIs & CDN assets directly without ISP DNS poisoning
+    private val dohDns = object : Dns {
+        override fun lookup(hostname: String): List<InetAddress> {
+            return try {
+                val resolved = runBlocking(Dispatchers.IO) {
+                    DohResolver.resolve(hostname)
+                }
+                if (resolved.isNotEmpty()) resolved else Dns.SYSTEM.lookup(hostname)
+            } catch (_: Exception) {
+                try {
+                    Dns.SYSTEM.lookup(hostname)
+                } catch (_: Exception) {
+                    when (hostname) {
+                        "api.github.com" -> listOf(InetAddress.getByName("20.207.73.85"))
+                        "github.com" -> listOf(InetAddress.getByName("20.207.73.82"))
+                        "uploads.github.com" -> listOf(InetAddress.getByName("20.207.73.81"))
+                        else -> emptyList()
+                    }
+                }
+            }
+        }
+    }
+
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .dns(dohDns)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
     fun checkForUpdates(currentVersion: String): Flow<UpdateState> = flow {
         emit(UpdateState.Checking)
         try {
-            val apiIps = DohResolver.resolve("api.github.com")
-            val targetIp = apiIps.firstOrNull()?.hostAddress ?: "20.207.73.85"
-
             val request = Request.Builder()
                 .url("https://api.github.com/repos/Sourish25/SourZap/releases/latest")
-                .header("User-Agent", "SourZap-App")
+                .header("User-Agent", "SourZap-Android-App")
                 .header("Accept", "application/vnd.github+json")
                 .build()
 
             var responseBody: String? = null
 
-            try {
-                httpClient.newCall(request).execute().use { res ->
-                    if (res.isSuccessful) {
-                        responseBody = res.body?.string()
-                    }
-                }
-            } catch (_: Exception) {
-                // Try direct IP fallback if hostname blocked
-                val directReq = Request.Builder()
-                    .url("https://$targetIp/repos/Sourish25/SourZap/releases/latest")
-                    .header("Host", "api.github.com")
-                    .header("User-Agent", "SourZap-App")
-                    .header("Accept", "application/vnd.github+json")
-                    .build()
-
-                httpClient.newCall(directReq).execute().use { res ->
-                    if (res.isSuccessful) {
-                        responseBody = res.body?.string()
-                    }
+            httpClient.newCall(request).execute().use { res ->
+                if (res.isSuccessful) {
+                    responseBody = res.body?.string()
                 }
             }
 
@@ -109,7 +119,7 @@ class UpdateManager(private val context: Context) {
             }
 
             if (apkUrl.isEmpty()) {
-                emit(UpdateState.UpToDate)
+                emit(UpdateState.UpToDate(null))
                 return@flow
             }
 
@@ -131,7 +141,7 @@ class UpdateManager(private val context: Context) {
             if (isNewer) {
                 emit(UpdateState.Available(releaseInfo))
             } else {
-                emit(UpdateState.UpToDate)
+                emit(UpdateState.UpToDate(releaseInfo))
             }
         } catch (e: Exception) {
             emit(UpdateState.Error(e.message ?: "Failed to check for updates"))
@@ -148,7 +158,7 @@ class UpdateManager(private val context: Context) {
         try {
             val request = Request.Builder()
                 .url(downloadUrl)
-                .header("User-Agent", "SourZap-App")
+                .header("User-Agent", "SourZap-Android-App")
                 .build()
 
             httpClient.newCall(request).execute().use { response ->

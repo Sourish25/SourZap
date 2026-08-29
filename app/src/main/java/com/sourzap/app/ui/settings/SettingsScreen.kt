@@ -428,7 +428,7 @@ fun SettingsScreen(
                                     .padding(14.dp)
                             ) {
                                 Text(
-                                    text = "✨ You are on the latest version of SourZap!",
+                                    text = "âœ¨ You are on the latest version of SourZap!",
                                     fontWeight = FontWeight.Medium,
                                     fontSize = 13.sp,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -451,7 +451,7 @@ fun SettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "🚀 New Version: ${state.release.tagName}",
+                                        text = "ðŸš€ New Version: ${state.release.tagName}",
                                         fontWeight = FontWeight.Black,
                                         fontSize = 16.sp,
                                         color = MaterialTheme.colorScheme.onSurface
@@ -550,7 +550,7 @@ fun SettingsScreen(
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Text(
-                                    text = "🎉 Update package downloaded & verified!",
+                                    text = "ðŸŽ‰ Update package downloaded & verified!",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -581,7 +581,7 @@ fun SettingsScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "⚠️ ${state.message}",
+                                    text = "âš ï¸ ${state.message}",
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onErrorContainer,
                                     modifier = Modifier.weight(1f)
@@ -612,7 +612,7 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "SourZap v1.0.0",
+                            text = "SourZap v1.0.1",
                             fontWeight = FontWeight.Black,
                             fontSize = 18.sp,
                             color = MaterialTheme.colorScheme.onSurface

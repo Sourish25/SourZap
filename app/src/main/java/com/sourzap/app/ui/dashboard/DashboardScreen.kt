@@ -77,7 +77,8 @@ fun DashboardScreen(
     var downloadProgress by remember { mutableStateOf(0f) }
 
     LaunchedEffect(Unit) {
-        updateManager.checkForUpdates("1.0.0").collect { state ->
+        val currentVer = try { context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0" } catch (_: Exception) { "1.0.0" }
+        updateManager.checkForUpdates(currentVer).collect { state ->
             if (state is UpdateState.Available) {
                 availableRelease = state.release
             }
@@ -149,7 +150,7 @@ fun DashboardScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "🚀 Update Available: ${release.tagName}",
+                                text = "ðŸš€ Update Available: ${release.tagName}",
                                 fontWeight = FontWeight.Black,
                                 fontSize = 15.sp,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
