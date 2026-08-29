@@ -50,7 +50,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.sourzap.app.ui.theme.ExpressiveShapes
 import com.sourzap.app.ui.theme.NumberDisplayLarge
 import kotlinx.coroutines.launch
 import kotlin.math.PI
@@ -58,7 +57,8 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Large Smartphone-Tailored Hero Connect Control with Tactile Haptics
+ * Large Smartphone Hero Connect Control with Tactile Haptics
+ * Generous 170dp touch target with bold 32sp state text.
  */
 @Composable
 fun HeroConnectButton(
@@ -99,15 +99,15 @@ fun HeroConnectButton(
         label = "HeroSubtext"
     )
 
-    val heroShape = RoundedCornerShape(36.dp)
+    val heroShape = RoundedCornerShape(38.dp)
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(160.dp)
+            .height(170.dp)
             .scale(scaleAnim.value)
             .shadow(
-                elevation = if (isConnected) 8.dp else 2.dp,
+                elevation = if (isConnected) 10.dp else 2.dp,
                 shape = heroShape,
                 spotColor = containerColor,
                 ambientColor = containerColor
@@ -120,7 +120,7 @@ fun HeroConnectButton(
                     onPress = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         scope.launch {
-                            scaleAnim.animateTo(0.94f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium))
+                            scaleAnim.animateTo(0.93f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium))
                         }
                         tryAwaitRelease()
                         scope.launch {
@@ -146,10 +146,10 @@ fun HeroConnectButton(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Surface(
-                shape = ExpressiveShapes.SuperPill,
+                shape = RoundedCornerShape(20.dp),
                 color = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
                 Text(
@@ -158,7 +158,7 @@ fun HeroConnectButton(
                     fontSize = 13.sp,
                     letterSpacing = 0.5.sp,
                     color = if (isConnected) MaterialTheme.colorScheme.onPrimary else subtextColor,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
                 )
             }
         }
@@ -166,7 +166,7 @@ fun HeroConnectButton(
 }
 
 /**
- * Large, Non-Clipping Expressive Pill Chip
+ * Thick, Substantive Expressive Pill Chip (Zero-Clipping)
  */
 @Composable
 fun ExpressiveChip(
@@ -175,19 +175,21 @@ fun ExpressiveChip(
     backgroundColor: Color = MaterialTheme.colorScheme.secondaryContainer,
     textColor: Color = MaterialTheme.colorScheme.onSecondaryContainer
 ) {
+    val pillShape = RoundedCornerShape(20.dp)
     Surface(
-        modifier = modifier.clip(ExpressiveShapes.SuperPill),
-        shape = ExpressiveShapes.SuperPill,
+        modifier = modifier.clip(pillShape),
+        shape = pillShape,
         color = backgroundColor
     ) {
         Box(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = text,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Black,
                 fontSize = 13.sp,
+                letterSpacing = 0.3.sp,
                 color = textColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -392,7 +394,8 @@ fun ExpressiveTrafficWave(
 }
 
 /**
- * Large Smartphone Segmented Pill Switch (56dp height) with Haptic Feedback
+ * Thick, Ergonomic Smartphone Segmented Pill Switch (62dp height)
+ * Generous touch targets, thick rounded pill shape, and zero text cutoff.
  */
 @Composable
 fun <T> SegmentedPillSwitch(
@@ -403,17 +406,20 @@ fun <T> SegmentedPillSwitch(
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalHapticFeedback.current
+    val outerShape = RoundedCornerShape(32.dp)
+    val innerShape = RoundedCornerShape(26.dp)
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = ExpressiveShapes.SuperPill,
+        shape = outerShape,
         color = MaterialTheme.colorScheme.surfaceContainerHighest
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(5.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                .padding(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             items.forEach { item ->
                 val isSelected = item == selectedItem
@@ -423,20 +429,20 @@ fun <T> SegmentedPillSwitch(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(48.dp)
-                        .clip(ExpressiveShapes.SuperPill)
+                        .height(50.dp)
+                        .clip(innerShape)
                         .background(bgColor)
                         .clickable {
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onItemSelected(item)
                         }
-                        .padding(horizontal = 6.dp),
+                        .padding(horizontal = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = itemLabel(item),
-                        fontWeight = if (isSelected) FontWeight.Black else FontWeight.SemiBold,
-                        fontSize = 14.sp,
+                        fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
+                        fontSize = 13.5.sp,
                         color = textColor,
                         textAlign = TextAlign.Center,
                         maxLines = 1,
@@ -449,7 +455,7 @@ fun <T> SegmentedPillSwitch(
 }
 
 /**
- * Clean Floating Navigation Dock Tailored for Thumbs with Haptics
+ * Thick, Floating Navigation Dock (66dp height) Tailored for Smartphone Thumbs
  */
 @Composable
 fun FloatingExpressiveDock(
@@ -458,11 +464,13 @@ fun FloatingExpressiveDock(
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalHapticFeedback.current
+    val dockShape = RoundedCornerShape(34.dp)
+    val itemShape = RoundedCornerShape(26.dp)
 
     val items = listOf(
         DockItem("dashboard", "Home"),
         DockItem("speedtest", "Speed"),
-        DockItem("strategies", "Bypass"),
+        DockItem("strategies", "Modes"),
         DockItem("traffic", "Traffic"),
         DockItem("settings", "Settings")
     )
@@ -470,15 +478,17 @@ fun FloatingExpressiveDock(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Surface(
-            shape = ExpressiveShapes.SuperPill,
+            shape = dockShape,
             color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.98f),
-            shadowElevation = 8.dp,
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-            modifier = Modifier.fillMaxWidth()
+            shadowElevation = 10.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(66.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -496,8 +506,8 @@ fun FloatingExpressiveDock(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(44.dp)
-                            .clip(ExpressiveShapes.SuperPill)
+                            .height(48.dp)
+                            .clip(itemShape)
                             .background(pillBg)
                             .clickable {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -509,7 +519,7 @@ fun FloatingExpressiveDock(
                         Text(
                             text = item.label,
                             fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
-                            fontSize = 13.sp,
+                            fontSize = 13.5.sp,
                             color = itemColor,
                             textAlign = TextAlign.Center
                         )

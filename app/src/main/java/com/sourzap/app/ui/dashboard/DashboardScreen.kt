@@ -193,8 +193,11 @@ fun DashboardScreen(
                             text = currentStrategy.name,
                             fontWeight = FontWeight.Black,
                             fontSize = 20.sp,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
                         )
+
+                        Spacer(modifier = Modifier.width(8.dp))
 
                         ExpressiveChip(
                             text = currentStrategy.tag,

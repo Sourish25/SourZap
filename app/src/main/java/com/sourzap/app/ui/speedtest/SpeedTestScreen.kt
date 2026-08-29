@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -67,7 +68,7 @@ fun SpeedTestScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Speed Test",
                         fontWeight = FontWeight.Black,
@@ -82,6 +83,8 @@ fun SpeedTestScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 ExpressiveChip(
                     text = currentStrategy.name,
@@ -312,7 +315,7 @@ fun SpeedTestScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column {
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = test.strategyName,
                                             fontWeight = FontWeight.Bold,
@@ -326,6 +329,8 @@ fun SpeedTestScreen(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
 
                                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                         Column(horizontalAlignment = Alignment.End) {

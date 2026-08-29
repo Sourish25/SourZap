@@ -137,7 +137,7 @@ fun SettingsScreen(
                     modifier = Modifier.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Color Palette Chooser
+                    // Color Palette Chooser (2 per row for generous boundary fitting)
                     Column {
                         Text(
                             text = "Color Palette",
@@ -152,33 +152,41 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
 
                         val presets = AppThemePreset.values().toList()
+                        val currentActivePreset = presets.firstOrNull { it.id == themePreset } ?: AppThemePreset.DYNAMIC
+
+                        // Row 1: Dynamic Monet & Indigo
                         SegmentedPillSwitch(
-                            items = presets.take(3),
-                            selectedItem = presets.firstOrNull { it.id == themePreset } ?: AppThemePreset.DYNAMIC,
+                            items = listOf(AppThemePreset.DYNAMIC, AppThemePreset.ELECTRIC_INDIGO),
+                            selectedItem = currentActivePreset,
                             itemLabel = {
-                                when (it.id) {
-                                    "DYNAMIC" -> "Dynamic Monet"
-                                    "ELECTRIC_INDIGO" -> "Indigo"
-                                    else -> "Mint"
-                                }
+                                if (it == AppThemePreset.DYNAMIC) "Dynamic Monet" else "Electric Indigo"
                             },
                             onItemSelected = { settingsRepo.setThemePreset(it.id) }
                         )
 
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        // Row 2: Fresh Mint & Berry Vivid
                         SegmentedPillSwitch(
-                            items = presets.drop(3),
-                            selectedItem = presets.firstOrNull { it.id == themePreset } ?: AppThemePreset.DYNAMIC,
+                            items = listOf(AppThemePreset.CYBER_MINT, AppThemePreset.BERRY_EXPRESSIVE),
+                            selectedItem = currentActivePreset,
                             itemLabel = {
-                                when (it.id) {
-                                    "BERRY_EXPRESSIVE" -> "Berry"
-                                    "SUNSET_TERRACOTTA" -> "Sunset"
-                                    else -> "Oceanic"
-                                }
+                                if (it == AppThemePreset.CYBER_MINT) "Fresh Mint" else "Berry Vivid"
+                            },
+                            onItemSelected = { settingsRepo.setThemePreset(it.id) }
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Row 3: Sunset Glow & Oceanic Cyan
+                        SegmentedPillSwitch(
+                            items = listOf(AppThemePreset.SUNSET_TERRACOTTA, AppThemePreset.OCEANIC_CYAN),
+                            selectedItem = currentActivePreset,
+                            itemLabel = {
+                                if (it == AppThemePreset.SUNSET_TERRACOTTA) "Sunset Glow" else "Oceanic Cyan"
                             },
                             onItemSelected = { settingsRepo.setThemePreset(it.id) }
                         )
@@ -192,16 +200,16 @@ fun SettingsScreen(
                             fontSize = 16.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
                         SegmentedPillSwitch(
                             items = listOf("SYSTEM", "DARK", "LIGHT"),
                             selectedItem = darkModePref,
                             itemLabel = {
                                 when (it) {
-                                    "SYSTEM" -> "Follow System"
-                                    "DARK" -> "Dark Mode"
-                                    else -> "Light Mode"
+                                    "SYSTEM" -> "System"
+                                    "DARK" -> "Dark"
+                                    else -> "Light"
                                 }
                             },
                             onItemSelected = { settingsRepo.setDarkModePref(it) }
