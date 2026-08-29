@@ -14,12 +14,18 @@ import java.util.concurrent.TimeUnit
 object DohResolver {
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
+        .connectTimeout(3, TimeUnit.SECONDS)
+        .readTimeout(3, TimeUnit.SECONDS)
         .build()
 
     private val dnsCache = ConcurrentHashMap<String, Pair<List<InetAddress>, Long>>() // Domain -> (IPs, ExpireTime)
     private const val CACHE_TTL_MS = 300_000L // 5 minutes
+
+    private val ALL_PROVIDERS = listOf(
+        DohProvider.CLOUDFLARE,
+        DohProvider.GOOGLE,
+        DohProvider.QUAD9
+    )
 
     suspend fun resolve(domain: String, provider: DohProvider = DohProvider.CLOUDFLARE): List<InetAddress> = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
@@ -37,33 +43,35 @@ object DohResolver {
             }
         } catch (_: Exception) {}
 
-        try {
-            // Build raw DNS wire-format query (Type A)
-            val queryWire = buildDnsQueryWire(domain)
-            val requestBody = queryWire.toRequestBody("application/dns-message".toMediaType())
+        // 1. Try Primary DoH Provider then fallback to others
+        val orderedProviders = listOf(provider) + ALL_PROVIDERS.filter { it != provider }
+        for (p in orderedProviders) {
+            try {
+                val queryWire = buildDnsQueryWire(domain)
+                val requestBody = queryWire.toRequestBody("application/dns-message".toMediaType())
 
-            val request = Request.Builder()
-                .url(provider.url)
-                .post(requestBody)
-                .addHeader("Accept", "application/dns-message")
-                .build()
+                val request = Request.Builder()
+                    .url(p.url)
+                    .post(requestBody)
+                    .addHeader("Accept", "application/dns-message")
+                    .build()
 
-            httpClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val responseBytes = response.body?.bytes()
-                    if (responseBytes != null) {
-                        val ips = parseDnsResponseWire(responseBytes)
-                        if (ips.isNotEmpty()) {
-                            dnsCache[domain] = Pair(ips, now + CACHE_TTL_MS)
-                            return@withContext ips
+                httpClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val responseBytes = response.body?.bytes()
+                        if (responseBytes != null) {
+                            val ips = parseDnsResponseWire(responseBytes)
+                            if (ips.isNotEmpty()) {
+                                dnsCache[domain] = Pair(ips, now + CACHE_TTL_MS)
+                                return@withContext ips
+                            }
                         }
                     }
                 }
-            }
-        } catch (e: Exception) {
-            // Fallback to local resolver if DoH fails
+            } catch (_: Exception) {}
         }
 
+        // 2. Fallback to system resolver
         try {
             val fallback = InetAddress.getAllByName(domain).toList()
             if (fallback.isNotEmpty()) {
@@ -76,23 +84,36 @@ object DohResolver {
     }
 
     /**
-     * Resolves wire DNS query bytes received from UDP port 53 and returns wire DNS response bytes
+     * Resolves wire DNS query bytes received from UDP port 53 and returns wire DNS response bytes.
+     * Automatically attempts multiple DoH providers to defeat ISP DNS blocks.
      */
     suspend fun resolveWireQuery(queryBytes: ByteArray, provider: DohProvider = DohProvider.CLOUDFLARE): ByteArray? = withContext(Dispatchers.IO) {
-        try {
-            val requestBody = queryBytes.toRequestBody("application/dns-message".toMediaType())
-            val request = Request.Builder()
-                .url(provider.url)
-                .post(requestBody)
-                .addHeader("Accept", "application/dns-message")
-                .build()
+        val orderedProviders = listOf(provider) + ALL_PROVIDERS.filter { it != provider }
 
-            httpClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    return@withContext response.body?.bytes()
+        for (p in orderedProviders) {
+            try {
+                val requestBody = queryBytes.toRequestBody("application/dns-message".toMediaType())
+                val request = Request.Builder()
+                    .url(p.url)
+                    .post(requestBody)
+                    .addHeader("Accept", "application/dns-message")
+                    .build()
+
+                httpClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val responseBytes = response.body?.bytes()
+                        if (responseBytes != null && responseBytes.size >= 12) {
+                            // Ensure Transaction ID matches the client query exactly
+                            if (queryBytes.size >= 2) {
+                                responseBytes[0] = queryBytes[0]
+                                responseBytes[1] = queryBytes[1]
+                            }
+                            return@withContext responseBytes
+                        }
+                    }
                 }
-            }
-        } catch (_: Exception) {}
+            } catch (_: Exception) {}
+        }
         null
     }
 

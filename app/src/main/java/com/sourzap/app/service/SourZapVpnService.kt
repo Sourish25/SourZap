@@ -12,8 +12,7 @@ import com.sourzap.app.SourZapApp
 import com.sourzap.app.data.model.ConnectionLog
 import com.sourzap.app.service.core.ByteArrayPool
 import com.sourzap.app.service.core.DohResolver
-import com.sourzap.app.service.core.DpiEngine
-import com.sourzap.app.service.core.TlsParser
+import com.sourzap.app.service.core.TunTcpRelay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,9 +23,6 @@ import kotlinx.coroutines.launch
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.util.concurrent.ConcurrentHashMap
 
 class SourZapVpnService : VpnService() {
 
@@ -34,8 +30,7 @@ class SourZapVpnService : VpnService() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private var notificationJob: Job? = null
     private var isRunning = false
-
-    private val activeStreams = ConcurrentHashMap<String, Boolean>()
+    private var tcpRelay: TunTcpRelay? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
@@ -54,7 +49,8 @@ class SourZapVpnService : VpnService() {
         isRunning = true
         TrafficMonitor.startMonitoring()
 
-        startForeground(NOTIFICATION_ID, buildNotification("SourZap Turbo Active", "DPI Bypass Engine Running"))
+        val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
+        startForeground(NOTIFICATION_ID, buildNotification("SourZap: ${strategy.name}", "⚡ Smart DPI Bypass Engine Active"))
 
         serviceScope.launch {
             try {
@@ -94,8 +90,8 @@ class SourZapVpnService : VpnService() {
         isRunning = false
         TrafficMonitor.stopMonitoring()
         notificationJob?.cancel()
+        tcpRelay?.closeAll()
         serviceScope.cancel()
-        activeStreams.clear()
 
         try {
             vpnInterface?.close()
@@ -110,6 +106,8 @@ class SourZapVpnService : VpnService() {
         val inputStream = FileInputStream(vpnPfd.fileDescriptor)
         val outputStream = FileOutputStream(vpnPfd.fileDescriptor)
         val packetBuffer = ByteArrayPool.obtainPacketBuffer()
+
+        tcpRelay = TunTcpRelay(this, outputStream, serviceScope)
 
         try {
             while (serviceScope.isActive && isRunning) {
@@ -140,25 +138,8 @@ class SourZapVpnService : VpnService() {
         val dstIp = InetAddress.getByAddress(buffer.copyOfRange(16, 20))
 
         if (protocol == 6) { // TCP
-            if (length >= ipHeaderLen + 20) {
-                val srcPort = ((buffer[ipHeaderLen].toInt() and 0xFF) shl 8) or (buffer[ipHeaderLen + 1].toInt() and 0xFF)
-                val dstPort = ((buffer[ipHeaderLen + 2].toInt() and 0xFF) shl 8) or (buffer[ipHeaderLen + 3].toInt() and 0xFF)
-                val tcpHeaderLen = ((buffer[ipHeaderLen + 12].toInt() shr 4) and 0x0F) * 4
-                val payloadOffset = ipHeaderLen + tcpHeaderLen
-                val payloadLen = length - payloadOffset
-
-                TrafficMonitor.recordTxBytes(length.toLong())
-
-                if (payloadLen > 0 && (dstPort == 443 || dstPort == 80)) {
-                    val payload = buffer.copyOfRange(payloadOffset, length)
-                    val connectionKey = "${srcIp.hostAddress}:$srcPort->${dstIp.hostAddress}:$dstPort"
-
-                    if (!activeStreams.containsKey(connectionKey)) {
-                        activeStreams[connectionKey] = true
-                        handleTurboTcpStream(connectionKey, dstIp.hostAddress ?: "", dstPort, payload)
-                    }
-                }
-            }
+            TrafficMonitor.recordTxBytes(length.toLong())
+            tcpRelay?.handleTcpPacket(buffer, length, ipHeaderLen, srcIp, dstIp)
         } else if (protocol == 17) { // UDP
             if (length >= ipHeaderLen + 8) {
                 val srcPort = ((buffer[ipHeaderLen].toInt() and 0xFF) shl 8) or (buffer[ipHeaderLen + 1].toInt() and 0xFF)
@@ -197,14 +178,14 @@ class SourZapVpnService : VpnService() {
                                     domain = "DNS Resolution (DoH)",
                                     port = 53,
                                     protocol = "UDP",
-                                    technique = "DOH_WIRE",
+                                    technique = "DOH_FAILOVER",
                                     bytesTransferred = responseWire.size.toLong()
                                 )
                             )
                         }
                     }
                 } else if (dstPort == 443 && strategy.blockQuic) {
-                    // Instantly drop QUIC packet to force browser/YouTube/Discord into TCP mode
+                    // Drop QUIC UDP 443 to force YouTube, Discord, and browsers to fallback to desynced TCP
                     TrafficMonitor.addConnectionLog(
                         ConnectionLog(
                             domain = dstIp.hostAddress ?: "QUIC Endpoint",
@@ -220,7 +201,7 @@ class SourZapVpnService : VpnService() {
     }
 
     /**
-     * Synthesizes a standard IPv4 UDP packet
+     * Synthesizes an RFC 1035 compliant IPv4 UDP packet with IP header checksum.
      */
     private fun buildUdpIpPacket(
         srcIp: InetAddress,
@@ -280,81 +261,6 @@ class SourZapVpnService : VpnService() {
             sum = (sum and 0xFFFF) + (sum shr 16)
         }
         return (sum.inv() and 0xFFFF).toShort()
-    }
-
-    private fun handleTurboTcpStream(connectionKey: String, dstHost: String, dstPort: Int, initialPayload: ByteArray) {
-        val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
-
-        serviceScope.launch {
-            TrafficMonitor.onConnectionOpened()
-            var socket: Socket? = null
-            val streamBuffer = ByteArrayPool.obtainStreamBuffer()
-
-            try {
-                socket = Socket().apply {
-                    receiveBufferSize = 524288 // 512 KB Receive Buffer
-                    sendBufferSize = 524288    // 512 KB Send Buffer
-                    tcpNoDelay = true          // Disable Nagle algorithm
-                    keepAlive = true
-                    trafficClass = 0x08        // IPTOS_THROUGHPUT
-                    setPerformancePreferences(0, 1, 2)
-                }
-
-                protect(socket)
-                socket.connect(InetSocketAddress(dstHost, dstPort), 3500)
-
-                val out = socket.getOutputStream()
-                var appliedTechnique = "DIRECT"
-
-                val sniResult = TlsParser.parseClientHello(initialPayload, initialPayload.size)
-                val logDomain = sniResult.hostname ?: dstHost
-
-                // Apply Zapret Desync on Initial Handshake
-                DpiEngine.desyncAndSend(
-                    socket = socket,
-                    outputStream = out,
-                    payload = initialPayload,
-                    length = initialPayload.size,
-                    strategy = strategy,
-                    onTechniqueApplied = { appliedTechnique = it }
-                )
-
-                TrafficMonitor.addConnectionLog(
-                    ConnectionLog(
-                        domain = logDomain,
-                        port = dstPort,
-                        protocol = if (dstPort == 443) "TLS" else "HTTP",
-                        technique = appliedTechnique,
-                        bytesTransferred = initialPayload.size.toLong()
-                    )
-                )
-
-                val input = socket.getInputStream()
-                var bytesRead = input.read(streamBuffer)
-                var accumulatedBytes = 0L
-
-                while (isRunning && bytesRead != -1) {
-                    accumulatedBytes += bytesRead
-
-                    if (accumulatedBytes >= 65536) {
-                        TrafficMonitor.recordRxBytes(accumulatedBytes)
-                        accumulatedBytes = 0L
-                    }
-
-                    bytesRead = input.read(streamBuffer)
-                }
-
-                if (accumulatedBytes > 0) {
-                    TrafficMonitor.recordRxBytes(accumulatedBytes)
-                }
-            } catch (_: Exception) {
-            } finally {
-                activeStreams.remove(connectionKey)
-                ByteArrayPool.recycleStreamBuffer(streamBuffer)
-                TrafficMonitor.onConnectionClosed()
-                try { socket?.close() } catch (_: Exception) {}
-            }
-        }
     }
 
     private fun startNotificationUpdates() {
