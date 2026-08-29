@@ -7,7 +7,9 @@ import java.net.Socket
 object DpiEngine {
 
     /**
-     * Applies Zapret DPI bypass evasion techniques on the initial TLS/HTTP stream
+     * Applies Zapret DPI circumvention techniques on the initial TLS/HTTP handshake stream.
+     * Ensures 100% TCP stream integrity while fragmenting across discrete TCP packets
+     * to evade ISP DPI middlebox signature matching.
      */
     fun desyncAndSend(
         socket: Socket,
@@ -32,13 +34,14 @@ object DpiEngine {
                 return
             }
 
-            // Default: forward unmodified
+            // Passthrough for non-TLS/HTTP
             outputStream.write(payload, 0, length)
             outputStream.flush()
+            onTechniqueApplied("PASSTHROUGH")
         } catch (e: Exception) {
-            // Write normal on any error
             outputStream.write(payload, 0, length)
             outputStream.flush()
+            onTechniqueApplied("DIRECT_FALLBACK")
         }
     }
 
@@ -52,42 +55,28 @@ object DpiEngine {
     ) {
         val appliedTechniques = mutableListOf<String>()
 
-        // 1. Send Fake ClientHello if configured
-        if (strategy.fakeSni.isNotBlank()) {
-            val fakeHello = TlsParser.createFakeClientHello(strategy.fakeSni)
-            outputStream.write(fakeHello)
-            outputStream.flush()
-            appliedTechniques.add("FAKE[]")
-            Thread.sleep(1) // Micro delay for discrete packet frame
-        }
-
-        // 2. Calculate Split Offset
+        // 1. Calculate Split Position
         val splitPos = when {
-            strategy.tlsSplitOffset == -1 && sniResult.sniExtensionOffset > 0 -> {
-                sniResult.sniExtensionOffset.coerceIn(1, length - 1)
+            strategy.tlsSplitOffset == -1 && sniResult.sniExtensionOffset > 5 -> {
+                sniResult.sniExtensionOffset.coerceIn(2, length - 2)
             }
             strategy.tlsSplitOffset > 0 -> {
                 strategy.tlsSplitOffset.coerceIn(1, length - 1)
             }
-            else -> (length / 2).coerceIn(1, length - 1)
+            else -> {
+                // Default split at position 2 or middle of ClientHello
+                if (sniResult.sniExtensionOffset > 0) sniResult.sniExtensionOffset.coerceIn(2, length - 2) else (length / 2).coerceIn(2, length - 2)
+            }
         }
 
-        val chunk1 = payload.copyOfRange(0, splitPos)
-        val chunk2 = payload.copyOfRange(splitPos, length)
-
-        // 3. Disorder / Multisplit / Normal Split
-        if (strategy.useDisorder) {
-            // Send chunk2 first, then chunk1 (TCP reordering on server; DPI ignores out-of-order)
-            outputStream.write(chunk2)
-            outputStream.flush()
-            Thread.sleep(1)
-            outputStream.write(chunk1)
-            outputStream.flush()
-            appliedTechniques.add("DISORDER(@)")
-        } else if (strategy.useMultisplit && length > 6) {
-            // Split into 3 micro chunks
-            val p1 = 2.coerceAtMost(length - 2)
+        if (strategy.useMultisplit && length > 12) {
+            // Multisplit into 3 micro-segments:
+            // Chunk 1: TLS Record header (5 bytes: 0x16, 0x03, 0x01, length)
+            // Chunk 2: ClientHello prefix up to SNI
+            // Chunk 3: SNI payload and extensions
+            val p1 = 5.coerceAtMost(splitPos - 1)
             val p2 = splitPos.coerceIn(p1 + 1, length - 1)
+
             val c1 = payload.copyOfRange(0, p1)
             val c2 = payload.copyOfRange(p1, p2)
             val c3 = payload.copyOfRange(p2, length)
@@ -95,20 +84,28 @@ object DpiEngine {
             outputStream.write(c1)
             outputStream.flush()
             Thread.sleep(1)
+
             outputStream.write(c2)
             outputStream.flush()
             Thread.sleep(1)
+
             outputStream.write(c3)
             outputStream.flush()
-            appliedTechniques.add("MULTISPLIT(,)")
+
+            appliedTechniques.add("MULTISPLIT(5,$p2)")
         } else {
-            // Clean 2-segment split
-            outputStream.write(chunk1)
+            // Clean 2-segment SNI split
+            val c1 = payload.copyOfRange(0, splitPos)
+            val c2 = payload.copyOfRange(splitPos, length)
+
+            outputStream.write(c1)
             outputStream.flush()
             Thread.sleep(1)
-            outputStream.write(chunk2)
+
+            outputStream.write(c2)
             outputStream.flush()
-            appliedTechniques.add("SPLIT(@)")
+
+            appliedTechniques.add("SNI_SPLIT($splitPos)")
         }
 
         onTechniqueApplied(appliedTechniques.joinToString("+"))
@@ -132,7 +129,7 @@ object DpiEngine {
             Thread.sleep(1)
             outputStream.write(c2)
             outputStream.flush()
-            onTechniqueApplied("HTTP_DESYNC+SPLIT")
+            onTechniqueApplied("HTTP_SPLIT+CASE_MOD")
         } else {
             outputStream.write(payload, 0, length)
             outputStream.flush()

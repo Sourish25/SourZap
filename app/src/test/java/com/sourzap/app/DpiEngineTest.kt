@@ -48,6 +48,6 @@ class DpiEngineTest {
         val yt = BypassStrategy.YOUTUBE_TURBO
         assertEquals("youtube_turbo", yt.id)
         assertTrue(yt.blockQuic)
-        assertTrue(yt.useDisorder)
+        assertTrue(yt.httpHostMod)
     }
 }

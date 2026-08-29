@@ -4,7 +4,6 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.VpnService
-import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
 import com.sourzap.app.MainActivity
@@ -32,12 +31,10 @@ import java.util.concurrent.ConcurrentHashMap
 class SourZapVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
-    // High-concurrency IO scope for gigabit throughput
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private var notificationJob: Job? = null
     private var isRunning = false
 
-    // Fast-path active connection registry to eliminate redundant DPI checks on steady-state streams
     private val activeStreams = ConcurrentHashMap<String, Boolean>()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -154,9 +151,8 @@ class SourZapVpnService : VpnService() {
 
                 if (payloadLen > 0 && (dstPort == 443 || dstPort == 80)) {
                     val payload = buffer.copyOfRange(payloadOffset, length)
-                    val connectionKey = "->:"
+                    val connectionKey = "${srcIp.hostAddress}:$srcPort->${dstIp.hostAddress}:$dstPort"
 
-                    // If it's a new flow, spawn the turbo desync stream handler
                     if (!activeStreams.containsKey(connectionKey)) {
                         activeStreams[connectionKey] = true
                         handleTurboTcpStream(connectionKey, dstIp.hostAddress ?: "", dstPort, payload)
@@ -173,31 +169,48 @@ class SourZapVpnService : VpnService() {
                 TrafficMonitor.recordTxBytes(length.toLong())
                 val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
 
-                if (dstPort == 53 && udpPayloadLen > 0) { // DNS
+                if (dstPort == 53 && udpPayloadLen > 0) { // DNS Query
                     val queryBytes = buffer.copyOfRange(udpPayloadOffset, length)
                     serviceScope.launch {
                         val responseWire = DohResolver.resolveWireQuery(queryBytes, strategy.dohProvider)
                         if (responseWire != null) {
                             TrafficMonitor.recordRxBytes(responseWire.size.toLong())
+
+                            // Synthesize IPv4 UDP DNS response packet and write back to TUN interface
+                            val replyPacket = buildUdpIpPacket(
+                                srcIp = dstIp,
+                                dstIp = srcIp,
+                                srcPort = dstPort,
+                                dstPort = srcPort,
+                                payload = responseWire
+                            )
+
+                            try {
+                                synchronized(vpnOutput) {
+                                    vpnOutput.write(replyPacket)
+                                    vpnOutput.flush()
+                                }
+                            } catch (_: Exception) {}
+
                             TrafficMonitor.addConnectionLog(
                                 ConnectionLog(
-                                    domain = "DNS Resolution",
+                                    domain = "DNS Resolution (DoH)",
                                     port = 53,
-                                    protocol = "DNS (DoH)",
-                                    technique = " [Turbo]",
+                                    protocol = "UDP",
+                                    technique = "DOH_WIRE",
                                     bytesTransferred = responseWire.size.toLong()
                                 )
                             )
                         }
                     }
                 } else if (dstPort == 443 && strategy.blockQuic) {
-                    // Instantly drop QUIC packet to force browser/YouTube/Discord into Turbo TCP mode
+                    // Instantly drop QUIC packet to force browser/YouTube/Discord into TCP mode
                     TrafficMonitor.addConnectionLog(
                         ConnectionLog(
                             domain = dstIp.hostAddress ?: "QUIC Endpoint",
                             port = 443,
-                            protocol = "QUIC (UDP 443)",
-                            technique = "FORCE_TCP_FALLBACK",
+                            protocol = "QUIC",
+                            technique = "BLOCK_QUIC",
                             bytesTransferred = length.toLong()
                         )
                     )
@@ -207,10 +220,68 @@ class SourZapVpnService : VpnService() {
     }
 
     /**
-     * Turbo High-Throughput TCP Stream Handler
-     * 1. Applies Zapret DPI desynchronization on initial handshake.
-     * 2. Immediately switches to zero-copy fast-path jumbo streaming with 512KB socket buffers and TCP_NODELAY.
+     * Synthesizes a standard IPv4 UDP packet
      */
+    private fun buildUdpIpPacket(
+        srcIp: InetAddress,
+        dstIp: InetAddress,
+        srcPort: Int,
+        dstPort: Int,
+        payload: ByteArray
+    ): ByteArray {
+        val totalLength = 20 + 8 + payload.size
+        val packet = ByteArray(totalLength)
+
+        // IPv4 Header (20 bytes)
+        packet[0] = 0x45.toByte() // IPv4, Header Length = 5 words (20 bytes)
+        packet[1] = 0x00.toByte() // TOS
+        packet[2] = ((totalLength shr 8) and 0xFF).toByte()
+        packet[3] = (totalLength and 0xFF).toByte()
+        packet[4] = 0x00.toByte() // Identification
+        packet[5] = 0x00.toByte()
+        packet[6] = 0x40.toByte() // Flags: Don't Fragment
+        packet[7] = 0x00.toByte()
+        packet[8] = 64.toByte()   // TTL
+        packet[9] = 17.toByte()   // Protocol: UDP (17)
+        packet[10] = 0x00.toByte() // Checksum placeholder
+        packet[11] = 0x00.toByte()
+
+        System.arraycopy(srcIp.address, 0, packet, 12, 4)
+        System.arraycopy(dstIp.address, 0, packet, 16, 4)
+
+        // Compute IP Header Checksum
+        val ipChecksum = computeChecksum(packet, 0, 20)
+        packet[10] = ((ipChecksum.toInt() shr 8) and 0xFF).toByte()
+        packet[11] = (ipChecksum.toInt() and 0xFF).toByte()
+
+        // UDP Header (8 bytes)
+        val udpLen = 8 + payload.size
+        packet[20] = ((srcPort shr 8) and 0xFF).toByte()
+        packet[21] = (srcPort and 0xFF).toByte()
+        packet[22] = ((dstPort shr 8) and 0xFF).toByte()
+        packet[23] = (dstPort and 0xFF).toByte()
+        packet[24] = ((udpLen shr 8) and 0xFF).toByte()
+        packet[25] = (udpLen and 0xFF).toByte()
+        packet[26] = 0x00.toByte() // UDP Checksum optional in IPv4
+        packet[27] = 0x00.toByte()
+
+        // Payload
+        System.arraycopy(payload, 0, packet, 28, payload.size)
+        return packet
+    }
+
+    private fun computeChecksum(data: ByteArray, offset: Int, length: Int): Short {
+        var sum = 0
+        for (i in offset until offset + length step 2) {
+            val word = ((data[i].toInt() and 0xFF) shl 8) or (data[i + 1].toInt() and 0xFF)
+            sum += word
+        }
+        while ((sum shr 16) > 0) {
+            sum = (sum and 0xFFFF) + (sum shr 16)
+        }
+        return (sum.inv() and 0xFFFF).toShort()
+    }
+
     private fun handleTurboTcpStream(connectionKey: String, dstHost: String, dstPort: Int, initialPayload: ByteArray) {
         val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
 
@@ -221,13 +292,12 @@ class SourZapVpnService : VpnService() {
 
             try {
                 socket = Socket().apply {
-                    // Maximum Speed Socket Configuration
                     receiveBufferSize = 524288 // 512 KB Receive Buffer
                     sendBufferSize = 524288    // 512 KB Send Buffer
-                    tcpNoDelay = true          // Disable Nagle algorithm for lowest latency
+                    tcpNoDelay = true          // Disable Nagle algorithm
                     keepAlive = true
-                    trafficClass = 0x08        // IPTOS_THROUGHPUT (Prioritize maximum bandwidth)
-                    setPerformancePreferences(0, 1, 2) // Prioritize Throughput > Latency > Connection Time
+                    trafficClass = 0x08        // IPTOS_THROUGHPUT
+                    setPerformancePreferences(0, 1, 2)
                 }
 
                 protect(socket)
@@ -254,12 +324,11 @@ class SourZapVpnService : VpnService() {
                         domain = logDomain,
                         port = dstPort,
                         protocol = if (dstPort == 443) "TLS" else "HTTP",
-                        technique = " [TURBO ⚡]",
+                        technique = appliedTechnique,
                         bytesTransferred = initialPayload.size.toLong()
                     )
                 )
 
-                // High-Throughput Steady-State Downstream Data Pump
                 val input = socket.getInputStream()
                 var bytesRead = input.read(streamBuffer)
                 var accumulatedBytes = 0L
@@ -267,7 +336,6 @@ class SourZapVpnService : VpnService() {
                 while (isRunning && bytesRead != -1) {
                     accumulatedBytes += bytesRead
 
-                    // Batched updates for minimal locking overhead
                     if (accumulatedBytes >= 65536) {
                         TrafficMonitor.recordRxBytes(accumulatedBytes)
                         accumulatedBytes = 0L
