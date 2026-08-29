@@ -54,21 +54,40 @@ object DpiEngine {
     ) {
         val hostname = (sniResult.hostname ?: "").lowercase()
 
-        // Auto-Pilot Dynamic Intelligence: Inspect domain target
+        // 1. Clean Passthrough for Google Search, Play Services, and Cloud infrastructure
+        // to prevent Google Frontend bot-detection / "Unusual Traffic" CAPTCHA
+        val isGoogleSearchOrInfra = (hostname.startsWith("www.google.") || hostname == "google.com" ||
+                hostname.endsWith(".google.com") || hostname.endsWith(".google.co.in") ||
+                hostname.contains("gstatic.com") || hostname.contains("googleapis.com") ||
+                hostname.contains("accounts.google") || hostname.contains("play.google") ||
+                hostname.contains("cloudflare.com") || hostname.contains("apple.com") ||
+                hostname.contains("microsoft.com")) &&
+                !hostname.contains("youtube") && !hostname.contains("googlevideo") && !hostname.contains("ytimg")
+
+        if (strategy.id == "auto_pilot" && isGoogleSearchOrInfra) {
+            outputStream.write(payload, 0, length)
+            outputStream.flush()
+            onTechniqueApplied("CLEAN_PASSTHROUGH")
+            return
+        }
+
+        // 2. Auto-Pilot Dynamic Intelligence: Inspect domain target
         val effectiveStrategy = if (strategy.id == "auto_pilot") {
             when {
                 // Streaming & Video Services -> Max Throughput SNI boundary split
                 hostname.contains("googlevideo") || hostname.contains("youtube") ||
                 hostname.contains("ytimg") || hostname.contains("twitch") ||
                 hostname.contains("netflix") || hostname.contains("instagram") ||
-                hostname.contains("fbcdn") || hostname.contains("tiktok") -> {
+                hostname.contains("fbcdn") || hostname.contains("tiktok") ||
+                hostname.contains("twitter") || hostname.contains("x.com") ||
+                hostname.contains("reddit") -> {
                     BypassStrategy.STREAMING_TURBO
                 }
 
                 // Voice, Gaming & RTC -> Low-latency Split Offset 2
                 hostname.contains("discord") || hostname.contains("gateway") ||
                 hostname.contains("voice") || hostname.contains("rtc") ||
-                hostname.contains("telegram") -> {
+                hostname.contains("telegram") || hostname.contains("t.me") -> {
                     BypassStrategy.GAMING_VOICE
                 }
 
