@@ -26,8 +26,13 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +50,9 @@ import com.sourzap.app.ui.components.HeroConnectButton
 import com.sourzap.app.ui.theme.ExpressiveShapes
 import com.sourzap.app.ui.theme.NumberDisplayMedium
 import com.sourzap.app.ui.theme.NumberDisplaySmall
+import com.sourzap.app.update.AppReleaseInfo
+import com.sourzap.app.update.UpdateState
+import kotlinx.coroutines.launch
 
 @Composable
 fun DashboardScreen(
@@ -61,6 +69,20 @@ fun DashboardScreen(
     val stats by TrafficMonitor.stats.collectAsState()
     val currentStrategy by strategyRepo.currentStrategy.collectAsState()
     val recentLogs by TrafficMonitor.recentLogs.collectAsState()
+
+    val updateManager = app.updateManager
+    val scope = rememberCoroutineScope()
+    var availableRelease by remember { mutableStateOf<AppReleaseInfo?>(null) }
+    var isDownloadingUpdate by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableStateOf(0f) }
+
+    LaunchedEffect(Unit) {
+        updateManager.checkForUpdates("1.0.0").collect { state ->
+            if (state is UpdateState.Available) {
+                availableRelease = state.release
+            }
+        }
+    }
 
     val vpnPrepareLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -108,6 +130,72 @@ fun DashboardScreen(
         contentPadding = PaddingValues(top = 24.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Update Available Banner
+        availableRelease?.let { release ->
+            item {
+                ExpressiveCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                    borderColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "🚀 Update Available: ${release.tagName}",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+
+                            if (!isDownloadingUpdate) {
+                                Button(
+                                    onClick = {
+                                        isDownloadingUpdate = true
+                                        scope.launch {
+                                            updateManager.downloadAndPrepareApk(release.apkDownloadUrl).collect { st ->
+                                                when (st) {
+                                                    is UpdateState.Downloading -> downloadProgress = st.progress
+                                                    is UpdateState.ReadyToInstall -> {
+                                                        isDownloadingUpdate = false
+                                                        updateManager.installApk(st.apkFile)
+                                                    }
+                                                    is UpdateState.Error -> isDownloadingUpdate = false
+                                                    else -> {}
+                                                }
+                                            }
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                ) {
+                                    Text("Update", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                        }
+
+                        if (isDownloadingUpdate) {
+                            Text(
+                                text = "Downloading update... ${(downloadProgress * 100).toInt()}%",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+        }
         // Human Material You Top Bar
         item {
             Row(

@@ -7,6 +7,7 @@ import android.os.Build
 import com.sourzap.app.data.repository.SettingsRepository
 import com.sourzap.app.data.repository.StrategyRepository
 import com.sourzap.app.speedtest.SpeedTestEngine
+import com.sourzap.app.update.UpdateManager
 
 class SourZapApp : Application() {
 
@@ -19,6 +20,9 @@ class SourZapApp : Application() {
     lateinit var speedTestEngine: SpeedTestEngine
         private set
 
+    lateinit var updateManager: UpdateManager
+        private set
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -26,6 +30,7 @@ class SourZapApp : Application() {
         strategyRepository = StrategyRepository(this)
         settingsRepository = SettingsRepository(this)
         speedTestEngine = SpeedTestEngine(settingsRepository, strategyRepository)
+        updateManager = UpdateManager(this)
 
         createNotificationChannels()
     }
