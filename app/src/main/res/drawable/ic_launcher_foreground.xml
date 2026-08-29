@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Outer Concentric Aura Ring -->
+    <path
+        android:pathData="M54,20 C72.78,20 88,35.22 88,54 C88,72.78 72.78,88 54,88 C35.22,88 20,72.78 20,54 C20,35.22 35.22,20 54,20 Z"
+        android:strokeWidth="1.5"
+        android:strokeColor="#4A2694" />
+
+    <!-- Expressive 12-Petal Scalloped Starburst Container -->
+    <!-- Center (54,54), Radius ~26dp with 12 organic curved petals -->
+    <path
+        android:pathData="M 54,28 
+            C 58,28 61,31 63,33 
+            C 67,31 71,33 73,36 
+            C 76,37 78,41 78,45 
+            C 81,48 81,52 80,56 
+            C 81,60 79,64 76,66 
+            C 74,70 70,72 66,72 
+            C 63,75 59,76 54,76 
+            C 49,76 45,75 42,72 
+            C 38,72 34,70 32,66 
+            C 29,64 27,60 28,56 
+            C 27,52 27,48 30,45 
+            C 30,41 32,37 35,36 
+            C 37,33 41,31 45,33 
+            C 47,31 50,28 54,28 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="30"
+                android:startY="30"
+                android:endX="78"
+                android:endY="76"
+                android:type="linear">
+                <item android:color="#9D65FF" android:offset="0.0" />
+                <item android:color="#7122E8" android:offset="0.5" />
+                <item android:color="#480BB8" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Inner Concentric Petal Border -->
+    <path
+        android:pathData="M 54,32 
+            C 57,32 59,34 61,36 
+            C 64,35 67,36 68,39 
+            C 71,40 72,43 72,46 
+            C 74,49 74,52 73,55 
+            C 74,58 72,61 70,63 
+            C 68,66 65,67 62,67 
+            C 60,69 57,70 54,70 
+            C 51,70 48,69 46,67 
+            C 43,67 40,66 38,63 
+            C 36,61 34,58 35,55 
+            C 34,52 34,49 36,46 
+            C 36,43 37,40 40,39 
+            C 41,36 44,35 47,36 
+            C 49,34 51,32 54,32 Z"
+        android:strokeWidth="1.2"
+        android:strokeColor="#C59FFF" />
+
+    <!-- Neon Mint Expressive DPI Wave Burst (Behind bolt) -->
+    <path
+        android:pathData="M38,54 C42,48 48,60 54,54 C60,48 66,60 70,54"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeColor="#00E699" />
+
+    <!-- Sharp Hero Lightning Bolt / Z Desync Spark -->
+    <path
+        android:pathData="M57,35 L41,53 L51,53 L47,71 L67,49 L55,49 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="41"
+                android:startY="35"
+                android:endX="67"
+                android:endY="71"
+                android:type="linear">
+                <item android:color="#FFF48C" android:offset="0.0" />
+                <item android:color="#FFD15C" android:offset="0.4" />
+                <item android:color="#FF5376" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Bolt Inner Highlight -->
+    <path
+        android:pathData="M56,38 L45,51 L53,51 L50,62 L61,50 L53,50 Z"
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.75" />
+
+    <!-- Expressive Particle Sparks -->
+    <path
+        android:pathData="M69,38 L72,41 L69,44 L66,41 Z"
+        android:fillColor="#00E699" />
+        
+    <path
+        android:pathData="M37,63 L39,65 L37,67 L35,65 Z"
+        android:fillColor="#00D4FF" />
+</vector>
