@@ -1,97 +1,88 @@
 <p align="center">
-  <img src="docs/assets/sourzap_icon.jpg" width="130" height="130" alt="SourZap Icon" style="border-radius: 28px;" />
+  <img src="docs/assets/sourzap_icon.png" width="96" height="96" alt="SourZap Icon" />
 </p>
 
 <h1 align="center">SourZap</h1>
 
 <p align="center">
-  <b>High-speed, rootless DPI packet circumvention & network monitor for Android.</b><br>
-  Built with pure Kotlin, native <code>VpnService</code> user-space packet filtering, and Google's Material 3 Expressive design system.
+  Rootless DPI circumvention and network monitor for Android, built with Material 3 Expressive.
 </p>
 
 <p align="center">
-  <a href="https://github.com/Sourish25/SourZap/releases"><img src="https://img.shields.io/github/v/release/Sourish25/SourZap?style=for-the-badge&color=8E52FF&logo=android" alt="Release" /></a>
-  <a href="https://github.com/Sourish25/SourZap/actions"><img src="https://img.shields.io/github/actions/workflow/status/Sourish25/SourZap/ci.yml?style=for-the-badge&logo=github" alt="CI Status" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-00E699.svg?style=for-the-badge" alt="License" /></a>
-  <img src="https://img.shields.io/badge/Root_Required-NO-FF5376?style=for-the-badge" alt="No Root Required" />
-  <img src="https://img.shields.io/badge/Android-8.0+-FFD15C?style=for-the-badge&logo=android" alt="Android 8.0+" />
+  <a href="https://github.com/Sourish25/SourZap/releases"><img src="https://img.shields.io/github/v/release/Sourish25/SourZap?style=flat-square" alt="Latest Release" /></a>
+  <a href="https://github.com/Sourish25/SourZap/actions"><img src="https://img.shields.io/github/actions/workflow/status/Sourish25/SourZap/ci.yml?branch=main&style=flat-square" alt="Build Status" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License" /></a>
+  <img src="https://img.shields.io/badge/Android-8.0+-green.svg?style=flat-square" alt="Android 8.0+" />
 </p>
 
 ---
 
-## 📌 The Problem
+## Overview
 
-Modern ISPs and state-level middleboxes employ Deep Packet Inspection (DPI) to identify, throttle, or block access to services like YouTube (restricting video playback to 360p/480p), Discord (blocking voice RTC gateways and websockets), and independent web platforms.
+SourZap is an Android utility designed to bypass Deep Packet Inspection (DPI) throttling and censorship on mobile networks and Wi-Fi. It brings packet desynchronization techniques inspired by **Zapret** and **ByeDPI** directly to non-rooted Android devices through a local `VpnService` interface.
 
-While tools like **Zapret** and **ByeDPI** exist on desktop and Linux routers to defeat these middleboxes by desynchronizing TCP handshakes, using them on Android historically required **root access**, custom kernels, or running convoluted terminal scripts inside Termux.
-
-## ⚡ How SourZap Solves It
-
-**SourZap brings full DPI packet evasion to non-rooted Android devices.**
-
-Using Android's native VpnService interface (10.0.0.2/24), SourZap runs an in-process, high-speed packet inspection and desynchronization engine. It captures initial handshake packets directly in user space, applies targeted desynchronization strategies, and transparently streams payload data at maximum line speed (>500 Mbps – 1 Gbps+).
+Many telecom providers and middleboxes inspect initial TLS `ClientHello` packets to identify destination Server Name Indications (SNI) or HTTP `Host` headers, throttling video streams (e.g. YouTube CDN endpoints) or blocking services like Discord voice RTC gateways. SourZap intercepts and fragments these initial handshake frames in user-space, preventing middlebox detection while allowing the remote server to reassemble the stream normally.
 
 ---
 
-## 🚀 Key Features
+## How It Works
 
-- **No Root / No Termux Required**: Operates transparently as a standard Android VPN service with one-tap activation.
-- **Zapret DPI Evasion Engine**:
-  - **TLS ClientHello Splitting**: Slices ClientHello packets across discrete TCP frames right at the SNI boundary with TCP_NODELAY.
-  - **Fake SNI / Low-TTL Packet Injection**: Injects low-TTL dummy ClientHello frames (www.google.com, cloudflare.com) that expire before destination servers but poison middlebox DPI caches.
-  - **TCP Disorder**: Emits packet segments out-of-order so middlebox state trackers fail while the target server's OS TCP stack reassembles them normally.
-  - **HTTP Host Casing & Space Injection**: Randomizes header casing (hOst:) and inserts header delimiters.
-  - **QUIC / UDP 443 Policy**: Blocks UDP QUIC packets to trigger immediate fallback to TCP where packet desync applies.
-- **DNS-over-HTTPS (DoH)**: Integrated multi-provider DoH resolver (Cloudflare, Google, Quad9, AdGuard) preventing ISP DNS poisoning and Geo-blocking.
-- **Turbo Speed Architecture**:
-  - ByteArrayPool lock-free 64KB recycled buffer system preventing Garbage Collection (GC) pauses during heavy 4K streaming.
-  - 512KB socket window buffers with IPTOS_THROUGHPUT kernel prioritization.
-  - Fast-path handshake detection: steady-state streaming transfers directly between socket channels without regex or string overhead.
-- **Real-Time Traffic Monitor & Speed Test**:
-  - Live download and upload throughput meters with animated smooth waveform graph.
-  - Built-in multi-stream Internet Speed Test (Ping, Jitter, Download, Upload).
-  - Real-time Connection Inspector stream showing intercepted domains, protocols, and applied bypass techniques.
-- **Material 3 Expressive UI**:
-  - Built with Google's research-backed Material 3 Expressive design system.
-  - Scalloped 12-petal starburst status badges, organic rotating breathing rings around the hero toggle, asymmetric squircle cards, and high-contrast vibrant palettes.
+```
+[ App Traffic ] ──> [ Local TUN (10.0.0.2) ] ──> [ SourZap Engine ]
+                                                          │
+   ┌──────────────────────────────────────────────────────┴──────────────────────────────────────────────────────┐
+   │                                                                                                             │
+   ▼                                                      ▼                                                      ▼
+[ DNS over HTTPS ]                               [ Initial Handshake ]                                   [ Steady-State Flow ]
+Resolves via Cloudflare / Google / Quad9         Applies SNI split, fake TTL packets, or TCP disorder     Zero-copy 64KB stream pump
+to bypass DNS poisoning                          to desync DPI middlebox trackers                        running at full line speed
+```
+
+1. **Local VPN Tunnel**: Directs device traffic through an internal virtual network interface (`10.0.0.2/24`). No external VPN server is required—all processing occurs locally on the device.
+2. **Targeted Handshake Desynchronization**: DPI evasion runs only on initial TLS ClientHello or HTTP request packets:
+   - **TLS SNI Splitting**: Splits the ClientHello into two or more TCP segments right at the SNI boundary (`TCP_NODELAY`), evading shallow inspection.
+   - **Fake SNI / Low-TTL Injection**: Sends an initial dummy ClientHello with a low Time-To-Live (TTL) that expires before reaching the destination server, poisoning the DPI state cache.
+   - **TCP Disorder**: Delivers the second segment before the first; standard OS TCP stacks reassemble it seamlessly, while middleboxes fail to reconstruct the payload.
+   - **QUIC / UDP 443 Policy**: Blocks UDP QUIC packets to force immediate fallback to TCP, where packet desynchronization is effective.
+3. **High-Throughput Fast Path**: Once the handshake completes, traffic switches to a zero-copy data pump using a `ByteArrayPool` and 512KB socket buffers, maintaining full line speed (>500 Mbps) with low CPU usage and minimal GC overhead.
 
 ---
 
-## 🎯 Preconfigured Bypass Strategies
+## Presets
 
-| Preset | Target Use Case | Evasion Techniques |
+| Strategy | Description | Best For |
 |---|---|---|
-| **YouTube Turbo Fix** | Restores smooth 4K/1080p 60fps streaming on throttled ISPs | Fake SNI (www.google.com) + SNI Start Splitting + TCP Disorder + QUIC Blocking + DoH |
-| **Discord & RTC Fix** | Unblocks Discord Gateway, WebSockets, API & Voice streams | TLS Split (Pos 2) + TCP Disorder + Cloudflare DoH |
-| **Universal DPI Bypass** | General anti-censorship preset for blocked web services | Multisplit + Low TTL Fake Packets + HTTP Host Header Casing |
-| **Aggressive Anti-Censor** | Heavily filtered networks with strict deep-packet firewalls | Multi-segment TLS fragmentation + OOB + Quad9 DoH |
-| **Custom Configurator** | Power users & researchers | Configurable split offsets, fake SNI strings, TTL stepper (1–12), disorder toggle, and DoH selection |
+| **YouTube Turbo** | Fake SNI (`www.google.com`) + SNI Splitting + TCP Disorder + QUIC Blocking | Restoring unthrottled 1080p/4K playback on ISPs throttling Google Video CDNs |
+| **Discord Fix** | TLS Split (Position 2) + TCP Disorder + Cloudflare DoH | Resolving Discord voice RTC connectivity, WebSockets, and API blocks |
+| **Universal Bypass** | Multisplit + Low-TTL Fake Packets + HTTP Host Casing Desync | General anti-censorship across filtered websites |
+| **Aggressive** | Multi-segment TLS fragmentation + Out-of-Band (OOB) bytes | Heavily restricted networks with strict stateful firewalls |
+| **Custom** | Interactive configuration of split offset, fake SNI host, TTL, and DoH provider | Power users and network debugging |
 
 ---
 
-## 📱 Screenshots & UI Design
+## Features
 
-<p align="center">
-  <img src="docs/assets/sourzap_icon.jpg" width="220" alt="Material 3 Expressive Icon" style="border-radius: 24px;" />
-</p>
-
-The user interface follows Google's latest **Material 3 Expressive** research:
-- **Expressive Shapes**: 12-petal scalloped badges, asymmetric container geometry, and wavy breathing rings.
-- **Tactile Hero Connect Button**: Oversized 230dp tactile control with spring-physics feedback.
-- **Speedometer Arc Gauge**: 240-degree gradient speedometer with live needle interpolation.
-- **Floating Expressive Dock**: Pinned bottom navigation dock with soft pill containers and bouncy active indicators.
+- **Rootless & Standalone**: Operates entirely in user-space without root, Magisk, or Termux.
+- **Built-in Speed Test**: Multi-stream broadband benchmark measuring Ping, Jitter, Download, and Upload speeds.
+- **Real-Time Traffic Monitor**: Live upload/download throughput meters, animated bandwidth waveform, and connection inspector logging.
+- **Encrypted DNS**: Integrated DNS-over-HTTPS (DoH) supporting Cloudflare, Google, Quad9, and AdGuard.
+- **Material 3 Expressive Design**: Tactile controls, responsive layouts, dynamic color palettes, and adaptive icons with Android 13+ themed icon support.
 
 ---
 
-## 📥 Download & Installation
+## Getting Started
 
-### Option 1: Download Pre-built APK (Recommended)
-Grab the latest release from the [GitHub Releases Page](https://github.com/Sourish25/SourZap/releases).
+### Download
+Pre-built APKs are available on the [Releases page](https://github.com/Sourish25/SourZap/releases).
 
-### Option 2: Build from Source
-Requirements: JDK 17, Android SDK (API 34/35).
+1. Download the latest `SourZap-vX.X.X.apk`.
+2. Install it on any Android device running Android 8.0 (API 26) or higher.
+3. Open the app, select a preset (e.g. *YouTube Turbo*), and tap the hero connect button.
+4. Grant the system VPN connection prompt when prompted.
 
-`ash
+### Building from Source
+
+```bash
 # Clone the repository
 git clone https://github.com/Sourish25/SourZap.git
 cd SourZap
@@ -99,39 +90,26 @@ cd SourZap
 # Run unit tests
 ./gradlew testDebugUnitTest
 
-# Assemble debug APK
+# Build debug APK
 ./gradlew assembleDebug
 
-# Output APK will be at:
-# app/build/outputs/apk/debug/app-debug.apk
-`
+# Output APK: app/build/outputs/apk/debug/app-debug.apk
+```
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
-We welcome contributions from the community! Whether you want to add new DPI bypass presets for specific regional ISPs, improve socket streaming performance, or refine the Material 3 Expressive UI components:
+Contributions are welcome. If you find a DPI evasion combination that works well for a specific ISP or region, feel free to submit a preset proposal.
 
-1. **Fork the repo** and create a feature branch (git checkout -b feat/my-feature).
-2. Make your changes and ensure unit tests pass (./gradlew testDebugUnitTest).
-3. Open a **Pull Request** explaining your changes.
-4. All PRs are reviewed and must pass CI builds before merging into main.
+1. Fork the repository and create a feature branch (`git checkout -b feat/my-improvement`).
+2. Verify tests pass locally: `./gradlew testDebugUnitTest`.
+3. Open a Pull Request against the `main` branch.
 
-Please read our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) for full details.
-
----
-
-## 🛡️ Security & Privacy
-
-SourZap is strictly a user-space network bypass and telemetry utility:
-- **Zero Data Logging**: Your traffic is processed locally in memory on your device. Nothing is sent to external tracking servers.
-- **Protected Sockets**: Local socket connections are protected via Android's VpnService.protect().
-- **Encrypted DNS**: All DNS queries are resolved over encrypted HTTPS (DoH).
-
-To report a vulnerability, please refer to [SECURITY.md](SECURITY.md).
+Please review [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before opening a PR.
 
 ---
 
-## 📄 License
+## License
 
-SourZap is licensed under the [MIT License](LICENSE).
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
