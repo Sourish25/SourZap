@@ -15,17 +15,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.DataUsage
-import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material.icons.rounded.FlashOn
-import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -35,30 +32,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.sourzap.app.data.model.TrafficStats
 import com.sourzap.app.service.TrafficMonitor
 import com.sourzap.app.ui.components.ExpressiveCard
+import com.sourzap.app.ui.components.ExpressiveChip
 import com.sourzap.app.ui.components.ExpressiveTrafficWave
 import com.sourzap.app.ui.components.ScallopedBadge
-import com.sourzap.app.ui.theme.CandyCoral
-import com.sourzap.app.ui.theme.CyanSpark
-import com.sourzap.app.ui.theme.DarkBackground
-import com.sourzap.app.ui.theme.DarkSurfaceContainer
-import com.sourzap.app.ui.theme.DarkSurfaceContainerHigh
-import com.sourzap.app.ui.theme.DarkSurfaceContainerHighest
-import com.sourzap.app.ui.theme.ElectricViolet
-import com.sourzap.app.ui.theme.ElectricVioletLight
 import com.sourzap.app.ui.theme.ExpressiveShapes
-import com.sourzap.app.ui.theme.NeonMint
 import com.sourzap.app.ui.theme.NumberDisplayMedium
 import com.sourzap.app.ui.theme.NumberDisplaySmall
-import com.sourzap.app.ui.theme.SunbeamYellow
-import com.sourzap.app.ui.theme.TextPrimary
-import com.sourzap.app.ui.theme.TextSecondary
-import com.sourzap.app.ui.theme.TextTertiary
 import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -74,12 +56,12 @@ fun TrafficScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(DarkBackground)
-            .padding(horizontal = 18.dp),
-        contentPadding = PaddingValues(top = 28.dp, bottom = 110.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(top = 20.dp, bottom = 100.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Expressive Header
+        // Header
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -89,31 +71,29 @@ fun TrafficScreen(
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "Traffic",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 32.sp,
-                            letterSpacing = (-1).sp,
-                            color = TextPrimary
+                            text = "Traffic Inspector",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         ScallopedBadge(
-                            text = "📊 LIVE DATA",
-                            backgroundColor = NeonMint,
-                            textColor = DarkBackground
+                            text = "LIVE",
+                            backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                            textColor = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                     Text(
-                        text = "Real-time bandwidth usage & DPI packet telemetry",
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 13.sp,
-                        color = TextTertiary
+                        text = "Real-time bandwidth usage & packet telemetry",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
                 Box(
                     modifier = Modifier
                         .clip(CircleShape)
-                        .background(DarkSurfaceContainerHigh)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                         .clickable { TrafficMonitor.resetSession() }
                         .padding(10.dp),
                     contentAlignment = Alignment.Center
@@ -121,7 +101,7 @@ fun TrafficScreen(
                     Icon(
                         imageVector = Icons.Rounded.Refresh,
                         contentDescription = "Reset Session",
-                        tint = TextSecondary,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -133,13 +113,13 @@ fun TrafficScreen(
             ExpressiveCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = ExpressiveShapes.AsymmetricPillLarge,
-                backgroundColor = DarkSurfaceContainer,
-                borderColor = if (isVpnActive) NeonMint else DarkSurfaceContainerHighest
+                backgroundColor = MaterialTheme.colorScheme.surfaceContainer,
+                borderColor = if (isVpnActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(20.dp)
+                        .padding(16.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -149,24 +129,23 @@ fun TrafficScreen(
                         Column {
                             Text(
                                 text = "LIVE THROUGHPUT",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 11.sp,
-                                letterSpacing = 0.8.sp,
-                                color = NeonMint
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
                             )
                             Row(verticalAlignment = Alignment.Bottom) {
                                 Text(
                                     text = stats.formattedDownloadSpeed(),
                                     style = NumberDisplayMedium,
-                                    color = TextPrimary
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "↓ DL",
+                                    style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = NeonMint,
-                                    modifier = Modifier.padding(bottom = 6.dp)
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(bottom = 4.dp)
                                 )
                             }
                         }
@@ -174,62 +153,61 @@ fun TrafficScreen(
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
                                 text = "UPLOAD",
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                color = TextSecondary
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 text = stats.formattedUploadSpeed(),
                                 style = NumberDisplaySmall,
-                                color = CyanSpark
+                                color = MaterialTheme.colorScheme.secondary
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     ExpressiveTrafficWave(
                         speedHistory = stats.recentSpeedHistory,
-                        lineColor = NeonMint,
-                        fillColor = NeonMint.copy(alpha = 0.25f)
+                        lineColor = MaterialTheme.colorScheme.primary,
+                        fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
                     )
                 }
             }
         }
 
-        // Metrics Grid
+        // Metrics Grid (Session DL, UL, Total Lifetime, Packet Rate)
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 ExpressiveCard(
                     modifier = Modifier.weight(1f),
                     shape = ExpressiveShapes.Squircle,
-                    backgroundColor = DarkSurfaceContainerHigh,
-                    borderColor = DarkSurfaceContainerHighest
+                    backgroundColor = MaterialTheme.colorScheme.surfaceContainer
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Rounded.ArrowDownward,
                                 contentDescription = null,
-                                tint = NeonMint,
-                                modifier = Modifier.size(16.dp)
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "SESSION DL",
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                color = TextSecondary
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = stats.formattedSessionDownload(),
                             style = NumberDisplaySmall,
-                            color = NeonMint
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -237,30 +215,29 @@ fun TrafficScreen(
                 ExpressiveCard(
                     modifier = Modifier.weight(1f),
                     shape = ExpressiveShapes.Squircle,
-                    backgroundColor = DarkSurfaceContainerHigh,
-                    borderColor = DarkSurfaceContainerHighest
+                    backgroundColor = MaterialTheme.colorScheme.surfaceContainer
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Rounded.ArrowUpward,
                                 contentDescription = null,
-                                tint = CyanSpark,
-                                modifier = Modifier.size(16.dp)
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "SESSION UL",
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                color = TextSecondary
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = stats.formattedSessionUpload(),
                             style = NumberDisplaySmall,
-                            color = CyanSpark
+                            color = MaterialTheme.colorScheme.secondary
                         )
                     }
                 }
@@ -270,26 +247,25 @@ fun TrafficScreen(
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 ExpressiveCard(
                     modifier = Modifier.weight(1f),
                     shape = ExpressiveShapes.Squircle,
-                    backgroundColor = DarkSurfaceContainerHigh,
-                    borderColor = DarkSurfaceContainerHighest
+                    backgroundColor = MaterialTheme.colorScheme.surfaceContainer
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Text(
                             text = "TOTAL LIFETIME",
+                            style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            color = TextSecondary
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = stats.formattedTotalDownload(),
                             style = NumberDisplaySmall,
-                            color = SunbeamYellow
+                            color = MaterialTheme.colorScheme.tertiary
                         )
                     }
                 }
@@ -297,28 +273,27 @@ fun TrafficScreen(
                 ExpressiveCard(
                     modifier = Modifier.weight(1f),
                     shape = ExpressiveShapes.Squircle,
-                    backgroundColor = DarkSurfaceContainerHigh,
-                    borderColor = DarkSurfaceContainerHighest
+                    backgroundColor = MaterialTheme.colorScheme.surfaceContainer
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Text(
                             text = "PACKET RATE",
+                            style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            color = TextSecondary
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = " pps",
+                            text = "${stats.packetsPerSecond} pps",
                             style = NumberDisplaySmall,
-                            color = ElectricVioletLight
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
             }
         }
 
-        // Connection Logs
+        // Connection Logs Stream
         item {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -327,89 +302,84 @@ fun TrafficScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "CONNECTION INSPECTOR STREAM",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 12.sp,
-                        letterSpacing = 0.8.sp,
-                        color = ElectricVioletLight
+                        text = "INTERCEPTED CONNECTION STREAMS",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     Text(
-                        text = " events",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        color = TextTertiary
+                        text = "${logs.size} events",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 if (logs.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(ExpressiveShapes.Squircle)
-                            .background(DarkSurfaceContainer)
-                            .padding(24.dp),
+                            .background(MaterialTheme.colorScheme.surfaceContainer)
+                            .padding(20.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "No connection streams active",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = TextTertiary
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         logs.forEach { log ->
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(ExpressiveShapes.Squircle)
-                                    .background(DarkSurfaceContainerHigh)
-                                    .padding(14.dp)
+                            ExpressiveCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = ExpressiveShapes.SuperPill,
+                                backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
                             ) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.FlashOn,
-                                                contentDescription = null,
-                                                tint = if (log.port == 443) NeonMint else CyanSpark,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Bolt,
+                                            contentDescription = null,
+                                            tint = if (log.port == 443) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
                                             Text(
                                                 text = log.domain,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                fontSize = 14.sp,
-                                                color = TextPrimary,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface,
                                                 maxLines = 1
                                             )
+                                            Text(
+                                                text = "${log.protocol}:${log.port} • ${log.formattedBytes()}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
                                         }
-
-                                        Spacer(modifier = Modifier.height(2.dp))
-
-                                        Text(
-                                            text = ": •  • ",
-                                            fontWeight = FontWeight.Medium,
-                                            fontSize = 11.sp,
-                                            color = TextTertiary
-                                        )
                                     }
 
                                     Spacer(modifier = Modifier.width(8.dp))
 
-                                    ScallopedBadge(
+                                    ExpressiveChip(
                                         text = log.technique,
-                                        backgroundColor = if (log.protocol == "TLS") ElectricViolet else CandyCoral,
-                                        textColor = TextPrimary,
-                                        numPetals = 8
+                                        backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                                        textColor = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 }
                             }

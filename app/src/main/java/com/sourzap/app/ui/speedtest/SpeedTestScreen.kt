@@ -4,8 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,21 +17,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.material.icons.rounded.FlashOn
-import androidx.compose.material.icons.rounded.NetworkPing
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -42,33 +40,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sourzap.app.SourZapApp
 import com.sourzap.app.data.model.SpeedTestPhase
 import com.sourzap.app.ui.components.ExpressiveCard
+import com.sourzap.app.ui.components.ExpressiveChip
 import com.sourzap.app.ui.components.ExpressiveSpeedGauge
 import com.sourzap.app.ui.components.ScallopedBadge
-import com.sourzap.app.ui.theme.CandyCoral
-import com.sourzap.app.ui.theme.CyanSpark
-import com.sourzap.app.ui.theme.DarkBackground
-import com.sourzap.app.ui.theme.DarkSurfaceContainer
-import com.sourzap.app.ui.theme.DarkSurfaceContainerHigh
-import com.sourzap.app.ui.theme.DarkSurfaceContainerHighest
-import com.sourzap.app.ui.theme.ElectricViolet
-import com.sourzap.app.ui.theme.ElectricVioletLight
 import com.sourzap.app.ui.theme.ExpressiveShapes
-import com.sourzap.app.ui.theme.NeonMint
 import com.sourzap.app.ui.theme.NumberDisplayMedium
-import com.sourzap.app.ui.theme.NumberDisplaySmall
-import com.sourzap.app.ui.theme.SunbeamYellow
-import com.sourzap.app.ui.theme.TextPrimary
-import com.sourzap.app.ui.theme.TextSecondary
-import com.sourzap.app.ui.theme.TextTertiary
 import kotlinx.coroutines.launch
 
 @Composable
@@ -78,21 +60,24 @@ fun SpeedTestScreen(
     val app = SourZapApp.instance
     val speedEngine = app.speedTestEngine
     val settingsRepo = app.settingsRepository
-    val scope = rememberCoroutineScope()
+    val strategyRepo = app.strategyRepository
 
-    val testState by speedEngine.state.collectAsState()
+    val state by speedEngine.state.collectAsState()
     val history by settingsRepo.speedTestHistory.collectAsState()
-    val isRunning = testState.phase != SpeedTestPhase.IDLE && testState.phase != SpeedTestPhase.COMPLETED && testState.phase != SpeedTestPhase.FAILED
+    val currentStrategy by strategyRepo.currentStrategy.collectAsState()
+
+    val scope = rememberCoroutineScope()
+    val isRunning = state.phase != SpeedTestPhase.IDLE && state.phase != SpeedTestPhase.COMPLETED && state.phase != SpeedTestPhase.FAILED
 
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(DarkBackground)
-            .padding(horizontal = 18.dp),
-        contentPadding = PaddingValues(top = 28.dp, bottom = 110.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(top = 20.dp, bottom = 100.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Expressive Header
+        // Header
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -103,100 +88,137 @@ fun SpeedTestScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = "Speed Test",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 32.sp,
-                            letterSpacing = (-1).sp,
-                            color = TextPrimary
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         ScallopedBadge(
-                            text = "🚀 ULTRA SPEED",
-                            backgroundColor = SunbeamYellow,
-                            textColor = DarkBackground
+                            text = "TURBO",
+                            backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                            textColor = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
+
                     Text(
-                        text = "Benchmark real latency, download & upload streams",
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 13.sp,
-                        color = TextTertiary
+                        text = "Benchmark network line speed & latency",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                ExpressiveChip(
+                    text = currentStrategy.name,
+                    icon = Icons.Rounded.Speed,
+                    backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                    textColor = MaterialTheme.colorScheme.onSecondaryContainer
+                )
             }
         }
 
-        // Crazy Speedometer Gauge
+        // Speedometer Gauge Card
         item {
             ExpressiveCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = ExpressiveShapes.AsymmetricPillLarge,
-                backgroundColor = DarkSurfaceContainer,
-                borderColor = if (isRunning) CyanSpark else DarkSurfaceContainerHighest
+                backgroundColor = MaterialTheme.colorScheme.surfaceContainer
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 14.dp, horizontal = 12.dp),
+                        .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     ExpressiveSpeedGauge(
-                        speedMbps = testState.activeGaugeSpeedMbps,
-                        pingMs = testState.currentPingMs,
-                        jitterMs = testState.currentJitterMs,
+                        speedMbps = state.activeGaugeSpeedMbps,
+                        pingMs = state.currentPingMs,
+                        jitterMs = state.currentJitterMs,
                         isTesting = isRunning,
-                        statusText = testState.statusMessage
+                        statusText = state.statusMessage
                     )
 
                     if (isRunning) {
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         LinearProgressIndicator(
-                            progress = { testState.progress },
+                            progress = { state.progress },
                             modifier = Modifier
-                                .fillMaxWidth(0.7f)
+                                .fillMaxWidth()
                                 .height(6.dp)
-                                .clip(CircleShape),
-                            color = CyanSpark,
-                            trackColor = DarkSurfaceContainerHighest
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                         )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Start / Stop Button
+                    Button(
+                        onClick = {
+                            if (isRunning) {
+                                speedEngine.cancelTest()
+                            } else {
+                                scope.launch { speedEngine.runSpeedTest() }
+                            }
+                        },
+                        shape = ExpressiveShapes.SuperPill,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isRunning) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primary,
+                            contentColor = if (isRunning) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimary
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth(0.7f)
+                            .height(52.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isRunning) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isRunning) "CANCEL TEST" else "START TEST",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
                     }
                 }
             }
         }
 
-        // Metrics Grid (Ping, Jitter, Download, Upload)
+        // Metric Readout Grid (Ping, Jitter, Download, Upload)
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // Ping
                 ExpressiveCard(
                     modifier = Modifier.weight(1f),
                     shape = ExpressiveShapes.Squircle,
-                    backgroundColor = DarkSurfaceContainerHigh,
-                    borderColor = DarkSurfaceContainerHighest
+                    backgroundColor = MaterialTheme.colorScheme.surfaceContainer
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.Timer,
-                                contentDescription = null,
-                                tint = SunbeamYellow,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "PING",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                color = TextSecondary
-                            )
-                        }
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "PING",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (testState.currentPingMs > 0) String.format("%.0f ms", testState.currentPingMs) else "--",
-                            style = NumberDisplaySmall,
-                            color = SunbeamYellow
+                            text = if (state.currentPingMs > 0) String.format("%.0f ms", state.currentPingMs) else "--",
+                            style = NumberDisplayMedium,
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -205,265 +227,180 @@ fun SpeedTestScreen(
                 ExpressiveCard(
                     modifier = Modifier.weight(1f),
                     shape = ExpressiveShapes.Squircle,
-                    backgroundColor = DarkSurfaceContainerHigh,
-                    borderColor = DarkSurfaceContainerHighest
+                    backgroundColor = MaterialTheme.colorScheme.surfaceContainer
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.Speed,
-                                contentDescription = null,
-                                tint = CandyCoral,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "JITTER",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                color = TextSecondary
-                            )
-                        }
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "JITTER",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (testState.currentJitterMs > 0) String.format("%.1f ms", testState.currentJitterMs) else "--",
-                            style = NumberDisplaySmall,
-                            color = CandyCoral
+                            text = if (state.currentJitterMs > 0) String.format("%.1f ms", state.currentJitterMs) else "--",
+                            style = NumberDisplayMedium,
+                            color = MaterialTheme.colorScheme.secondary
                         )
                     }
                 }
+            }
+        }
 
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 // Download
                 ExpressiveCard(
-                    modifier = Modifier.weight(1.2f),
+                    modifier = Modifier.weight(1f),
                     shape = ExpressiveShapes.Squircle,
-                    backgroundColor = DarkSurfaceContainerHigh,
-                    borderColor = DarkSurfaceContainerHighest
+                    backgroundColor = MaterialTheme.colorScheme.surfaceContainer
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Rounded.ArrowDownward,
                                 contentDescription = null,
-                                tint = NeonMint,
-                                modifier = Modifier.size(16.dp)
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "DOWNLOAD",
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                color = TextSecondary
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (testState.currentDownloadMbps > 0) String.format("%.1f", testState.currentDownloadMbps) else "--",
-                            style = NumberDisplaySmall,
-                            color = NeonMint
+                            text = if (state.currentDownloadMbps > 0) String.format("%.1f", state.currentDownloadMbps) else "--",
+                            style = NumberDisplayMedium,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
 
                 // Upload
                 ExpressiveCard(
-                    modifier = Modifier.weight(1.2f),
+                    modifier = Modifier.weight(1f),
                     shape = ExpressiveShapes.Squircle,
-                    backgroundColor = DarkSurfaceContainerHigh,
-                    borderColor = DarkSurfaceContainerHighest
+                    backgroundColor = MaterialTheme.colorScheme.surfaceContainer
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Rounded.ArrowUpward,
                                 contentDescription = null,
-                                tint = CyanSpark,
-                                modifier = Modifier.size(16.dp)
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "UPLOAD",
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                color = TextSecondary
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (testState.currentUploadMbps > 0) String.format("%.1f", testState.currentUploadMbps) else "--",
-                            style = NumberDisplaySmall,
-                            color = CyanSpark
+                            text = if (state.currentUploadMbps > 0) String.format("%.1f", state.currentUploadMbps) else "--",
+                            style = NumberDisplayMedium,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
             }
         }
 
-        // Big Tactile Start / Stop Button
-        item {
-            val buttonGradient = if (isRunning) {
-                Brush.linearGradient(listOf(CandyCoral, Color(0xFFC7153E)))
-            } else {
-                Brush.linearGradient(listOf(ElectricViolet, Color(0xFF6714E2)))
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(64.dp)
-                    .shadow(16.dp, ExpressiveShapes.SuperPill, spotColor = if (isRunning) CandyCoral else ElectricViolet)
-                    .clip(ExpressiveShapes.SuperPill)
-                    .background(buttonGradient)
-                    .clickable {
-                        if (isRunning) {
-                            speedEngine.cancelTest()
-                        } else {
-                            scope.launch {
-                                speedEngine.runSpeedTest()
-                            }
-                        }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = if (isRunning) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
-                        contentDescription = null,
-                        tint = TextPrimary,
-                        modifier = Modifier.size(28.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (isRunning) "STOP SPEED TEST" else "START SPEED TEST",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 16.sp,
-                        letterSpacing = 0.8.sp,
-                        color = TextPrimary
-                    )
-                }
-            }
-        }
-
-        // DPI Boost Comparison Card
-        item {
-            ExpressiveCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = ExpressiveShapes.AsymmetricPillInverse,
-                backgroundColor = DarkSurfaceContainer,
-                borderColor = NeonMint.copy(alpha = 0.3f)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(18.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "⚡ Zapret DPI Acceleration",
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 16.sp,
-                                color = NeonMint
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Eliminates ISP throttling on YouTube 4K, Discord streams, and restricted CDNs by desyncing DPI inspection buffers.",
-                            fontWeight = FontWeight.Normal,
-                            fontSize = 12.sp,
-                            color = TextSecondary
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    ScallopedBadge(
-                        text = "4X FASTER!",
-                        backgroundColor = NeonMint,
-                        textColor = DarkBackground,
-                        numPetals = 12
-                    )
-                }
-            }
-        }
-
-        // Speed Test History
+        // Test History
         item {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = "SPEED TEST HISTORY",
-                    fontWeight = FontWeight.Black,
-                    fontSize = 12.sp,
-                    letterSpacing = 0.8.sp,
-                    color = ElectricVioletLight
+                    text = "RECENT BENCHMARKS",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 if (history.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(ExpressiveShapes.Squircle)
-                            .background(DarkSurfaceContainer)
-                            .padding(18.dp),
+                            .background(MaterialTheme.colorScheme.surfaceContainer)
+                            .padding(16.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No speed test records yet",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = TextTertiary
+                            text = "No tests recorded yet. Run your first speed test above.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        history.forEach { item ->
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(ExpressiveShapes.Squircle)
-                                    .background(DarkSurfaceContainerHigh)
-                                    .padding(16.dp)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        history.take(4).forEach { test ->
+                            ExpressiveCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = ExpressiveShapes.Squircle,
+                                backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
                             ) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column {
                                         Text(
-                                            text = item.serverName,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            fontSize = 14.sp,
-                                            color = TextPrimary
+                                            text = test.strategyName,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
-                                        Spacer(modifier = Modifier.height(2.dp))
                                         Text(
-                                            text = " • Ping: ms",
-                                            fontWeight = FontWeight.Medium,
-                                            fontSize = 11.sp,
-                                            color = TextTertiary
+                                            text = test.formattedDate(),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
 
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                         Column(horizontalAlignment = Alignment.End) {
                                             Text(
-                                                text = String.format("%.1f Mbps", item.downloadMbps),
-                                                fontWeight = FontWeight.Black,
-                                                fontSize = 16.sp,
-                                                color = NeonMint
+                                                text = String.format("↓ %.1f Mbps", test.downloadMbps),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary
                                             )
                                             Text(
-                                                text = "↓ DL  ↑  UL",
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 11.sp,
-                                                color = TextSecondary
+                                                text = String.format("↑ %.1f Mbps", test.uploadMbps),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
+
+                                        ExpressiveChip(
+                                            text = String.format("%.0f ms", test.pingMs),
+                                            backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                            textColor = MaterialTheme.colorScheme.onSurface
+                                        )
                                     }
                                 }
                             }

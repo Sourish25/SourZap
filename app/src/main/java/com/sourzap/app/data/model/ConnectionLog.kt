@@ -10,4 +10,12 @@ data class ConnectionLog(
     val bytesTransferred: Long = 0L,
     val latencyMs: Long = 0L,
     val isBlockedBypassed: Boolean = true
-)
+) {
+    fun formattedBytes(): String {
+        return when {
+            bytesTransferred >= 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f MB", bytesTransferred / (1024.0 * 1024.0))
+            bytesTransferred >= 1024 -> String.format(java.util.Locale.US, "%.1f KB", bytesTransferred / 1024.0)
+            else -> "$bytesTransferred B"
+        }
+    }
+}

@@ -1,43 +1,275 @@
 package com.sourzap.app.ui.theme
 
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 
-// Expressive Dark Palette (Default Hero Theme)
-val DarkBackground = Color(0xFF0E0D14)
-val DarkSurface = Color(0xFF161420)
-val DarkSurfaceContainer = Color(0xFF201D2E)
-val DarkSurfaceContainerHigh = Color(0xFF2C283F)
-val DarkSurfaceContainerHighest = Color(0xFF3B3654)
+/**
+ * Material 3 Expressive Harmonious Tonal Palettes.
+ * Derived from Google Material Design 3 HCT (Hue, Chroma, Tone) Color System.
+ */
 
-// Vibrant Expressive Accents
-val ElectricViolet = Color(0xFF8E52FF)
-val ElectricVioletLight = Color(0xFFB58EFF)
-val ElectricVioletDark = Color(0xFF591FD1)
-val ElectricVioletContainer = Color(0xFF331668)
+// 1. Berry Expressive (Raspberry & Plum)
+val BerryDarkColorScheme = darkColorScheme(
+    primary = Color(0xFFFFB0D0),
+    onPrimary = Color(0xFF5C1138),
+    primaryContainer = Color(0xFF7A284F),
+    onPrimaryContainer = Color(0xFFFFD8E6),
+    secondary = Color(0xFFE2BDCC),
+    onSecondary = Color(0xFF422935),
+    secondaryContainer = Color(0xFF5B3F4B),
+    onSecondaryContainer = Color(0xFFFFD9E8),
+    tertiary = Color(0xFFFFB59D),
+    onTertiary = Color(0xFF561F0F),
+    tertiaryContainer = Color(0xFF733423),
+    onTertiaryContainer = Color(0xFFFFDBD0),
+    background = Color(0xFF191115),
+    onBackground = Color(0xFFEFE0E4),
+    surface = Color(0xFF191115),
+    onSurface = Color(0xFFEFE0E4),
+    surfaceVariant = Color(0xFF504348),
+    onSurfaceVariant = Color(0xFFD4C2C8),
+    surfaceContainer = Color(0xFF261D22),
+    surfaceContainerHigh = Color(0xFF31282D),
+    surfaceContainerHighest = Color(0xFF3C3337),
+    outline = Color(0xFF9D8C92),
+    outlineVariant = Color(0xFF504348)
+)
 
-val NeonMint = Color(0xFF00E699)
-val NeonMintLight = Color(0xFF6BFFC7)
-val NeonMintContainer = Color(0xFF004D32)
+val BerryLightColorScheme = lightColorScheme(
+    primary = Color(0xFF984067),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFFFD8E6),
+    onPrimaryContainer = Color(0xFF3E0021),
+    secondary = Color(0xFF745663),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFFFD9E8),
+    onSecondaryContainer = Color(0xFF2B1520),
+    tertiary = Color(0xFF914B38),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFFFDBD0),
+    onTertiaryContainer = Color(0xFF3A0B02),
+    background = Color(0xFFFFF8F9),
+    onBackground = Color(0xFF22191D),
+    surface = Color(0xFFFFF8F9),
+    onSurface = Color(0xFF22191D),
+    surfaceVariant = Color(0xFFF1DEE4),
+    onSurfaceVariant = Color(0xFF504348),
+    surfaceContainer = Color(0xFFF9EAEF),
+    surfaceContainerHigh = Color(0xFFF4E5E9),
+    surfaceContainerHighest = Color(0xFFEEDFE4),
+    outline = Color(0xFF827379),
+    outlineVariant = Color(0xFFD4C2C8)
+)
 
-val CandyCoral = Color(0xFFFF5376)
-val CandyCoralLight = Color(0xFFFF8DA4)
-val CandyCoralContainer = Color(0xFF5A0017)
+// 2. Cyber Mint (Jade & Teal)
+val CyberMintDarkColorScheme = darkColorScheme(
+    primary = Color(0xFF56DDB4),
+    onPrimary = Color(0xFF003829),
+    primaryContainer = Color(0xFF00513D),
+    onPrimaryContainer = Color(0xFF75FBCF),
+    secondary = Color(0xFFB1CCC0),
+    onSecondary = Color(0xFF1D352B),
+    secondaryContainer = Color(0xFF334B41),
+    onSecondaryContainer = Color(0xFFCDE8DC),
+    tertiary = Color(0xFFA6CCE0),
+    onTertiary = Color(0xFF0A3545),
+    tertiaryContainer = Color(0xFF264B5C),
+    onTertiaryContainer = Color(0xFFC2E8FD),
+    background = Color(0xFF0F1513),
+    onBackground = Color(0xFFDEE4DF),
+    surface = Color(0xFF0F1513),
+    onSurface = Color(0xFFDEE4DF),
+    surfaceVariant = Color(0xFF3F4944),
+    onSurfaceVariant = Color(0xFFBFC9C3),
+    surfaceContainer = Color(0xFF1B211E),
+    surfaceContainerHigh = Color(0xFF252C28),
+    surfaceContainerHighest = Color(0xFF303733),
+    outline = Color(0xFF89938D),
+    outlineVariant = Color(0xFF3F4944)
+)
 
-val SunbeamYellow = Color(0xFFFFD15C)
-val SunbeamYellowLight = Color(0xFFFFF275)
-val SunbeamYellowContainer = Color(0xFF574100)
+val CyberMintLightColorScheme = lightColorScheme(
+    primary = Color(0xFF006C52),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFF75FBCF),
+    onPrimaryContainer = Color(0xFF002117),
+    secondary = Color(0xFF4A6358),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFCDE8DC),
+    onSecondaryContainer = Color(0xFF072016),
+    tertiary = Color(0xFF3E6375),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFC2E8FD),
+    onTertiaryContainer = Color(0xFF001F2A),
+    background = Color(0xFFF5FBF6),
+    onBackground = Color(0xFF171D1A),
+    surface = Color(0xFFF5FBF6),
+    onSurface = Color(0xFF171D1A),
+    surfaceVariant = Color(0xFFDBE5DF),
+    onSurfaceVariant = Color(0xFF3F4944),
+    surfaceContainer = Color(0xFFE9EFEA),
+    surfaceContainerHigh = Color(0xFFE3E9E4),
+    surfaceContainerHighest = Color(0xFFDEE4DF),
+    outline = Color(0xFF6F7974),
+    outlineVariant = Color(0xFFBFC9C3)
+)
 
-val CyanSpark = Color(0xFF00D4FF)
-val CyanSparkContainer = Color(0xFF004655)
+// 3. Sunset Terracotta (Amber & Coral)
+val SunsetDarkColorScheme = darkColorScheme(
+    primary = Color(0xFFFFB68F),
+    onPrimary = Color(0xFF552100),
+    primaryContainer = Color(0xFF783200),
+    onPrimaryContainer = Color(0xFFFFDBCF),
+    secondary = Color(0xFFE6BEAC),
+    onSecondary = Color(0xFF432A1E),
+    secondaryContainer = Color(0xFF5C4033),
+    onSecondaryContainer = Color(0xFFFFDBCF),
+    tertiary = Color(0xFFD4C88E),
+    onTertiary = Color(0xFF383006),
+    tertiaryContainer = Color(0xFF4F471B),
+    onTertiaryContainer = Color(0xFFF1E4A8),
+    background = Color(0xFF1A120E),
+    onBackground = Color(0xFFF0DFD8),
+    surface = Color(0xFF1A120E),
+    onSurface = Color(0xFFF0DFD8),
+    surfaceVariant = Color(0xFF52443D),
+    onSurfaceVariant = Color(0xFFD7C2B9),
+    surfaceContainer = Color(0xFF271E19),
+    surfaceContainerHigh = Color(0xFF322823),
+    surfaceContainerHighest = Color(0xFF3D332D),
+    outline = Color(0xFF9F8D84),
+    outlineVariant = Color(0xFF52443D)
+)
 
-val TextPrimary = Color(0xFFF7F5FC)
-val TextSecondary = Color(0xFFB8B3CB)
-val TextTertiary = Color(0xFF7E7896)
-val TextDisabled = Color(0xFF4C4761)
+val SunsetLightColorScheme = lightColorScheme(
+    primary = Color(0xFF994611),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFFFDBCF),
+    onPrimaryContainer = Color(0xFF351000),
+    secondary = Color(0xFF765749),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFFFDBCF),
+    onSecondaryContainer = Color(0xFF2C160B),
+    tertiary = Color(0xFF675E2F),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFF1E4A8),
+    onTertiaryContainer = Color(0xFF201B00),
+    background = Color(0xFFFFF8F6),
+    onBackground = Color(0xFF231A15),
+    surface = Color(0xFFFFF8F6),
+    onSurface = Color(0xFF231A15),
+    surfaceVariant = Color(0xFFF4DFD7),
+    onSurfaceVariant = Color(0xFF52443D),
+    surfaceContainer = Color(0xFFFAEBE5),
+    surfaceContainerHigh = Color(0xFFF4E5DF),
+    surfaceContainerHighest = Color(0xFFEFDFDA),
+    outline = Color(0xFF85736B),
+    outlineVariant = Color(0xFFD7C2B9)
+)
 
-// Expressive Gradients
-val HeroVioletGradient = listOf(ElectricViolet, Color(0xFF6714E2))
-val NeonMintGradient = listOf(NeonMint, Color(0xFF00B377))
-val CoralSunsetGradient = listOf(CandyCoral, SunbeamYellow)
-val CyberGaugeGradient = listOf(CyanSpark, ElectricViolet, CandyCoral, SunbeamYellow)
-val DarkCardGradient = listOf(Color(0xFF221F33), Color(0xFF171524))
+// 4. Electric Indigo / Violet (Default Baseline)
+val ElectricIndigoDarkColorScheme = darkColorScheme(
+    primary = Color(0xFFD0BCFF),
+    onPrimary = Color(0xFF381E72),
+    primaryContainer = Color(0xFF4F378B),
+    onPrimaryContainer = Color(0xFFEADDFF),
+    secondary = Color(0xFFCCC2DC),
+    onSecondary = Color(0xFF332D41),
+    secondaryContainer = Color(0xFF4A4458),
+    onSecondaryContainer = Color(0xFFE8DEF8),
+    tertiary = Color(0xFFEFB8C8),
+    onTertiary = Color(0xFF492532),
+    tertiaryContainer = Color(0xFF633B48),
+    onTertiaryContainer = Color(0xFFFFD8E4),
+    background = Color(0xFF141218),
+    onBackground = Color(0xFFE6E0E9),
+    surface = Color(0xFF141218),
+    onSurface = Color(0xFFE6E0E9),
+    surfaceVariant = Color(0xFF49454F),
+    onSurfaceVariant = Color(0xFFCAC4D0),
+    surfaceContainer = Color(0xFF211F26),
+    surfaceContainerHigh = Color(0xFF2B2930),
+    surfaceContainerHighest = Color(0xFF36343B),
+    outline = Color(0xFF938F99),
+    outlineVariant = Color(0xFF49454F)
+)
+
+val ElectricIndigoLightColorScheme = lightColorScheme(
+    primary = Color(0xFF6750A4),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFEADDFF),
+    onPrimaryContainer = Color(0xFF21005D),
+    secondary = Color(0xFF625B71),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFE8DEF8),
+    onSecondaryContainer = Color(0xFF1D192B),
+    tertiary = Color(0xFF7D5260),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFFFD8E4),
+    onTertiaryContainer = Color(0xFF31111D),
+    background = Color(0xFFFEF7FF),
+    onBackground = Color(0xFF1D1B20),
+    surface = Color(0xFFFEF7FF),
+    onSurface = Color(0xFF1D1B20),
+    surfaceVariant = Color(0xFFE7E0EC),
+    onSurfaceVariant = Color(0xFF49454F),
+    surfaceContainer = Color(0xFFF3EDF7),
+    surfaceContainerHigh = Color(0xFFECE6F0),
+    surfaceContainerHighest = Color(0xFFE6E0E9),
+    outline = Color(0xFF79747E),
+    outlineVariant = Color(0xFFCAC4D0)
+)
+
+// 5. Oceanic Cyan (Deep Slate & Sky)
+val OceanicDarkColorScheme = darkColorScheme(
+    primary = Color(0xFF84D2E3),
+    onPrimary = Color(0xFF00363F),
+    primaryContainer = Color(0xFF004E5B),
+    onPrimaryContainer = Color(0xFFA0EFFF),
+    secondary = Color(0xFFB1CBD1),
+    onSecondary = Color(0xFF1C3439),
+    secondaryContainer = Color(0xFF324A50),
+    onSecondaryContainer = Color(0xFFCCE7ED),
+    tertiary = Color(0xFFBEC6DC),
+    onTertiary = Color(0xFF273041),
+    tertiaryContainer = Color(0xFF3D4658),
+    onTertiaryContainer = Color(0xFFDAE2F9),
+    background = Color(0xFF0E1416),
+    onBackground = Color(0xFFDEE3E5),
+    surface = Color(0xFF0E1416),
+    onSurface = Color(0xFFDEE3E5),
+    surfaceVariant = Color(0xFF3F484B),
+    onSurfaceVariant = Color(0xFFBFC8CB),
+    surfaceContainer = Color(0xFF1A2123),
+    surfaceContainerHigh = Color(0xFF252B2D),
+    surfaceContainerHighest = Color(0xFF303638),
+    outline = Color(0xFF899295),
+    outlineVariant = Color(0xFF3F484B)
+)
+
+val OceanicLightColorScheme = lightColorScheme(
+    primary = Color(0xFF006877),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFA0EFFF),
+    onPrimaryContainer = Color(0xFF001F25),
+    secondary = Color(0xFF4A6267),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFCCE7ED),
+    onSecondaryContainer = Color(0xFF051F23),
+    tertiary = Color(0xFF555F71),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFDAE2F9),
+    onTertiaryContainer = Color(0xFF121C2B),
+    background = Color(0xFFF5FAFD),
+    onBackground = Color(0xFF171D1E),
+    surface = Color(0xFFF5FAFD),
+    onSurface = Color(0xFF171D1E),
+    surfaceVariant = Color(0xFFDBE4E7),
+    onSurfaceVariant = Color(0xFF3F484B),
+    surfaceContainer = Color(0xFFE9EFF1),
+    surfaceContainerHigh = Color(0xFFE3E9EB),
+    surfaceContainerHighest = Color(0xFFDEE3E5),
+    outline = Color(0xFF6F797B),
+    outlineVariant = Color(0xFFBFC8CB)
+)

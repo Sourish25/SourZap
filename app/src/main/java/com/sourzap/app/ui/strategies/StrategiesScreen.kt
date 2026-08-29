@@ -1,8 +1,6 @@
 package com.sourzap.app.ui.strategies
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,35 +16,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,24 +37,10 @@ import com.sourzap.app.SourZapApp
 import com.sourzap.app.data.model.BypassStrategy
 import com.sourzap.app.data.model.DohProvider
 import com.sourzap.app.ui.components.ExpressiveCard
+import com.sourzap.app.ui.components.ExpressiveChip
 import com.sourzap.app.ui.components.ScallopedBadge
 import com.sourzap.app.ui.components.SegmentedPillSwitch
-import com.sourzap.app.ui.theme.CandyCoral
-import com.sourzap.app.ui.theme.CandyCoralContainer
-import com.sourzap.app.ui.theme.ElectricVioletContainer
-import com.sourzap.app.ui.theme.CyanSpark
-import com.sourzap.app.ui.theme.DarkBackground
-import com.sourzap.app.ui.theme.DarkSurfaceContainer
-import com.sourzap.app.ui.theme.DarkSurfaceContainerHigh
-import com.sourzap.app.ui.theme.DarkSurfaceContainerHighest
-import com.sourzap.app.ui.theme.ElectricViolet
-import com.sourzap.app.ui.theme.ElectricVioletLight
 import com.sourzap.app.ui.theme.ExpressiveShapes
-import com.sourzap.app.ui.theme.NeonMint
-import com.sourzap.app.ui.theme.SunbeamYellow
-import com.sourzap.app.ui.theme.TextPrimary
-import com.sourzap.app.ui.theme.TextSecondary
-import com.sourzap.app.ui.theme.TextTertiary
 
 @Composable
 fun StrategiesScreen(
@@ -80,31 +49,18 @@ fun StrategiesScreen(
     val app = SourZapApp.instance
     val strategyRepo = app.strategyRepository
 
-    val selectedStrategy by strategyRepo.currentStrategy.collectAsState()
+    val currentStrategy by strategyRepo.currentStrategy.collectAsState()
     val customStrategy by strategyRepo.customStrategy.collectAsState()
-
-    var editingCustom by remember { mutableStateOf(false) }
-
-    // Custom configuration states
-    var customName by remember(customStrategy) { mutableStateOf(customStrategy.name) }
-    var splitOffset by remember(customStrategy) { mutableIntStateOf(customStrategy.tlsSplitOffset) }
-    var useMultisplit by remember(customStrategy) { mutableStateOf(customStrategy.useMultisplit) }
-    var fakeSni by remember(customStrategy) { mutableStateOf(customStrategy.fakeSni) }
-    var fakeTtl by remember(customStrategy) { mutableFloatStateOf(customStrategy.fakeTtl.toFloat()) }
-    var useDisorder by remember(customStrategy) { mutableStateOf(customStrategy.useDisorder) }
-    var httpHostMod by remember(customStrategy) { mutableStateOf(customStrategy.httpHostMod) }
-    var blockQuic by remember(customStrategy) { mutableStateOf(customStrategy.blockQuic) }
-    var dohProvider by remember(customStrategy) { mutableStateOf(customStrategy.dohProvider) }
 
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(DarkBackground)
-            .padding(horizontal = 18.dp),
-        contentPadding = PaddingValues(top = 28.dp, bottom = 110.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(top = 20.dp, bottom = 100.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Expressive Header
+        // Header
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -114,116 +70,138 @@ fun StrategiesScreen(
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "Strategies",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 32.sp,
-                            letterSpacing = (-1).sp,
-                            color = TextPrimary
+                            text = "Bypass Engine",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         ScallopedBadge(
-                            text = "🛡️ ZAPRET",
-                            backgroundColor = ElectricViolet,
-                            textColor = TextPrimary
+                            text = "PRESETS",
+                            backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                            textColor = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
+
                     Text(
-                        text = "Tailored DPI evasion parameters & packet desync modes",
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 13.sp,
-                        color = TextTertiary
+                        text = "Select DPI circumvention preset or build custom desync",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
 
-        // Preset Strategy Gallery
+        // Preset Section Header
         item {
             Text(
-                text = "PRESET STRATEGIES",
-                fontWeight = FontWeight.Black,
-                fontSize = 12.sp,
-                letterSpacing = 0.8.sp,
-                color = ElectricVioletLight
+                text = "CURATED PRESETS",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
-        items(BypassStrategy.DEFAULT_PRESETS) { preset ->
-            val isSelected = selectedStrategy.id == preset.id
+        // Preset Cards
+        items(BypassStrategy.DEFAULT_PRESETS) { strategy ->
+            val isSelected = currentStrategy.id == strategy.id
 
             ExpressiveCard(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { strategyRepo.selectStrategy(preset) },
-                shape = if (isSelected) ExpressiveShapes.AsymmetricPillLarge else ExpressiveShapes.Squircle,
-                backgroundColor = if (isSelected) DarkSurfaceContainerHigh else DarkSurfaceContainer,
-                borderColor = if (isSelected) NeonMint else DarkSurfaceContainerHighest
+                    .clickable { strategyRepo.selectStrategy(strategy) },
+                shape = ExpressiveShapes.AsymmetricPillLarge,
+                backgroundColor = if (isSelected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
+                borderColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(18.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(16.dp)
                 ) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(ExpressiveShapes.Squircle)
-                                .background(if (isSelected) NeonMint.copy(alpha = 0.2f) else DarkSurfaceContainerHighest),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Text(
-                                text = preset.iconEmoji,
-                                fontSize = 22.sp
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(14.dp))
-
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(ExpressiveShapes.Squircle)
+                                    .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest),
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Text(
-                                    text = preset.name,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 16.sp,
-                                    color = TextPrimary
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                ScallopedBadge(
-                                    text = preset.tag,
-                                    backgroundColor = if (isSelected) NeonMint else ElectricViolet,
-                                    textColor = if (isSelected) DarkBackground else TextPrimary,
-                                    numPetals = 8
+                                    text = strategy.iconEmoji,
+                                    fontSize = 20.sp
                                 )
                             }
-                            Spacer(modifier = Modifier.height(3.dp))
-                            Text(
-                                text = preset.description,
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 12.sp,
-                                color = TextSecondary
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column {
+                                Text(
+                                    text = strategy.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = strategy.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Rounded.CheckCircle,
+                                contentDescription = "Selected",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        } else {
+                            ExpressiveChip(
+                                text = strategy.tag,
+                                backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                textColor = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
 
-                    if (isSelected) {
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(NeonMint),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Check,
-                                contentDescription = "Selected",
-                                tint = DarkBackground,
-                                modifier = Modifier.size(18.dp)
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Technique Breakdown
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (strategy.tlsSplitOffset != 0) {
+                            ExpressiveChip(
+                                text = if (strategy.tlsSplitOffset == -1) "SNI Split" else "Split @ ${strategy.tlsSplitOffset}",
+                                backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                                textColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+
+                        if (strategy.fakeSni.isNotEmpty()) {
+                            ExpressiveChip(
+                                text = "Fake: ${strategy.fakeSni}",
+                                backgroundColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                textColor = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+
+                        if (strategy.useDisorder) {
+                            ExpressiveChip(
+                                text = "Disorder",
+                                backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                textColor = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
@@ -231,47 +209,30 @@ fun StrategiesScreen(
             }
         }
 
-        // Custom Strategy Builder Header
+        // Custom Strategy Configurator
         item {
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "CUSTOM STRATEGY BUILDER",
-                    fontWeight = FontWeight.Black,
-                    fontSize = 12.sp,
-                    letterSpacing = 0.8.sp,
-                    color = SunbeamYellow
-                )
-
-                Text(
-                    text = if (editingCustom) "Editing Mode" else "Tap to Customize",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    color = if (editingCustom) SunbeamYellow else TextTertiary,
-                    modifier = Modifier.clickable { editingCustom = !editingCustom }
-                )
-            }
+            Text(
+                text = "CUSTOM STRATEGY BUILDER",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
-        // Custom Strategy Card & Controls
         item {
-            val isCustomActive = selectedStrategy.isCustom
+            val isCustomSelected = currentStrategy.isCustom
 
             ExpressiveCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = ExpressiveShapes.AsymmetricPillInverse,
-                backgroundColor = DarkSurfaceContainer,
-                borderColor = if (isCustomActive) SunbeamYellow else DarkSurfaceContainerHighest
+                backgroundColor = if (isCustomSelected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
+                borderColor = if (isCustomSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -279,83 +240,99 @@ fun StrategiesScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "⚙️",
-                                fontSize = 24.sp
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(ExpressiveShapes.Squircle)
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Tune,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
                             Column {
                                 Text(
                                     text = customStrategy.name,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 16.sp,
-                                    color = TextPrimary
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Fine-tuned packet manipulation parameters",
-                                    fontWeight = FontWeight.Normal,
-                                    fontSize = 12.sp,
-                                    color = TextSecondary
+                                    text = "Tailored packet desync parameters",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
 
-                        if (!isCustomActive) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(ExpressiveShapes.SuperPill)
-                                    .background(SunbeamYellow)
-                                    .clickable { strategyRepo.selectStrategy(customStrategy) }
-                                    .padding(horizontal = 14.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    text = "APPLY",
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 11.sp,
-                                    color = DarkBackground
-                                )
+                        Switch(
+                            checked = isCustomSelected,
+                            onCheckedChange = { checked ->
+                                if (checked) {
+                                    strategyRepo.selectStrategy(customStrategy)
+                                } else {
+                                    strategyRepo.selectStrategy(BypassStrategy.YOUTUBE_TURBO)
+                                }
                             }
-                        } else {
-                            ScallopedBadge(
-                                text = "ACTIVE",
-                                backgroundColor = SunbeamYellow,
-                                textColor = DarkBackground,
-                                numPetals = 8
-                            )
-                        }
-                    }
-
-                    // TLS Split Offset selector
-                    Column {
-                        Text(
-                            text = "TLS CLIENTHELLO SPLIT OFFSET",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            color = TextSecondary
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        SegmentedPillSwitch(
-                            items = listOf(-1, 1, 2, 4),
-                            selectedItem = splitOffset,
-                            itemLabel = { if (it == -1) "SNI Start" else "Pos " },
-                            onItemSelected = { splitOffset = it }
                         )
                     }
 
-                    // Fake SNI selection
+                    // TLS Split Offset Chooser
                     Column {
                         Text(
-                            text = "FAKE SNI SPOOF INJECTION",
+                            text = "TLS Split Offset",
+                            style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            color = TextSecondary
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         SegmentedPillSwitch(
-                            items = listOf("www.google.com", "cloudflare.com", "microsoft.com", "discord.com"),
-                            selectedItem = fakeSni,
-                            itemLabel = { it.substringBefore(".") },
-                            onItemSelected = { fakeSni = it }
+                            items = listOf(-1, 2, 1, 0),
+                            selectedItem = customStrategy.tlsSplitOffset,
+                            itemLabel = {
+                                when (it) {
+                                    -1 -> "SNI Start"
+                                    2 -> "Pos 2"
+                                    1 -> "Pos 1"
+                                    else -> "None"
+                                }
+                            },
+                            onItemSelected = {
+                                strategyRepo.updateCustomStrategy(customStrategy.copy(tlsSplitOffset = it))
+                            }
+                        )
+                    }
+
+                    // Fake SNI Host Chooser
+                    Column {
+                        Text(
+                            text = "Fake SNI Host Injection",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        SegmentedPillSwitch(
+                            items = listOf("www.google.com", "cloudflare.com", "yandex.ru", ""),
+                            selectedItem = customStrategy.fakeSni,
+                            itemLabel = {
+                                when (it) {
+                                    "www.google.com" -> "Google"
+                                    "cloudflare.com" -> "Cloudflare"
+                                    "yandex.ru" -> "Yandex"
+                                    else -> "Disabled"
+                                }
+                            },
+                            onItemSelected = {
+                                strategyRepo.updateCustomStrategy(customStrategy.copy(fakeSni = it))
+                            }
                         )
                     }
 
@@ -366,58 +343,54 @@ fun StrategiesScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = "FAKE PACKET TTL",
+                                text = "Fake Packet TTL",
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                color = TextSecondary
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = " hops",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 12.sp,
-                                color = CyanSpark
+                                text = "${customStrategy.fakeTtl} hops",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
+
                         Slider(
-                            value = fakeTtl,
-                            onValueChange = { fakeTtl = it },
-                            valueRange = 1f..12f,
-                            steps = 10,
-                            colors = SliderDefaults.colors(
-                                thumbColor = CyanSpark,
-                                activeTrackColor = CyanSpark,
-                                inactiveTrackColor = DarkSurfaceContainerHighest
-                            )
+                            value = customStrategy.fakeTtl.toFloat(),
+                            onValueChange = {
+                                strategyRepo.updateCustomStrategy(customStrategy.copy(fakeTtl = it.toInt()))
+                            },
+                            valueRange = 1f..10f,
+                            steps = 8
                         )
                     }
 
-                    // Disorder & Multisplit Switches
+                    // TCP Disorder & QUIC Block
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "TCP Disorder (Out-of-Order)",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = TextPrimary
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Sends segment 2 before segment 1 to confuse DPI",
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 11.sp,
-                                color = TextSecondary
+                                text = "Sends payload segments out of sequence",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+
                         Switch(
-                            checked = useDisorder,
-                            onCheckedChange = { useDisorder = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = ElectricViolet,
-                                checkedTrackColor = ElectricVioletContainer
-                            )
+                            checked = customStrategy.useDisorder,
+                            onCheckedChange = {
+                                strategyRepo.updateCustomStrategy(customStrategy.copy(useDisorder = it))
+                            }
                         )
                     }
 
@@ -426,86 +399,45 @@ fun StrategiesScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Block QUIC (UDP 443)",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = TextPrimary
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Forces fast TCP fallback where DPI desync succeeds",
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 11.sp,
-                                color = TextSecondary
+                                text = "Forces apps to fallback to TCP where DPI desync applies",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+
                         Switch(
-                            checked = blockQuic,
-                            onCheckedChange = { blockQuic = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = CandyCoral,
-                                checkedTrackColor = CandyCoralContainer
-                            )
+                            checked = customStrategy.blockQuic,
+                            onCheckedChange = {
+                                strategyRepo.updateCustomStrategy(customStrategy.copy(blockQuic = it))
+                            }
                         )
                     }
 
-                    // DoH Provider selection
+                    // DoH Provider Chooser
                     Column {
                         Text(
-                            text = "DNS OVER HTTPS (DOH) SECURE RESOLVER",
+                            text = "Encrypted DNS-over-HTTPS (DoH)",
+                            style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            color = TextSecondary
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         SegmentedPillSwitch(
-                            items = DohProvider.values().toList(),
-                            selectedItem = dohProvider,
-                            itemLabel = { it.displayName.substringBefore(" ") },
-                            onItemSelected = { dohProvider = it }
+                            items = listOf(DohProvider.CLOUDFLARE, DohProvider.GOOGLE, DohProvider.QUAD9),
+                            selectedItem = customStrategy.dohProvider,
+                            itemLabel = { it.displayName },
+                            onItemSelected = {
+                                strategyRepo.updateCustomStrategy(customStrategy.copy(dohProvider = it))
+                            }
                         )
-                    }
-
-                    // Save Custom Settings Button
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                            .clip(ExpressiveShapes.SuperPill)
-                            .background(Brush.linearGradient(listOf(ElectricViolet, Color(0xFF6714E2))))
-                            .clickable {
-                                val updated = customStrategy.copy(
-                                    tlsSplitOffset = splitOffset,
-                                    useMultisplit = useMultisplit,
-                                    fakeSni = fakeSni,
-                                    fakeTtl = fakeTtl.toInt(),
-                                    useDisorder = useDisorder,
-                                    httpHostMod = httpHostMod,
-                                    blockQuic = blockQuic,
-                                    dohProvider = dohProvider
-                                )
-                                strategyRepo.updateCustomStrategy(updated)
-                                strategyRepo.selectStrategy(updated)
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.Save,
-                                contentDescription = null,
-                                tint = TextPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "SAVE & ACTIVATE CUSTOM PRESET",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 13.sp,
-                                letterSpacing = 0.8.sp,
-                                color = TextPrimary
-                            )
-                        }
                     }
                 }
             }

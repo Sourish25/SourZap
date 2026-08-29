@@ -76,8 +76,11 @@ class StrategyRepository(private val context: Context) {
 class SettingsRepository(private val context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("sourzap_settings", Context.MODE_PRIVATE)
 
-    private val _themeMode = MutableStateFlow(prefs.getString("theme_mode", "EXPRESSIVE_VIOLET") ?: "EXPRESSIVE_VIOLET")
-    val themeMode: StateFlow<String> = _themeMode.asStateFlow()
+    private val _themePreset = MutableStateFlow(prefs.getString("theme_preset", "DYNAMIC") ?: "DYNAMIC")
+    val themePreset: StateFlow<String> = _themePreset.asStateFlow()
+
+    private val _darkModePref = MutableStateFlow(prefs.getString("dark_mode_pref", "SYSTEM") ?: "SYSTEM")
+    val darkModePref: StateFlow<String> = _darkModePref.asStateFlow()
 
     private val _bypassLan = MutableStateFlow(prefs.getBoolean("bypass_lan", true))
     val bypassLan: StateFlow<Boolean> = _bypassLan.asStateFlow()
@@ -88,9 +91,14 @@ class SettingsRepository(private val context: Context) {
     private val _speedTestHistory = MutableStateFlow<List<SpeedTestResult>>(loadSpeedHistory())
     val speedTestHistory: StateFlow<List<SpeedTestResult>> = _speedTestHistory.asStateFlow()
 
-    fun setThemeMode(mode: String) {
-        prefs.edit().putString("theme_mode", mode).apply()
-        _themeMode.value = mode
+    fun setThemePreset(preset: String) {
+        prefs.edit().putString("theme_preset", preset).apply()
+        _themePreset.value = preset
+    }
+
+    fun setDarkModePref(pref: String) {
+        prefs.edit().putString("dark_mode_pref", pref).apply()
+        _darkModePref.value = pref
     }
 
     fun setBypassLan(enabled: Boolean) {
@@ -109,7 +117,6 @@ class SettingsRepository(private val context: Context) {
     }
 
     private fun loadSpeedHistory(): List<SpeedTestResult> {
-        // Preload with 1 initial benchmark sample for preview
         return listOf(
             SpeedTestResult(
                 pingMs = 18.5f,
@@ -124,7 +131,6 @@ class SettingsRepository(private val context: Context) {
     }
 
     private fun saveSpeedHistory(list: List<SpeedTestResult>) {
-        // Persist count
         prefs.edit().putInt("speed_test_count", list.size).apply()
     }
 }

@@ -1,56 +1,68 @@
 package com.sourzap.app.ui.theme
 
 import android.app.Activity
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-private val ExpressiveDarkColorScheme = darkColorScheme(
-    primary = ElectricViolet,
-    onPrimary = TextPrimary,
-    primaryContainer = ElectricVioletContainer,
-    onPrimaryContainer = ElectricVioletLight,
-    secondary = NeonMint,
-    onSecondary = DarkBackground,
-    secondaryContainer = NeonMintContainer,
-    onSecondaryContainer = NeonMintLight,
-    tertiary = CandyCoral,
-    onTertiary = TextPrimary,
-    tertiaryContainer = CandyCoralContainer,
-    onTertiaryContainer = CandyCoralLight,
-    background = DarkBackground,
-    onBackground = TextPrimary,
-    surface = DarkSurface,
-    onSurface = TextPrimary,
-    surfaceVariant = DarkSurfaceContainer,
-    onSurfaceVariant = TextSecondary,
-    surfaceContainer = DarkSurfaceContainer,
-    surfaceContainerHigh = DarkSurfaceContainerHigh,
-    surfaceContainerHighest = DarkSurfaceContainerHighest,
-    outline = DarkSurfaceContainerHighest,
-    outlineVariant = DarkSurfaceContainerHigh
-)
+enum class AppThemePreset(val id: String, val displayName: String, val iconEmoji: String) {
+    DYNAMIC("DYNAMIC", "System Dynamic (Monet)", "✨"),
+    ELECTRIC_INDIGO("ELECTRIC_INDIGO", "Electric Indigo", "💜"),
+    CYBER_MINT("CYBER_MINT", "Cyber Mint", "🌿"),
+    BERRY_EXPRESSIVE("BERRY_EXPRESSIVE", "Berry Expressive", "🫐"),
+    SUNSET_TERRACOTTA("SUNSET_TERRACOTTA", "Sunset Amber", "🌅"),
+    OCEANIC_CYAN("OCEANIC_CYAN", "Oceanic Slate", "🌊")
+}
 
 @Composable
 fun SourZapTheme(
-    darkTheme: Boolean = true, // Expressive dark mode hero
+    themePreset: String = "DYNAMIC",
+    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = ExpressiveDarkColorScheme
-    val view = LocalView.current
+    val context = LocalContext.current
+    val isDynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
+    val colorScheme: ColorScheme = when {
+        themePreset == AppThemePreset.DYNAMIC.id && isDynamicAvailable -> {
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        }
+        themePreset == AppThemePreset.CYBER_MINT.id -> {
+            if (darkTheme) CyberMintDarkColorScheme else CyberMintLightColorScheme
+        }
+        themePreset == AppThemePreset.BERRY_EXPRESSIVE.id -> {
+            if (darkTheme) BerryDarkColorScheme else BerryLightColorScheme
+        }
+        themePreset == AppThemePreset.SUNSET_TERRACOTTA.id -> {
+            if (darkTheme) SunsetDarkColorScheme else SunsetLightColorScheme
+        }
+        themePreset == AppThemePreset.OCEANIC_CYAN.id -> {
+            if (darkTheme) OceanicDarkColorScheme else OceanicLightColorScheme
+        }
+        else -> {
+            // Default Electric Indigo
+            if (darkTheme) ElectricIndigoDarkColorScheme else ElectricIndigoLightColorScheme
+        }
+    }
+
+    val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = DarkBackground.toArgb()
-            window.navigationBarColor = DarkBackground.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
-            WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = false
+            window.statusBarColor = colorScheme.surface.toArgb()
+            window.navigationBarColor = colorScheme.surfaceContainer.toArgb()
+            val insetsController = WindowCompat.getInsetsController(window, view)
+            insetsController.isAppearanceLightStatusBars = !darkTheme
+            insetsController.isAppearanceLightNavigationBars = !darkTheme
         }
     }
 

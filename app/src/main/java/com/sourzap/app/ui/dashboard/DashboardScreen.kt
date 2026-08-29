@@ -5,12 +5,7 @@ import android.content.Intent
 import android.net.VpnService
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,18 +20,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.FlashOn
-import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -44,36 +36,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sourzap.app.SourZapApp
-import com.sourzap.app.data.model.BypassStrategy
 import com.sourzap.app.service.SourZapVpnService
 import com.sourzap.app.service.TrafficMonitor
 import com.sourzap.app.ui.components.ExpressiveCard
+import com.sourzap.app.ui.components.ExpressiveChip
 import com.sourzap.app.ui.components.ExpressiveTrafficWave
 import com.sourzap.app.ui.components.HeroConnectButton
 import com.sourzap.app.ui.components.ScallopedBadge
-import com.sourzap.app.ui.theme.CandyCoral
-import com.sourzap.app.ui.theme.CyanSpark
-import com.sourzap.app.ui.theme.DarkBackground
-import com.sourzap.app.ui.theme.DarkSurfaceContainer
-import com.sourzap.app.ui.theme.DarkSurfaceContainerHigh
-import com.sourzap.app.ui.theme.DarkSurfaceContainerHighest
-import com.sourzap.app.ui.theme.ElectricViolet
-import com.sourzap.app.ui.theme.ElectricVioletLight
 import com.sourzap.app.ui.theme.ExpressiveShapes
-import com.sourzap.app.ui.theme.NeonMint
-import com.sourzap.app.ui.theme.NumberDisplayMedium
 import com.sourzap.app.ui.theme.NumberDisplaySmall
-import com.sourzap.app.ui.theme.SunbeamYellow
-import com.sourzap.app.ui.theme.TextPrimary
-import com.sourzap.app.ui.theme.TextSecondary
-import com.sourzap.app.ui.theme.TextTertiary
 
 @Composable
 fun DashboardScreen(
@@ -132,12 +108,12 @@ fun DashboardScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(DarkBackground)
-            .padding(horizontal = 18.dp),
-        contentPadding = PaddingValues(top = 28.dp, bottom = 110.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(top = 20.dp, bottom = 100.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Expressive App Header
+        // App Header
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -148,51 +124,31 @@ fun DashboardScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = "SourZap",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 32.sp,
-                            letterSpacing = (-1).sp,
-                            color = TextPrimary
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         ScallopedBadge(
-                            text = "⚡ M3 EXPRESSIVE",
-                            backgroundColor = ElectricViolet,
-                            textColor = TextPrimary
+                            text = "DPI",
+                            backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                            textColor = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
 
                     Text(
-                        text = "Rootless Zapret DPI Desync & Speed Engine",
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 13.sp,
-                        color = TextTertiary
+                        text = "Rootless DPI bypass & traffic monitor",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                // Status Pill
-                Box(
-                    modifier = Modifier
-                        .clip(ExpressiveShapes.SuperPill)
-                        .background(if (isConnected) NeonMint.copy(alpha = 0.2f) else DarkSurfaceContainerHigh)
-                        .border(1.dp, if (isConnected) NeonMint else DarkSurfaceContainerHighest, ExpressiveShapes.SuperPill)
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(if (isConnected) NeonMint else CandyCoral)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isConnected) "ACTIVE" else "IDLE",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 11.sp,
-                            color = if (isConnected) NeonMint else TextSecondary
-                        )
-                    }
-                }
+                // Status Pill Chip
+                ExpressiveChip(
+                    text = if (isConnected) "CONNECTED" else "DISCONNECTED",
+                    backgroundColor = if (isConnected) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    textColor = if (isConnected) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
@@ -201,7 +157,7 @@ fun DashboardScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 12.dp),
+                    .padding(vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 HeroConnectButton(
@@ -211,20 +167,20 @@ fun DashboardScreen(
             }
         }
 
-        // Active Strategy Quick Card
+        // Active Strategy Card
         item {
             ExpressiveCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onNavigateToStrategies() },
                 shape = ExpressiveShapes.AsymmetricPillLarge,
-                backgroundColor = DarkSurfaceContainer,
-                borderColor = if (isConnected) ElectricViolet else DarkSurfaceContainerHighest
+                backgroundColor = MaterialTheme.colorScheme.surfaceContainer,
+                borderColor = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(20.dp),
+                        .padding(16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -234,41 +190,39 @@ fun DashboardScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(50.dp)
+                                .size(48.dp)
                                 .clip(ExpressiveShapes.Squircle)
-                                .background(ElectricViolet.copy(alpha = 0.2f)),
+                                .background(MaterialTheme.colorScheme.primaryContainer),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = currentStrategy.iconEmoji,
-                                fontSize = 24.sp
+                                fontSize = 22.sp
                             )
                         }
 
-                        Spacer(modifier = Modifier.width(14.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
 
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = currentStrategy.name,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 17.sp,
-                                    color = TextPrimary
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                ScallopedBadge(
+                                Spacer(modifier = Modifier.width(6.dp))
+                                ExpressiveChip(
                                     text = currentStrategy.tag,
-                                    backgroundColor = SunbeamYellow,
-                                    textColor = DarkBackground,
-                                    numPetals = 8
+                                    backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    textColor = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                             }
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = currentStrategy.description,
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 12.sp,
-                                color = TextSecondary,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1
                             )
                         }
@@ -277,27 +231,27 @@ fun DashboardScreen(
                     Icon(
                         imageVector = Icons.Rounded.Tune,
                         contentDescription = "Configure Strategy",
-                        tint = ElectricVioletLight,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp)
                     )
                 }
             }
         }
 
-        // Real-Time Traffic & Speeds Card
+        // Real-Time Throughput Card
         item {
             ExpressiveCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onNavigateToTraffic() },
                 shape = ExpressiveShapes.AsymmetricPillInverse,
-                backgroundColor = DarkSurfaceContainer,
-                borderColor = DarkSurfaceContainerHighest
+                backgroundColor = MaterialTheme.colorScheme.surfaceContainer,
+                borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(20.dp)
+                        .padding(16.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -308,28 +262,26 @@ fun DashboardScreen(
                             Icon(
                                 imageVector = Icons.Rounded.Speed,
                                 contentDescription = null,
-                                tint = NeonMint,
-                                modifier = Modifier.size(20.dp)
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "LIVE TRAFFIC THROUGHPUT",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 12.sp,
-                                letterSpacing = 0.8.sp,
-                                color = NeonMint
+                                text = "LIVE THROUGHPUT",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
 
                         Text(
                             text = " active sockets",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            color = TextTertiary
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -341,21 +293,20 @@ fun DashboardScreen(
                                 Icon(
                                     imageVector = Icons.Rounded.ArrowDownward,
                                     contentDescription = "Download",
-                                    tint = NeonMint,
-                                    modifier = Modifier.size(16.dp)
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "DOWNLOAD",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    color = TextSecondary
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             Text(
                                 text = stats.formattedDownloadSpeed(),
                                 style = NumberDisplaySmall,
-                                color = TextPrimary
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
 
@@ -365,21 +316,20 @@ fun DashboardScreen(
                                 Icon(
                                     imageVector = Icons.Rounded.ArrowUpward,
                                     contentDescription = "Upload",
-                                    tint = CyanSpark,
-                                    modifier = Modifier.size(16.dp)
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "UPLOAD",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    color = TextSecondary
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             Text(
                                 text = stats.formattedUploadSpeed(),
                                 style = NumberDisplaySmall,
-                                color = TextPrimary
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
 
@@ -387,25 +337,24 @@ fun DashboardScreen(
                         Column {
                             Text(
                                 text = "SESSION",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                color = TextSecondary
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 text = stats.formattedSessionDownload(),
                                 style = NumberDisplaySmall,
-                                color = SunbeamYellow
+                                color = MaterialTheme.colorScheme.tertiary
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // Live Waveform Canvas
                     ExpressiveTrafficWave(
                         speedHistory = stats.recentSpeedHistory,
-                        lineColor = NeonMint,
-                        fillColor = NeonMint.copy(alpha = 0.25f)
+                        lineColor = MaterialTheme.colorScheme.primary,
+                        fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
                     )
                 }
             }
@@ -420,49 +369,47 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "LIVE DPI EVASION STREAM",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 12.sp,
-                        letterSpacing = 0.8.sp,
-                        color = ElectricVioletLight
+                        text = "RECENT PACKET DESYNC",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     Text(
-                        text = "Tap for Inspector",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        color = TextTertiary,
+                        text = "View Inspector",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable { onNavigateToTraffic() }
                     )
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 if (recentLogs.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(ExpressiveShapes.Squircle)
-                            .background(DarkSurfaceContainer)
-                            .padding(18.dp),
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(16.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (isConnected) "⚡ Listening for DPI traffic..." else "Connect SourZap to start desyncing packets",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = TextTertiary
+                            text = if (isConnected) "Listening for DPI traffic..." else "Connect to start desyncing packets",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        recentLogs.take(4).forEach { log ->
+                        recentLogs.take(3).forEach { log ->
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(ExpressiveShapes.Squircle)
-                                    .background(DarkSurfaceContainerHigh)
-                                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                                    .clip(ExpressiveShapes.SuperPill)
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -474,26 +421,25 @@ fun DashboardScreen(
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Rounded.FlashOn,
+                                            imageVector = Icons.Rounded.Bolt,
                                             contentDescription = null,
-                                            tint = NeonMint,
+                                            tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(16.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
                                         Text(
                                             text = log.domain,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            color = TextPrimary,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             maxLines = 1
                                         )
                                     }
 
-                                    ScallopedBadge(
+                                    ExpressiveChip(
                                         text = log.technique,
-                                        backgroundColor = ElectricViolet,
-                                        textColor = TextPrimary,
-                                        numPetals = 8
+                                        backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                                        textColor = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 }
                             }
@@ -503,20 +449,20 @@ fun DashboardScreen(
             }
         }
 
-        // Speed Test CTA Banner
+        // Speed Test CTA
         item {
             ExpressiveCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onNavigateToSpeedTest() },
-                shape = ExpressiveShapes.ChunkyCard,
-                backgroundColor = DarkSurfaceContainerHigh,
-                borderColor = SunbeamYellow.copy(alpha = 0.4f)
+                shape = ExpressiveShapes.SuperPill,
+                backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(18.dp),
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -526,42 +472,40 @@ fun DashboardScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(46.dp)
+                                .size(40.dp)
                                 .clip(CircleShape)
-                                .background(SunbeamYellow.copy(alpha = 0.2f)),
+                                .background(MaterialTheme.colorScheme.tertiaryContainer),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Speed,
                                 contentDescription = null,
-                                tint = SunbeamYellow,
-                                modifier = Modifier.size(24.dp)
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
 
-                        Spacer(modifier = Modifier.width(14.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
 
                         Column {
                             Text(
                                 text = "Test Internet Speed",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 16.sp,
-                                color = TextPrimary
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Benchmark ping, download & upload unthrottled",
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 12.sp,
-                                color = TextSecondary
+                                text = "Benchmark unthrottled bandwidth",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
 
-                    ScallopedBadge(
-                        text = "TEST NOW",
-                        backgroundColor = SunbeamYellow,
-                        textColor = DarkBackground,
-                        numPetals = 10
+                    ExpressiveChip(
+                        text = "START",
+                        backgroundColor = MaterialTheme.colorScheme.tertiary,
+                        textColor = MaterialTheme.colorScheme.onTertiary
                     )
                 }
             }

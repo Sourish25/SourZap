@@ -10,7 +10,12 @@ data class SpeedTestResult(
     val serverName: String = "Cloudflare Edge",
     val serverLocation: String = "Closest CDN Node",
     val strategyName: String = "YouTube Turbo Fix"
-)
+) {
+    fun formattedDate(): String {
+        val sdf = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
+        return sdf.format(java.util.Date(timestamp))
+    }
+}
 
 enum class SpeedTestPhase {
     IDLE,

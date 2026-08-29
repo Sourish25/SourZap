@@ -4,17 +4,18 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,7 +28,6 @@ import com.sourzap.app.ui.dashboard.DashboardScreen
 import com.sourzap.app.ui.settings.SettingsScreen
 import com.sourzap.app.ui.speedtest.SpeedTestScreen
 import com.sourzap.app.ui.strategies.StrategiesScreen
-import com.sourzap.app.ui.theme.DarkBackground
 import com.sourzap.app.ui.theme.SourZapTheme
 import com.sourzap.app.ui.traffic.TrafficScreen
 
@@ -36,7 +36,23 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
-            SourZapTheme {
+            val app = SourZapApp.instance
+            val settingsRepo = app.settingsRepository
+
+            val themePreset by settingsRepo.themePreset.collectAsState()
+            val darkModePref by settingsRepo.darkModePref.collectAsState()
+            val systemInDark = isSystemInDarkTheme()
+
+            val isDark = when (darkModePref) {
+                "DARK" -> true
+                "LIGHT" -> false
+                else -> systemInDark
+            }
+
+            SourZapTheme(
+                themePreset = themePreset,
+                darkTheme = isDark
+            ) {
                 MainAppScreen()
             }
         }
@@ -52,7 +68,7 @@ fun MainAppScreen() {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkBackground)
+            .background(MaterialTheme.colorScheme.surface)
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
