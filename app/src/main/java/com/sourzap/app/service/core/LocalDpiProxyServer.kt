@@ -116,6 +116,10 @@ class LocalDpiProxyServer(
                 val targetHost = target.substringBefore(":")
                 val targetPort = target.substringAfter(":", "443").toIntOrNull() ?: 443
 
+                // Resolve targetHost with DoH to prevent ISP DNS blocking & timeouts
+                val targetIps = DohResolver.resolve(targetHost)
+                val targetIp = targetIps.firstOrNull() ?: java.net.InetAddress.getByName(targetHost)
+
                 // Connect to remote upstream with protected socket
                 val upstream = Socket().apply {
                     receiveBufferSize = 2097152 // 2 MB Turbo Video Buffer for 4K/8K Media
@@ -129,7 +133,7 @@ class LocalDpiProxyServer(
                 upstreamSocket = upstream
 
                 vpnService.protect(upstream)
-                upstream.connect(InetSocketAddress(targetHost, targetPort), 5000)
+                upstream.connect(InetSocketAddress(targetIp, targetPort), 6000)
 
                 // Respond 200 Connection Established to Android client app
                 val response200 = "HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.US_ASCII)
@@ -195,6 +199,9 @@ class LocalDpiProxyServer(
                 val targetPort = 80
 
                 if (targetHost.isNotEmpty()) {
+                    val targetIps = DohResolver.resolve(targetHost)
+                    val targetIp = targetIps.firstOrNull() ?: java.net.InetAddress.getByName(targetHost)
+
                     val upstream = Socket().apply {
                         receiveBufferSize = 1048576
                         sendBufferSize = 524288
@@ -207,7 +214,7 @@ class LocalDpiProxyServer(
                     upstreamSocket = upstream
 
                     vpnService.protect(upstream)
-                    upstream.connect(InetSocketAddress(targetHost, targetPort), 5000)
+                    upstream.connect(InetSocketAddress(targetIp, targetPort), 6000)
 
                     val upstreamOut = upstream.getOutputStream()
                     val upstreamIn = upstream.getInputStream()

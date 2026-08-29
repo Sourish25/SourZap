@@ -203,8 +203,8 @@ class TunTcpRelay(
             TrafficMonitor.onConnectionOpened()
             try {
                 val socket = Socket().apply {
-                    receiveBufferSize = 1048576 // 1MB Turbo Receive Buffer
-                    sendBufferSize = 524288     // 512KB Send Buffer
+                    receiveBufferSize = 2097152 // 2MB Turbo Receive Buffer
+                    sendBufferSize = 1048576    // 1MB Send Buffer
                     tcpNoDelay = true
                     keepAlive = true
                     soTimeout = 0               // Persistent keepalive
@@ -213,18 +213,18 @@ class TunTcpRelay(
                 }
 
                 vpnService.protect(socket)
-                socket.connect(InetSocketAddress(session.dstIp, session.dstPort), 4500)
+                socket.connect(InetSocketAddress(session.dstIp, session.dstPort), 6000)
 
                 session.socket = socket
                 val upstreamOut = socket.getOutputStream()
                 session.upstreamOut = upstreamOut
                 session.isConnected.set(true)
 
-                // Dedicated sequential sender loop (FIFO order)
-                scope.launch(Dispatchers.IO) {
+                // Dedicated sequential sender loop (FIFO order) - launched AFTER socket is connected
+                val senderJob = scope.launch(Dispatchers.IO) {
                     try {
                         for (payload in session.sendQueue) {
-                            if (!session.isConnected.get() || !scope.isActive || !isRunning.get()) break
+                            if (!scope.isActive || !isRunning.get() || !session.isConnected.get()) break
                             session.lastActivity = System.currentTimeMillis()
 
                             if (!session.isHandshakeDesynced.getAndSet(true)) {
@@ -264,29 +264,32 @@ class TunTcpRelay(
 
                 // Downstream reader loop
                 val input = socket.getInputStream()
-                val readBuffer = ByteArray(1400)
+                val readBuffer = ByteArrayPool.obtainStreamBuffer()
+                try {
+                    var bytesRead = input.read(readBuffer)
+                    while (scope.isActive && bytesRead != -1 && session.isConnected.get() && isRunning.get()) {
+                        if (bytesRead > 0) {
+                            session.lastActivity = System.currentTimeMillis()
+                            TrafficMonitor.recordRxBytes(bytesRead.toLong())
 
-                var bytesRead = input.read(readBuffer)
-                while (scope.isActive && bytesRead != -1 && session.isConnected.get() && isRunning.get()) {
-                    if (bytesRead > 0) {
-                        session.lastActivity = System.currentTimeMillis()
-                        TrafficMonitor.recordRxBytes(bytesRead.toLong())
-
-                        val responseData = if (bytesRead == readBuffer.size) readBuffer else readBuffer.copyOfRange(0, bytesRead)
-                        val dataPacket = buildTcpPacket(
-                            srcIp = session.dstIp,
-                            dstIp = session.srcIp,
-                            srcPort = session.dstPort,
-                            dstPort = session.srcPort,
-                            seqNum = session.serverSeq.get(),
-                            ackNum = session.clientSeq.get(),
-                            flags = 0x18, // PSH | ACK
-                            payload = responseData
-                        )
-                        session.serverSeq.addAndGet(bytesRead.toLong())
-                        writeTunPacket(dataPacket)
+                            val responseData = if (bytesRead == readBuffer.size) readBuffer else readBuffer.copyOfRange(0, bytesRead)
+                            val dataPacket = buildTcpPacket(
+                                srcIp = session.dstIp,
+                                dstIp = session.srcIp,
+                                srcPort = session.dstPort,
+                                dstPort = session.srcPort,
+                                seqNum = session.serverSeq.get(),
+                                ackNum = session.clientSeq.get(),
+                                flags = 0x18, // PSH | ACK
+                                payload = responseData
+                            )
+                            session.serverSeq.addAndGet(bytesRead.toLong())
+                            writeTunPacket(dataPacket)
+                        }
+                        bytesRead = input.read(readBuffer)
                     }
-                    bytesRead = input.read(readBuffer)
+                } finally {
+                    ByteArrayPool.recycleStreamBuffer(readBuffer)
                 }
 
                 // Upstream EOF: send FIN-ACK to client

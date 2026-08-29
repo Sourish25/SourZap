@@ -45,6 +45,8 @@ class TunUdpRelay(
             try {
                 val s = DatagramSocket()
                 vpnService.protect(s)
+                s.receiveBufferSize = 2097152 // 2MB UDP Receive Buffer
+                s.sendBufferSize = 1048576    // 1MB UDP Send Buffer
                 s.soTimeout = 0 // Blocking receive in IO coroutine
                 sockets.add(s)
 
@@ -101,7 +103,7 @@ class TunUdpRelay(
     }
 
     private fun runReceiverLoop(socket: DatagramSocket, socketIndex: Int) {
-        val recvBuf = ByteArray(4096)
+        val recvBuf = ByteArray(65535)
         val recvPacket = DatagramPacket(recvBuf, recvBuf.size)
 
         while (scope.isActive && isRunning.get()) {
