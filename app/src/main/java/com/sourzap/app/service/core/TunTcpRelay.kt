@@ -272,19 +272,25 @@ class TunTcpRelay(
                             session.lastActivity = System.currentTimeMillis()
                             TrafficMonitor.recordRxBytes(bytesRead.toLong())
 
-                            val responseData = if (bytesRead == readBuffer.size) readBuffer else readBuffer.copyOfRange(0, bytesRead)
-                            val dataPacket = buildTcpPacket(
-                                srcIp = session.dstIp,
-                                dstIp = session.srcIp,
-                                srcPort = session.dstPort,
-                                dstPort = session.srcPort,
-                                seqNum = session.serverSeq.get(),
-                                ackNum = session.clientSeq.get(),
-                                flags = 0x18, // PSH | ACK
-                                payload = responseData
-                            )
-                            session.serverSeq.addAndGet(bytesRead.toLong())
-                            writeTunPacket(dataPacket)
+                            var offset = 0
+                            val maxSegment = 1400 // Fits within 1500 MTU (20 IP + 20 TCP + 1400 payload = 1440 bytes)
+                            while (offset < bytesRead) {
+                                val chunkLen = minOf(bytesRead - offset, maxSegment)
+                                val chunk = readBuffer.copyOfRange(offset, offset + chunkLen)
+                                val dataPacket = buildTcpPacket(
+                                    srcIp = session.dstIp,
+                                    dstIp = session.srcIp,
+                                    srcPort = session.dstPort,
+                                    dstPort = session.srcPort,
+                                    seqNum = session.serverSeq.get(),
+                                    ackNum = session.clientSeq.get(),
+                                    flags = 0x18, // PSH | ACK
+                                    payload = chunk
+                                )
+                                session.serverSeq.addAndGet(chunkLen.toLong())
+                                writeTunPacket(dataPacket)
+                                offset += chunkLen
+                            }
                         }
                         bytesRead = input.read(readBuffer)
                     }
@@ -364,7 +370,8 @@ class TunTcpRelay(
         payload: ByteArray
     ): ByteArray {
         val ipHeaderLen = 20
-        val tcpHeaderLen = 20
+        val isSynAck = (flags == 0x12)
+        val tcpHeaderLen = if (isSynAck) 24 else 20
         val totalLength = ipHeaderLen + tcpHeaderLen + payload.size
         val packet = ByteArray(totalLength)
 
@@ -390,7 +397,7 @@ class TunTcpRelay(
         packet[10] = ((ipChecksum.toInt() shr 8) and 0xFF).toByte()
         packet[11] = (ipChecksum.toInt() and 0xFF).toByte()
 
-        // --- TCP Header (20 bytes) ---
+        // --- TCP Header (20 or 24 bytes) ---
         val tcpOffset = ipHeaderLen
         packet[tcpOffset] = ((srcPort shr 8) and 0xFF).toByte()
         packet[tcpOffset + 1] = (srcPort and 0xFF).toByte()
@@ -409,8 +416,8 @@ class TunTcpRelay(
         packet[tcpOffset + 10] = ((ackNum shr 8) and 0xFF).toByte()
         packet[tcpOffset + 11] = (ackNum and 0xFF).toByte()
 
-        // Data Offset (5 words = 20 bytes) & Reserved
-        packet[tcpOffset + 12] = (5 shl 4).toByte()
+        // Data Offset (5 or 6 words) & Reserved
+        packet[tcpOffset + 12] = ((tcpHeaderLen / 4) shl 4).toByte()
         // Flags
         packet[tcpOffset + 13] = flags.toByte()
 
@@ -425,6 +432,14 @@ class TunTcpRelay(
         // Urgent Pointer
         packet[tcpOffset + 18] = 0x00.toByte()
         packet[tcpOffset + 19] = 0x00.toByte()
+
+        // TCP Options: MSS 1400 (Kind 2, Len 4, Value 1400 [0x05, 0x78]) for SYN-ACK
+        if (isSynAck) {
+            packet[tcpOffset + 20] = 0x02.toByte()
+            packet[tcpOffset + 21] = 0x04.toByte()
+            packet[tcpOffset + 22] = 0x05.toByte()
+            packet[tcpOffset + 23] = 0x78.toByte()
+        }
 
         // --- Payload ---
         if (payload.isNotEmpty()) {

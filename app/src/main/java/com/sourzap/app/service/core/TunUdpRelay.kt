@@ -116,6 +116,8 @@ class TunUdpRelay(
                 if (len > 0) {
                     val natKey = "${remoteAddress.hostAddress}:$remotePort#$socketIndex"
                     val client = natTable[natKey]
+                        ?: natTable.entries.firstOrNull { it.key.startsWith("${remoteAddress.hostAddress}:") }?.value
+                        ?: natTable.values.maxByOrNull { it.lastSeen }
 
                     if (client != null) {
                         client.lastSeen = System.currentTimeMillis()

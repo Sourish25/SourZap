@@ -195,8 +195,9 @@ class LocalDpiProxyServer(
             } else {
                 // --- Plain HTTP Request ---
                 val hostLine = headerStr.lineSequence().firstOrNull { it.startsWith("Host:", ignoreCase = true) }
-                val targetHost = hostLine?.substringAfter(":")?.trim()?.substringBefore(":") ?: ""
-                val targetPort = 80
+                val rawHost = hostLine?.substringAfter(":")?.trim() ?: ""
+                val targetHost = if (rawHost.contains(":")) rawHost.substringBefore(":") else rawHost
+                val targetPort = if (rawHost.contains(":")) rawHost.substringAfter(":").toIntOrNull() ?: 80 else 80
 
                 if (targetHost.isNotEmpty()) {
                     val targetIps = DohResolver.resolve(targetHost)
