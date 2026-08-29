@@ -96,6 +96,11 @@ class SourZapVpnService : VpnService() {
                         setHttpProxy(ProxyInfo.buildDirectProxy("127.0.0.1", proxyPort))
                     }
 
+                    // Exclude SourZap's own app to prevent internal download / updater recursive loops
+                    try {
+                        addDisallowedApplication(packageName)
+                    } catch (_: Exception) {}
+
                     // Per-App Split Tunneling
                     val disallowed = settingsRepo.disallowedPackages.value
                     disallowed.forEach { pkg ->
