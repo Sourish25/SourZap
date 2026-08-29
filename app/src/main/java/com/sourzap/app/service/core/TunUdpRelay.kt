@@ -86,13 +86,12 @@ class TunUdpRelay(
         val socketIndex = (srcPort and 0x7FFFFFFF) % sockets.size
         val socket = sockets[socketIndex]
 
-        val natKey = "${dstIp.hostAddress}:$dstPort#$socketIndex"
-        val existing = natTable[natKey]
-        if (existing != null) {
-            existing.lastSeen = System.currentTimeMillis()
-        } else {
-            natTable[natKey] = ClientMapping(srcIp, srcPort, System.currentTimeMillis())
-        }
+        val mapping = ClientMapping(srcIp, srcPort, System.currentTimeMillis())
+        val natKeyExact = "${dstIp.hostAddress}:$dstPort#$socketIndex"
+        val natKeyHost = "${dstIp.hostAddress}#$socketIndex"
+
+        natTable[natKeyExact] = mapping
+        natTable[natKeyHost] = mapping
 
         try {
             val sendPacket = DatagramPacket(payload, payload.size, dstIp, dstPort)
@@ -107,14 +106,21 @@ class TunUdpRelay(
 
         while (scope.isActive && isRunning.get()) {
             try {
+                // Crucial: Must reset length to full buffer size before every receive call.
+                // Otherwise Java DatagramSocket permanently mutates packet length to previous message size,
+                // causing tracker announce responses and DHT responses to be truncated or dropped!
+                recvPacket.length = recvBuf.size
                 socket.receive(recvPacket)
                 val len = recvPacket.length
                 val remoteAddress = recvPacket.address ?: continue
                 val remotePort = recvPacket.port
 
                 if (len > 0) {
-                    val natKey = "${remoteAddress.hostAddress}:$remotePort#$socketIndex"
-                    val client = natTable[natKey]
+                    val natKeyExact = "${remoteAddress.hostAddress}:$remotePort#$socketIndex"
+                    val natKeyHost = "${remoteAddress.hostAddress}#$socketIndex"
+
+                    val client = natTable[natKeyExact]
+                        ?: natTable[natKeyHost]
                         ?: natTable.entries.firstOrNull { it.key.startsWith("${remoteAddress.hostAddress}:") }?.value
                         ?: natTable.values.maxByOrNull { it.lastSeen }
 
@@ -153,39 +159,48 @@ class TunUdpRelay(
         val totalLength = 20 + 8 + payload.size
         val packet = ByteArray(totalLength)
 
+        // IPv4 Header (20 bytes)
         packet[0] = 0x45.toByte()
         packet[1] = 0x00.toByte()
         packet[2] = ((totalLength shr 8) and 0xFF).toByte()
         packet[3] = (totalLength and 0xFF).toByte()
         packet[4] = 0x00.toByte()
         packet[5] = 0x00.toByte()
-        packet[6] = 0x40.toByte()
+        packet[6] = 0x40.toByte() // Don't Fragment
         packet[7] = 0x00.toByte()
-        packet[8] = 64.toByte()
-        packet[9] = 17.toByte() // UDP (17)
+        packet[8] = 64.toByte()   // TTL
+        packet[9] = 17.toByte()   // UDP (17)
 
         System.arraycopy(srcIp.address, 0, packet, 12, 4)
         System.arraycopy(dstIp.address, 0, packet, 16, 4)
 
-        val ipChecksum = computeChecksum(packet, 0, 20)
+        val ipChecksum = computeIpChecksum(packet, 0, 20)
         packet[10] = ((ipChecksum.toInt() shr 8) and 0xFF).toByte()
         packet[11] = (ipChecksum.toInt() and 0xFF).toByte()
 
+        // UDP Header (8 bytes)
         val udpLen = 8 + payload.size
-        packet[20] = ((srcPort shr 8) and 0xFF).toByte()
-        packet[21] = (srcPort and 0xFF).toByte()
-        packet[22] = ((dstPort shr 8) and 0xFF).toByte()
-        packet[23] = (dstPort and 0xFF).toByte()
-        packet[24] = ((udpLen shr 8) and 0xFF).toByte()
-        packet[25] = (udpLen and 0xFF).toByte()
-        packet[26] = 0x00.toByte()
-        packet[27] = 0x00.toByte()
+        val udpOffset = 20
+        packet[udpOffset] = ((srcPort shr 8) and 0xFF).toByte()
+        packet[udpOffset + 1] = (srcPort and 0xFF).toByte()
+        packet[udpOffset + 2] = ((dstPort shr 8) and 0xFF).toByte()
+        packet[udpOffset + 3] = (dstPort and 0xFF).toByte()
+        packet[udpOffset + 4] = ((udpLen shr 8) and 0xFF).toByte()
+        packet[udpOffset + 5] = (udpLen and 0xFF).toByte()
+        packet[udpOffset + 6] = 0x00.toByte()
+        packet[udpOffset + 7] = 0x00.toByte()
 
         System.arraycopy(payload, 0, packet, 28, payload.size)
+
+        // Compute RFC 768 UDP Checksum with IPv4 Pseudo-Header
+        val udpChecksum = computeUdpChecksum(packet, udpOffset, udpLen, srcIp.address, dstIp.address)
+        packet[udpOffset + 6] = ((udpChecksum.toInt() shr 8) and 0xFF).toByte()
+        packet[udpOffset + 7] = (udpChecksum.toInt() and 0xFF).toByte()
+
         return packet
     }
 
-    private fun computeChecksum(data: ByteArray, offset: Int, length: Int): Short {
+    private fun computeIpChecksum(data: ByteArray, offset: Int, length: Int): Short {
         var sum = 0
         for (i in offset until offset + length step 2) {
             val word = if (i + 1 < offset + length) {
@@ -199,6 +214,37 @@ class TunUdpRelay(
             sum = (sum and 0xFFFF) + (sum shr 16)
         }
         return (sum.inv() and 0xFFFF).toShort()
+    }
+
+    private fun computeUdpChecksum(
+        packet: ByteArray,
+        udpOffset: Int,
+        udpLen: Int,
+        srcIp: ByteArray,
+        dstIp: ByteArray
+    ): Short {
+        var sum = 0
+
+        // Pseudo Header
+        for (i in 0 until 4 step 2) {
+            sum += ((srcIp[i].toInt() and 0xFF) shl 8) or (srcIp[i + 1].toInt() and 0xFF)
+            sum += ((dstIp[i].toInt() and 0xFF) shl 8) or (dstIp[i + 1].toInt() and 0xFF)
+        }
+        sum += 17 // Protocol UDP
+        sum += udpLen
+
+        // UDP Header and Payload
+        for (i in udpOffset until udpOffset + udpLen step 2) {
+            val b1 = packet[i].toInt() and 0xFF
+            val b2 = if (i + 1 < udpOffset + udpLen) packet[i + 1].toInt() and 0xFF else 0
+            sum += (b1 shl 8) or b2
+        }
+
+        while ((sum shr 16) > 0) {
+            sum = (sum and 0xFFFF) + (sum shr 16)
+        }
+        val checksum = (sum.inv() and 0xFFFF).toShort()
+        return if (checksum == 0.toShort()) 0xFFFF.toShort() else checksum
     }
 
     fun closeAll() {

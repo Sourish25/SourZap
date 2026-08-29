@@ -225,10 +225,31 @@ class LocalDpiProxyServer(
                     val upstreamIn = upstream.getInputStream()
 
                     val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
+
+                    // Normalize proxy-style absolute URIs (e.g. GET http://tracker.com:7777/announce -> GET /announce)
+                    var outgoingBuffer = headerBuffer.copyOfRange(0, totalRead)
+                    if (firstLine.matches(Regex("""^[A-Z]+\s+https?://.*""", RegexOption.IGNORE_CASE))) {
+                        val method = firstLine.substringBefore(" ")
+                        val fullUrl = firstLine.substringAfter(" ").substringBefore(" ")
+                        val httpVersion = firstLine.substringAfterLast(" ")
+                        val uriPath = try {
+                            val uri = java.net.URI(fullUrl)
+                            val path = uri.rawPath.ifEmpty { "/" }
+                            val query = if (uri.rawQuery != null) "?${uri.rawQuery}" else ""
+                            "$path$query"
+                        } catch (_: Exception) {
+                            val afterSlash = fullUrl.substringAfter("://").substringAfter("/", "/")
+                            if (afterSlash.startsWith("/")) afterSlash else "/$afterSlash"
+                        }
+                        val newFirstLine = "$method $uriPath $httpVersion"
+                        val normalizedText = headerStr.replaceFirst(firstLine, newFirstLine)
+                        outgoingBuffer = normalizedText.toByteArray(Charsets.US_ASCII)
+                    }
+
                     val desyncedHeader = if (strategy.httpHostMod) {
-                        HttpParser.desyncHttpPayload(headerBuffer, totalRead)
+                        HttpParser.desyncHttpPayload(outgoingBuffer, outgoingBuffer.size)
                     } else {
-                        headerBuffer.copyOfRange(0, totalRead)
+                        outgoingBuffer
                     }
 
                     upstreamOut.write(desyncedHeader)

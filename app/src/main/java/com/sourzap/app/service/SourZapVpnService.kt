@@ -357,18 +357,56 @@ class SourZapVpnService : VpnService() {
 
         // UDP Header (8 bytes)
         val udpLen = 8 + payload.size
-        packet[20] = ((srcPort shr 8) and 0xFF).toByte()
-        packet[21] = (srcPort and 0xFF).toByte()
-        packet[22] = ((dstPort shr 8) and 0xFF).toByte()
-        packet[23] = (dstPort and 0xFF).toByte()
-        packet[24] = ((udpLen shr 8) and 0xFF).toByte()
-        packet[25] = (udpLen and 0xFF).toByte()
-        packet[26] = 0x00.toByte() // UDP Checksum optional in IPv4
-        packet[27] = 0x00.toByte()
+        val udpOffset = 20
+        packet[udpOffset] = ((srcPort shr 8) and 0xFF).toByte()
+        packet[udpOffset + 1] = (srcPort and 0xFF).toByte()
+        packet[udpOffset + 2] = ((dstPort shr 8) and 0xFF).toByte()
+        packet[udpOffset + 3] = (dstPort and 0xFF).toByte()
+        packet[udpOffset + 4] = ((udpLen shr 8) and 0xFF).toByte()
+        packet[udpOffset + 5] = (udpLen and 0xFF).toByte()
+        packet[udpOffset + 6] = 0x00.toByte()
+        packet[udpOffset + 7] = 0x00.toByte()
 
         // Payload
         System.arraycopy(payload, 0, packet, 28, payload.size)
+
+        // Compute RFC 768 UDP Checksum with IPv4 Pseudo-Header
+        val udpChecksum = computeUdpChecksum(packet, udpOffset, udpLen, srcIp.address, dstIp.address)
+        packet[udpOffset + 6] = ((udpChecksum.toInt() shr 8) and 0xFF).toByte()
+        packet[udpOffset + 7] = (udpChecksum.toInt() and 0xFF).toByte()
+
         return packet
+    }
+
+    private fun computeUdpChecksum(
+        packet: ByteArray,
+        udpOffset: Int,
+        udpLen: Int,
+        srcIp: ByteArray,
+        dstIp: ByteArray
+    ): Short {
+        var sum = 0
+
+        // Pseudo Header
+        for (i in 0 until 4 step 2) {
+            sum += ((srcIp[i].toInt() and 0xFF) shl 8) or (srcIp[i + 1].toInt() and 0xFF)
+            sum += ((dstIp[i].toInt() and 0xFF) shl 8) or (dstIp[i + 1].toInt() and 0xFF)
+        }
+        sum += 17 // Protocol UDP
+        sum += udpLen
+
+        // UDP Header and Payload
+        for (i in udpOffset until udpOffset + udpLen step 2) {
+            val b1 = packet[i].toInt() and 0xFF
+            val b2 = if (i + 1 < udpOffset + udpLen) packet[i + 1].toInt() and 0xFF else 0
+            sum += (b1 shl 8) or b2
+        }
+
+        while ((sum shr 16) > 0) {
+            sum = (sum and 0xFFFF) + (sum shr 16)
+        }
+        val checksum = (sum.inv() and 0xFFFF).toShort()
+        return if (checksum == 0.toShort()) 0xFFFF.toShort() else checksum
     }
 
     private fun computeChecksum(data: ByteArray, offset: Int, length: Int): Short {
