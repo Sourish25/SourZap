@@ -8,25 +8,26 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.asCoroutineDispatcher
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * High-Performance Local Transparent Proxy Server for Android VpnService.
- * Seamlessly accepts HTTP/HTTPS traffic from all Android applications (Chrome, YouTube, WhatsApp, DuckDuckGo, system apps),
- * applies Zapret DPI desynchronization on upstream connections, and proxies bidirectional streams at Gigabit line speed.
- */
 class LocalDpiProxyServer(
     private val vpnService: VpnService,
     private val scope: CoroutineScope
 ) {
     private var serverSocket: ServerSocket? = null
     private val isRunning = AtomicBoolean(false)
+    private val proxyExecutor = Executors.newCachedThreadPool { r ->
+        Thread(r, "SourZap-ProxyWorker").apply { isDaemon = true }
+    }
+    private val proxyDispatcher = proxyExecutor.asCoroutineDispatcher()
     var port: Int = 0
         private set
 
@@ -36,11 +37,11 @@ class LocalDpiProxyServer(
         port = server.localPort
         isRunning.set(true)
 
-        scope.launch(Dispatchers.IO) {
+        scope.launch(proxyDispatcher) {
             while (isRunning.get() && scope.isActive) {
                 try {
                     val clientSocket = server.accept()
-                    scope.launch(Dispatchers.IO) {
+                    scope.launch(proxyDispatcher) {
                         handleClientConnection(clientSocket)
                     }
                 } catch (_: Exception) {
@@ -55,6 +56,9 @@ class LocalDpiProxyServer(
         isRunning.set(false)
         try {
             serverSocket?.close()
+        } catch (_: Exception) {}
+        try {
+            proxyExecutor.shutdownNow()
         } catch (_: Exception) {}
     }
 
@@ -260,7 +264,7 @@ class LocalDpiProxyServer(
         clientSocket: Socket,
         upstreamSocket: Socket
     ) {
-        val clientJob = scope.launch(Dispatchers.IO) {
+        val clientJob = scope.launch(proxyDispatcher) {
             val buf = ByteArrayPool.obtainStreamBuffer()
             try {
                 var len = clientIn.read(buf)
@@ -279,7 +283,7 @@ class LocalDpiProxyServer(
             }
         }
 
-        val upstreamJob = scope.launch(Dispatchers.IO) {
+        val upstreamJob = scope.launch(proxyDispatcher) {
             val buf = ByteArrayPool.obtainStreamBuffer()
             try {
                 var len = upstreamIn.read(buf)

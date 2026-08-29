@@ -11,21 +11,18 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.asCoroutineDispatcher
 import java.io.FileOutputStream
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
-/**
- * High-Throughput Rootless Userspace TCP Stack for Android VpnService.
- * Uses sequential FIFO channels to guarantee 100% in-order packet streaming
- * for WhatsApp Noise Protocol, TLS, SSH, BitTorrent TCP, and all Android socket traffic.
- * Features automated dead-session scavenging to prevent memory leaks and socket buildup.
- */
 class TunTcpRelay(
     private val vpnService: VpnService,
     private val vpnOutput: FileOutputStream,
@@ -33,8 +30,15 @@ class TunTcpRelay(
 ) {
     private val sessions = ConcurrentHashMap<String, TcpSession>()
     private val isRunning = AtomicBoolean(true)
-    private var scavengerJob: Job? = null
+    private val activeConnectingCount = AtomicInteger(0)
+    private val MAX_CONCURRENT_CONNECTING = 48
     private val MAX_SESSIONS = 2048
+
+    private val tcpExecutor = Executors.newCachedThreadPool { r ->
+        Thread(r, "SourZap-TunTcpWorker").apply { isDaemon = true }
+    }
+    private val tcpDispatcher = tcpExecutor.asCoroutineDispatcher()
+    private var scavengerJob: Job? = null
 
     data class TcpSession(
         val key: String,
@@ -55,7 +59,7 @@ class TunTcpRelay(
     )
 
     init {
-        scavengerJob = scope.launch(Dispatchers.IO) {
+        scavengerJob = scope.launch(tcpDispatcher) {
             while (isActive && isRunning.get()) {
                 delay(30000)
                 val now = System.currentTimeMillis()
@@ -108,10 +112,20 @@ class TunTcpRelay(
         val sessionKey = "${srcIp.hostAddress}:$srcPort->${dstIp.hostAddress}:$dstPort"
 
         if (isSyn && !isAck) {
-            // Guard against session flood
-            if (sessions.size >= MAX_SESSIONS) {
-                val oldestKey = sessions.minByOrNull { it.value.lastActivity }?.key
-                if (oldestKey != null) closeSession(oldestKey)
+            // Guard against torrent swarm socket flood
+            if (activeConnectingCount.get() >= MAX_CONCURRENT_CONNECTING || sessions.size >= MAX_SESSIONS) {
+                val rstPacket = buildTcpPacket(
+                    srcIp = dstIp,
+                    dstIp = srcIp,
+                    srcPort = dstPort,
+                    dstPort = srcPort,
+                    seqNum = 0L,
+                    ackNum = (seqNum + 1) and 0xFFFFFFFFL,
+                    flags = 0x14, // RST | ACK
+                    payload = ByteArray(0)
+                )
+                writeTunPacket(rstPacket)
+                return
             }
 
             // 1. New TCP Connection Initiation (SYN)
@@ -141,7 +155,7 @@ class TunTcpRelay(
             session.serverSeq.incrementAndGet()
             writeTunPacket(synAckPacket)
 
-            // Connect upstream socket asynchronously
+            // Connect upstream socket asynchronously on isolated thread pool
             startUpstreamConnection(session)
             return
         }
@@ -199,7 +213,8 @@ class TunTcpRelay(
     }
 
     private fun startUpstreamConnection(session: TcpSession) {
-        session.streamJob = scope.launch(Dispatchers.IO) {
+        session.streamJob = scope.launch(tcpDispatcher) {
+            activeConnectingCount.incrementAndGet()
             TrafficMonitor.onConnectionOpened()
             try {
                 val socket = Socket().apply {
@@ -213,15 +228,16 @@ class TunTcpRelay(
                 }
 
                 vpnService.protect(socket)
-                socket.connect(InetSocketAddress(session.dstIp, session.dstPort), 6000)
+                socket.connect(InetSocketAddress(session.dstIp, session.dstPort), 2500)
 
                 session.socket = socket
                 val upstreamOut = socket.getOutputStream()
                 session.upstreamOut = upstreamOut
                 session.isConnected.set(true)
+                activeConnectingCount.decrementAndGet()
 
                 // Dedicated sequential sender loop (FIFO order) - launched AFTER socket is connected
-                val senderJob = scope.launch(Dispatchers.IO) {
+                val senderJob = scope.launch(tcpDispatcher) {
                     try {
                         for (payload in session.sendQueue) {
                             if (!scope.isActive || !isRunning.get() || !session.isConnected.get()) break
@@ -354,6 +370,9 @@ class TunTcpRelay(
         isRunning.set(false)
         scavengerJob?.cancel()
         sessions.keys().toList().forEach { closeSession(it) }
+        try {
+            tcpExecutor.shutdownNow()
+        } catch (_: Exception) {}
     }
 
     /**

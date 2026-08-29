@@ -8,19 +8,15 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.asCoroutineDispatcher
 import java.io.FileOutputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Ultra-High-Performance Multiplexed UDP Engine for Android VpnService.
- * Uses a multiplexed socket pool with NAT mapping table to support 100,000+ concurrent UDP flows
- * (BitTorrent DHT/uTP/Trackers, WhatsApp Calling, WebRTC, STUN/TURN, Telegram, Gaming)
- * with ZERO OS File Descriptor (FD) exhaustion and ZERO memory leaks.
- */
 class TunUdpRelay(
     private val vpnService: VpnService,
     private val vpnOutput: FileOutputStream,
@@ -29,6 +25,11 @@ class TunUdpRelay(
     private val POOL_SIZE = 4
     private val sockets = ArrayList<DatagramSocket>(POOL_SIZE)
     private val isRunning = AtomicBoolean(true)
+
+    private val udpExecutor = Executors.newFixedThreadPool(POOL_SIZE + 1) { r ->
+        Thread(r, "SourZap-TunUdpWorker").apply { isDaemon = true }
+    }
+    private val udpDispatcher = udpExecutor.asCoroutineDispatcher()
 
     private data class ClientMapping(
         val clientIp: InetAddress,
@@ -51,14 +52,14 @@ class TunUdpRelay(
                 sockets.add(s)
 
                 val socketIndex = i
-                scope.launch(Dispatchers.IO) {
+                scope.launch(udpDispatcher) {
                     runReceiverLoop(s, socketIndex)
                 }
             } catch (_: Exception) {}
         }
 
         // Background NAT table scavenger
-        cleanerJob = scope.launch(Dispatchers.IO) {
+        cleanerJob = scope.launch(udpDispatcher) {
             while (isActive && isRunning.get()) {
                 delay(30000)
                 val now = System.currentTimeMillis()
@@ -93,13 +94,11 @@ class TunUdpRelay(
             natTable[natKey] = ClientMapping(srcIp, srcPort, System.currentTimeMillis())
         }
 
-        scope.launch(Dispatchers.IO) {
-            try {
-                val sendPacket = DatagramPacket(payload, payload.size, dstIp, dstPort)
-                socket.send(sendPacket)
-                TrafficMonitor.recordTxBytes(payload.size.toLong())
-            } catch (_: Exception) {}
-        }
+        try {
+            val sendPacket = DatagramPacket(payload, payload.size, dstIp, dstPort)
+            socket.send(sendPacket)
+            TrafficMonitor.recordTxBytes(payload.size.toLong())
+        } catch (_: Exception) {}
     }
 
     private fun runReceiverLoop(socket: DatagramSocket, socketIndex: Int) {
@@ -210,5 +209,8 @@ class TunUdpRelay(
         }
         sockets.clear()
         natTable.clear()
+        try {
+            udpExecutor.shutdownNow()
+        } catch (_: Exception) {}
     }
 }
