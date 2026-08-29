@@ -129,7 +129,7 @@ class LocalDpiProxyServer(
                 upstreamSocket = upstream
 
                 vpnService.protect(upstream)
-                upstream.connect(InetSocketAddress(targetHost, targetPort), 6000)
+                upstream.connect(InetSocketAddress(targetHost, targetPort), 5000)
 
                 // Respond 200 Connection Established to Android client app
                 val response200 = "HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.US_ASCII)
@@ -186,7 +186,7 @@ class LocalDpiProxyServer(
                     }
 
                     // Suspend and pump remaining stream bidirectionally until stream closes
-                    pumpBidirectional(clientIn, clientOut, upstreamIn, upstreamOut)
+                    pumpBidirectional(clientIn, clientOut, upstreamIn, upstreamOut, clientSocket, upstream)
                 }
             } else {
                 // --- Plain HTTP Request ---
@@ -207,7 +207,7 @@ class LocalDpiProxyServer(
                     upstreamSocket = upstream
 
                     vpnService.protect(upstream)
-                    upstream.connect(InetSocketAddress(targetHost, targetPort), 6000)
+                    upstream.connect(InetSocketAddress(targetHost, targetPort), 5000)
 
                     val upstreamOut = upstream.getOutputStream()
                     val upstreamIn = upstream.getInputStream()
@@ -233,7 +233,7 @@ class LocalDpiProxyServer(
                     )
 
                     // Suspend and pump stream bidirectionally
-                    pumpBidirectional(clientIn, clientOut, upstreamIn, upstreamOut)
+                    pumpBidirectional(clientIn, clientOut, upstreamIn, upstreamOut, clientSocket, upstream)
                 }
             }
         } catch (_: Exception) {
@@ -248,7 +248,9 @@ class LocalDpiProxyServer(
         clientIn: InputStream,
         clientOut: OutputStream,
         upstreamIn: InputStream,
-        upstreamOut: OutputStream
+        upstreamOut: OutputStream,
+        clientSocket: Socket,
+        upstreamSocket: Socket
     ) {
         val clientJob = scope.launch(Dispatchers.IO) {
             val buf = ByteArrayPool.obtainStreamBuffer()
@@ -264,7 +266,8 @@ class LocalDpiProxyServer(
             } catch (_: Exception) {
             } finally {
                 ByteArrayPool.recycleStreamBuffer(buf)
-                try { upstreamOut.close() } catch (_: Exception) {}
+                try { upstreamSocket.shutdownOutput() } catch (_: Exception) {}
+                try { upstreamSocket.close() } catch (_: Exception) {}
             }
         }
 
@@ -282,7 +285,8 @@ class LocalDpiProxyServer(
             } catch (_: Exception) {
             } finally {
                 ByteArrayPool.recycleStreamBuffer(buf)
-                try { clientOut.close() } catch (_: Exception) {}
+                try { clientSocket.shutdownOutput() } catch (_: Exception) {}
+                try { clientSocket.close() } catch (_: Exception) {}
             }
         }
 

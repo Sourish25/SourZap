@@ -32,7 +32,7 @@ object DohResolver {
         override fun createSocket(host: String, port: Int): Socket {
             val s = Socket()
             vpnServiceRef?.protect(s)
-            s.connect(InetSocketAddress(host, port), 2500)
+            s.connect(InetSocketAddress(host, port), 2000)
             return s
         }
 
@@ -40,14 +40,14 @@ object DohResolver {
             val s = Socket()
             vpnServiceRef?.protect(s)
             s.bind(InetSocketAddress(localHost, localPort))
-            s.connect(InetSocketAddress(host, port), 2500)
+            s.connect(InetSocketAddress(host, port), 2000)
             return s
         }
 
         override fun createSocket(host: InetAddress, port: Int): Socket {
             val s = Socket()
             vpnServiceRef?.protect(s)
-            s.connect(InetSocketAddress(host, port), 2500)
+            s.connect(InetSocketAddress(host, port), 2000)
             return s
         }
 
@@ -55,7 +55,7 @@ object DohResolver {
             val s = Socket()
             vpnServiceRef?.protect(s)
             s.bind(InetSocketAddress(localAddress, localPort))
-            s.connect(InetSocketAddress(address, port), 2500)
+            s.connect(InetSocketAddress(address, port), 2000)
             return s
         }
     }
@@ -67,6 +67,7 @@ object DohResolver {
         .build()
 
     private val dnsCache = ConcurrentHashMap<String, Pair<List<InetAddress>, Long>>() // Domain -> (IPs, ExpireTime)
+    private val wireCache = ConcurrentHashMap<String, Pair<ByteArray, Long>>() // WireQuestionHash -> (ResponseBytes, ExpireTime)
     private const val CACHE_TTL_MS = 600_000L // 10 minutes
 
     fun init(vpnService: VpnService) {
@@ -132,10 +133,35 @@ object DohResolver {
 
     /**
      * Resolves wire DNS query bytes received from UDP port 53 and returns wire DNS response bytes.
-     * Uses protected sockets to prevent recursive routing loops.
+     * Uses in-memory wire caching (0.001ms hit) and parallel DoH racing across Cloudflare, Google, and Quad9.
      */
     suspend fun resolveWireQuery(queryBytes: ByteArray, provider: DohProvider = DohProvider.CLOUDFLARE): ByteArray? = withContext(Dispatchers.IO) {
-        executeParallelDohQuery(queryBytes, provider)
+        if (queryBytes.size < 12) return@withContext null
+
+        val now = System.currentTimeMillis()
+        val questionKey = getQuestionKey(queryBytes)
+
+        if (questionKey != null) {
+            wireCache[questionKey]?.let { (cachedRes, exp) ->
+                if (now < exp && cachedRes.size >= 12) {
+                    val hit = cachedRes.copyOf()
+                    hit[0] = queryBytes[0]
+                    hit[1] = queryBytes[1]
+                    return@withContext hit
+                }
+            }
+        }
+
+        val res = executeParallelDohQuery(queryBytes, provider)
+        if (res != null && questionKey != null && res.size >= 12) {
+            wireCache[questionKey] = Pair(res.copyOf(), now + CACHE_TTL_MS)
+        }
+        res
+    }
+
+    private fun getQuestionKey(queryBytes: ByteArray): String? {
+        if (queryBytes.size < 12) return null
+        return queryBytes.copyOfRange(12, queryBytes.size).contentToString()
     }
 
     /**

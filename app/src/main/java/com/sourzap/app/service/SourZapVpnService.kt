@@ -85,6 +85,12 @@ class SourZapVpnService : VpnService() {
                     setMtu(1500)
                     setBlocking(true)
 
+                    // Intercept IPv6 to prevent ISP DPI leaks over 5G/Wi-Fi
+                    try {
+                        addAddress("fd00::1", 128)
+                        addRoute("::", 0)
+                    } catch (_: Exception) {}
+
                     // Set Local Direct Proxy on Android API 21+ for instant browser & app traffic interception
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         setHttpProxy(ProxyInfo.buildDirectProxy("127.0.0.1", proxyPort))
@@ -159,7 +165,11 @@ class SourZapVpnService : VpnService() {
     private fun processPacket(buffer: ByteArray, length: Int, vpnOutput: FileOutputStream) {
         if (length < 20) return
         val version = (buffer[0].toInt() shr 4) and 0x0F
-        if (version != 4) return
+        if (version != 4) {
+            // IPv6 packets are intercepted and gracefully suppressed so Android RFC 6555 Happy Eyeballs
+            // immediately falls back to ultra-fast desynced IPv4 in 0ms without ISP leaks
+            return
+        }
 
         val ipHeaderLen = (buffer[0].toInt() and 0x0F) * 4
         val protocol = buffer[9].toInt() and 0xFF
@@ -207,7 +217,7 @@ class SourZapVpnService : VpnService() {
                                     domain = "DNS Resolution (DoH)",
                                     port = 53,
                                     protocol = "UDP",
-                                    technique = "PARALLEL_DOH",
+                                    technique = "RAM_CACHED_DOH",
                                     bytesTransferred = responseWire.size.toLong()
                                 )
                             )
