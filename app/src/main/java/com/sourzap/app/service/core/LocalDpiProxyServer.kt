@@ -58,7 +58,7 @@ class LocalDpiProxyServer(
         } catch (_: Exception) {}
     }
 
-    private fun handleClientConnection(clientSocket: Socket) {
+    private suspend fun handleClientConnection(clientSocket: Socket) {
         TrafficMonitor.onConnectionOpened()
         var upstreamSocket: Socket? = null
 
@@ -172,7 +172,7 @@ class LocalDpiProxyServer(
                         )
                     }
 
-                    // Pump remaining stream bidirectionally
+                    // Suspend and pump remaining stream bidirectionally until stream closes
                     pumpBidirectional(clientIn, clientOut, upstreamIn, upstreamOut)
                 }
             } else {
@@ -215,6 +215,7 @@ class LocalDpiProxyServer(
                         )
                     )
 
+                    // Suspend and pump stream bidirectionally
                     pumpBidirectional(clientIn, clientOut, upstreamIn, upstreamOut)
                 }
             }
@@ -226,7 +227,7 @@ class LocalDpiProxyServer(
         }
     }
 
-    private fun pumpBidirectional(
+    private suspend fun pumpBidirectional(
         clientIn: InputStream,
         clientOut: OutputStream,
         upstreamIn: InputStream,
@@ -270,13 +271,11 @@ class LocalDpiProxyServer(
             }
         }
 
-        scope.launch(Dispatchers.IO) {
-            try {
-                clientJob.join()
-            } catch (_: Exception) {}
-            try {
-                upstreamJob.join()
-            } catch (_: Exception) {}
-        }
+        try {
+            clientJob.join()
+        } catch (_: Exception) {}
+        try {
+            upstreamJob.join()
+        } catch (_: Exception) {}
     }
 }

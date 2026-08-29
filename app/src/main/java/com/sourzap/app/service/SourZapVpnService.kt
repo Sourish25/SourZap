@@ -59,6 +59,9 @@ class SourZapVpnService : VpnService() {
         val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
         startForeground(NOTIFICATION_ID, buildNotification("SourZap: ${strategy.name}", "⚡ Smart DPI Bypass Engine Active"))
 
+        // Initialize DohResolver with protected socket factory
+        DohResolver.init(this)
+
         serviceScope.launch {
             try {
                 // 1. Start Local Zapret Transparent Proxy Server on 127.0.0.1

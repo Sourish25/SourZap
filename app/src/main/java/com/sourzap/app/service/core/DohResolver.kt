@@ -1,5 +1,6 @@
 package com.sourzap.app.service.core
 
+import android.net.VpnService
 import com.sourzap.app.data.model.DohProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -8,23 +9,83 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import javax.net.SocketFactory
 
 object DohResolver {
 
+    private var vpnServiceRef: VpnService? = null
+
+    private val protectedSocketFactory = object : SocketFactory() {
+        override fun createSocket(): Socket {
+            val s = Socket()
+            vpnServiceRef?.protect(s)
+            return s
+        }
+
+        override fun createSocket(host: String, port: Int): Socket {
+            val s = Socket()
+            vpnServiceRef?.protect(s)
+            s.connect(InetSocketAddress(host, port), 4000)
+            return s
+        }
+
+        override fun createSocket(host: String, port: Int, localHost: InetAddress, localPort: Int): Socket {
+            val s = Socket()
+            vpnServiceRef?.protect(s)
+            s.bind(InetSocketAddress(localHost, localPort))
+            s.connect(InetSocketAddress(host, port), 4000)
+            return s
+        }
+
+        override fun createSocket(host: InetAddress, port: Int): Socket {
+            val s = Socket()
+            vpnServiceRef?.protect(s)
+            s.connect(InetSocketAddress(host, port), 4000)
+            return s
+        }
+
+        override fun createSocket(address: InetAddress, port: Int, localAddress: InetAddress, localPort: Int): Socket {
+            val s = Socket()
+            vpnServiceRef?.protect(s)
+            s.bind(InetSocketAddress(localAddress, localPort))
+            s.connect(InetSocketAddress(address, port), 4000)
+            return s
+        }
+    }
+
     private val httpClient = OkHttpClient.Builder()
+        .socketFactory(protectedSocketFactory)
         .connectTimeout(3, TimeUnit.SECONDS)
         .readTimeout(3, TimeUnit.SECONDS)
         .build()
 
     private val dnsCache = ConcurrentHashMap<String, Pair<List<InetAddress>, Long>>() // Domain -> (IPs, ExpireTime)
-    private const val CACHE_TTL_MS = 300_000L // 5 minutes
+    private const val CACHE_TTL_MS = 600_000L // 10 minutes
 
-    private val ALL_PROVIDERS = listOf(
-        DohProvider.CLOUDFLARE,
-        DohProvider.GOOGLE,
-        DohProvider.QUAD9
+    fun init(vpnService: VpnService) {
+        vpnServiceRef = vpnService
+    }
+
+    // Direct IP DoH endpoints to avoid any DNS bootstrapping lookup
+    private data class DohEndpoint(val url: String, val hostHeader: String)
+
+    private val ENDPOINTS = mapOf(
+        DohProvider.CLOUDFLARE to listOf(
+            DohEndpoint("https://1.1.1.1/dns-query", "cloudflare-dns.com"),
+            DohEndpoint("https://1.0.0.1/dns-query", "cloudflare-dns.com")
+        ),
+        DohProvider.GOOGLE to listOf(
+            DohEndpoint("https://8.8.8.8/dns-query", "dns.google"),
+            DohEndpoint("https://8.8.4.4/dns-query", "dns.google")
+        ),
+        DohProvider.QUAD9 to listOf(
+            DohEndpoint("https://9.9.9.9/dns-query", "dns.quad9.net"),
+            DohEndpoint("https://149.112.112.112/dns-query", "dns.quad9.net")
+        )
     )
 
     suspend fun resolve(domain: String, provider: DohProvider = DohProvider.CLOUDFLARE): List<InetAddress> = withContext(Dispatchers.IO) {
@@ -35,7 +96,7 @@ object DohResolver {
             }
         }
 
-        // Try direct IP if it's already an IP
+        // Direct IP if domain is already IPv4
         try {
             if (domain.matches(Regex("""\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}"""))) {
                 val ip = InetAddress.getByName(domain)
@@ -43,35 +104,18 @@ object DohResolver {
             }
         } catch (_: Exception) {}
 
-        // 1. Try Primary DoH Provider then fallback to others
-        val orderedProviders = listOf(provider) + ALL_PROVIDERS.filter { it != provider }
-        for (p in orderedProviders) {
-            try {
-                val queryWire = buildDnsQueryWire(domain)
-                val requestBody = queryWire.toRequestBody("application/dns-message".toMediaType())
+        val queryWire = buildDnsQueryWire(domain)
+        val responseBytes = executeDohQuery(queryWire, provider)
 
-                val request = Request.Builder()
-                    .url(p.url)
-                    .post(requestBody)
-                    .addHeader("Accept", "application/dns-message")
-                    .build()
-
-                httpClient.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val responseBytes = response.body?.bytes()
-                        if (responseBytes != null) {
-                            val ips = parseDnsResponseWire(responseBytes)
-                            if (ips.isNotEmpty()) {
-                                dnsCache[domain] = Pair(ips, now + CACHE_TTL_MS)
-                                return@withContext ips
-                            }
-                        }
-                    }
-                }
-            } catch (_: Exception) {}
+        if (responseBytes != null) {
+            val ips = parseDnsResponseWire(responseBytes)
+            if (ips.isNotEmpty()) {
+                dnsCache[domain] = Pair(ips, now + CACHE_TTL_MS)
+                return@withContext ips
+            }
         }
 
-        // 2. Fallback to system resolver
+        // Fallback to system DNS
         try {
             val fallback = InetAddress.getAllByName(domain).toList()
             if (fallback.isNotEmpty()) {
@@ -85,36 +129,43 @@ object DohResolver {
 
     /**
      * Resolves wire DNS query bytes received from UDP port 53 and returns wire DNS response bytes.
-     * Automatically attempts multiple DoH providers to defeat ISP DNS blocks.
+     * Uses protected sockets to prevent recursive routing loops.
      */
     suspend fun resolveWireQuery(queryBytes: ByteArray, provider: DohProvider = DohProvider.CLOUDFLARE): ByteArray? = withContext(Dispatchers.IO) {
-        val orderedProviders = listOf(provider) + ALL_PROVIDERS.filter { it != provider }
+        executeDohQuery(queryBytes, provider)
+    }
+
+    private fun executeDohQuery(queryBytes: ByteArray, provider: DohProvider): ByteArray? {
+        val orderedProviders = listOf(provider) + DohProvider.entries.filter { it != provider }
 
         for (p in orderedProviders) {
-            try {
-                val requestBody = queryBytes.toRequestBody("application/dns-message".toMediaType())
-                val request = Request.Builder()
-                    .url(p.url)
-                    .post(requestBody)
-                    .addHeader("Accept", "application/dns-message")
-                    .build()
+            val endpoints = ENDPOINTS[p] ?: continue
+            for (endpoint in endpoints) {
+                try {
+                    val requestBody = queryBytes.toRequestBody("application/dns-message".toMediaType())
+                    val request = Request.Builder()
+                        .url(endpoint.url)
+                        .post(requestBody)
+                        .addHeader("Host", endpoint.hostHeader)
+                        .addHeader("Accept", "application/dns-message")
+                        .build()
 
-                httpClient.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val responseBytes = response.body?.bytes()
-                        if (responseBytes != null && responseBytes.size >= 12) {
-                            // Ensure Transaction ID matches the client query exactly
-                            if (queryBytes.size >= 2) {
-                                responseBytes[0] = queryBytes[0]
-                                responseBytes[1] = queryBytes[1]
+                    httpClient.newCall(request).execute().use { response ->
+                        if (response.isSuccessful) {
+                            val responseBytes = response.body?.bytes()
+                            if (responseBytes != null && responseBytes.size >= 12) {
+                                if (queryBytes.size >= 2) {
+                                    responseBytes[0] = queryBytes[0]
+                                    responseBytes[1] = queryBytes[1]
+                                }
+                                return responseBytes
                             }
-                            return@withContext responseBytes
                         }
                     }
-                }
-            } catch (_: Exception) {}
+                } catch (_: Exception) {}
+            }
         }
-        null
+        return null
     }
 
     private fun buildDnsQueryWire(domain: String): ByteArray {
