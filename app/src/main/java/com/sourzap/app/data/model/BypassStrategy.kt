@@ -18,11 +18,11 @@ data class BypassStrategy(
     val isCustom: Boolean = false
 ) {
     companion object {
-        val YOUTUBE_TURBO = BypassStrategy(
-            id = "youtube_turbo",
-            name = "YouTube Turbo Fix",
-            description = "Optimized for YouTube 4K/1080p unthrottling with TLS SNI boundary splitting and QUIC drop",
-            tag = "YOUTUBE",
+        val AUTO_PILOT = BypassStrategy(
+            id = "auto_pilot",
+            name = "⚡ Smart Auto-Pilot",
+            description = "Automatically detects whether you are streaming YouTube 4K, chatting on Discord, gaming or browsing, and tunes the connection on the fly.",
+            tag = "RECOMMENDED",
             iconEmoji = "⚡",
             tlsSplitOffset = -1,
             useMultisplit = false,
@@ -35,11 +35,28 @@ data class BypassStrategy(
             dohProvider = DohProvider.CLOUDFLARE
         )
 
-        val DISCORD_FIX = BypassStrategy(
-            id = "discord_fix",
-            name = "Discord & RTC Fix",
-            description = "Unblocks Discord Gateway, WebSockets, API calls and voice RTC streams with TLS Split at Offset 2",
-            tag = "DISCORD",
+        val STREAMING_TURBO = BypassStrategy(
+            id = "streaming_turbo",
+            name = "🎬 4K Streaming & Media",
+            description = "Unthrottles YouTube 4K/1080p, Twitch 60fps, Instagram Reels and video CDNs for instant loading without buffering.",
+            tag = "STREAMING",
+            iconEmoji = "🎬",
+            tlsSplitOffset = -1,
+            useMultisplit = false,
+            fakeSni = "",
+            fakeTtl = 3,
+            useDisorder = false,
+            useOob = false,
+            httpHostMod = true,
+            blockQuic = true,
+            dohProvider = DohProvider.CLOUDFLARE
+        )
+
+        val GAMING_VOICE = BypassStrategy(
+            id = "gaming_voice",
+            name = "🎮 Gaming & Voice RTC",
+            description = "Ultra-low latency connection tuned for Discord voice channels, WebSockets, in-game voice chat and multiplayer games.",
+            tag = "GAMING",
             iconEmoji = "🎮",
             tlsSplitOffset = 2,
             useMultisplit = false,
@@ -52,11 +69,11 @@ data class BypassStrategy(
             dohProvider = DohProvider.CLOUDFLARE
         )
 
-        val UNIVERSAL_DPI = BypassStrategy(
-            id = "universal_dpi",
-            name = "Universal DPI Bypass",
-            description = "General-purpose anti-censorship preset using micro-multisplit and HTTP Host casing desync",
-            tag = "UNIVERSAL",
+        val STRICT_FIREWALL = BypassStrategy(
+            id = "strict_firewall",
+            name = "🛡️ Strict Firewall Bypass",
+            description = "Deep multi-segment packet fragmentation designed to bypass aggressive censorship, school/office Wi-Fi firewalls and strict ISP filters.",
+            tag = "MAX EVASION",
             iconEmoji = "🛡️",
             tlsSplitOffset = 1,
             useMultisplit = true,
@@ -69,28 +86,11 @@ data class BypassStrategy(
             dohProvider = DohProvider.GOOGLE
         )
 
-        val AGGRESSIVE_CENSOR = BypassStrategy(
-            id = "aggressive_censor",
-            name = "Aggressive Anti-Censor",
-            description = "Multi-segment TLS fragmentation, 3-way packet micro-splitting, and Quad9 DoH for heavily filtered networks",
-            tag = "AGGRESSIVE",
-            iconEmoji = "🔥",
-            tlsSplitOffset = 2,
-            useMultisplit = true,
-            fakeSni = "",
-            fakeTtl = 2,
-            useDisorder = false,
-            useOob = false,
-            httpHostMod = true,
-            blockQuic = true,
-            dohProvider = DohProvider.QUAD9
-        )
-
         val DEFAULT_PRESETS = listOf(
-            YOUTUBE_TURBO,
-            DISCORD_FIX,
-            UNIVERSAL_DPI,
-            AGGRESSIVE_CENSOR
+            AUTO_PILOT,
+            STREAMING_TURBO,
+            GAMING_VOICE,
+            STRICT_FIREWALL
         )
     }
 }

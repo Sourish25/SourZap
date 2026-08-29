@@ -45,9 +45,9 @@ class DpiEngineTest {
         val presets = BypassStrategy.DEFAULT_PRESETS
         assertEquals(4, presets.size)
 
-        val yt = BypassStrategy.YOUTUBE_TURBO
-        assertEquals("youtube_turbo", yt.id)
-        assertTrue(yt.blockQuic)
-        assertTrue(yt.httpHostMod)
+        val auto = BypassStrategy.AUTO_PILOT
+        assertEquals("auto_pilot", auto.id)
+        assertTrue(auto.blockQuic)
+        assertTrue(auto.httpHostMod)
     }
 }

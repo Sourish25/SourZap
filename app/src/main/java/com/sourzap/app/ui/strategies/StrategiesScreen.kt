@@ -70,14 +70,14 @@ fun StrategiesScreen(
             ) {
                 Column {
                     Text(
-                        text = "Bypass Engine",
+                        text = "Bypass Modes",
                         fontWeight = FontWeight.Black,
                         fontSize = 32.sp,
                         letterSpacing = (-1).sp,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Zapret DPI Circumvention Modes",
+                        text = "Smart Anti-Censorship & Speed Profiles",
                         fontWeight = FontWeight.Medium,
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -85,7 +85,7 @@ fun StrategiesScreen(
                 }
 
                 ExpressiveChip(
-                    text = "PRESETS",
+                    text = "MODES",
                     backgroundColor = MaterialTheme.colorScheme.primaryContainer,
                     textColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
@@ -106,7 +106,7 @@ fun StrategiesScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "ISP DPI DIAGNOSTIC & AUTO-TUNE",
+                        text = "NETWORK SPEED & FILTER DIAGNOSTIC",
                         fontWeight = FontWeight.Black,
                         fontSize = 12.sp,
                         letterSpacing = 0.8.sp,
@@ -114,7 +114,7 @@ fun StrategiesScreen(
                     )
 
                     Text(
-                        text = "Probes your mobile or Wi-Fi ISP filter to recommend the optimal evasion preset.",
+                        text = "Tests your current Wi-Fi or mobile network and confirms unthrottled line speed.",
                         fontWeight = FontWeight.Normal,
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -181,7 +181,7 @@ fun StrategiesScreen(
                             .height(54.dp)
                     ) {
                         Text(
-                            text = if (probeState.isRunning) "ANALYZING ISP FILTER..." else if (probeState.result != null) "APPLY RECOMMENDED PRESET" else "RUN ISP DIAGNOSTIC PROBE",
+                            text = if (probeState.isRunning) "TESTING NETWORK..." else if (probeState.result != null) "APPLY RECOMMENDED MODE" else "RUN NETWORK DIAGNOSTIC",
                             fontWeight = FontWeight.Black,
                             fontSize = 14.sp,
                             letterSpacing = 0.5.sp
@@ -194,7 +194,7 @@ fun StrategiesScreen(
         // Section Title
         item {
             Text(
-                text = "CURATED PRESETS",
+                text = "PURPOSE-DRIVEN MODES",
                 fontWeight = FontWeight.Black,
                 fontSize = 12.sp,
                 letterSpacing = 0.8.sp,
@@ -202,7 +202,7 @@ fun StrategiesScreen(
             )
         }
 
-        // Preset Large Tiles
+        // Mode Large Tiles
         items(BypassStrategy.DEFAULT_PRESETS) { strategy ->
             val isSelected = currentStrategy.id == strategy.id
 
@@ -241,40 +241,10 @@ fun StrategiesScreen(
                         }
 
                         ExpressiveChip(
-                            text = if (isSelected) "SELECTED" else strategy.tag,
+                            text = if (isSelected) "ACTIVE" else strategy.tag,
                             backgroundColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
                             textColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
-
-                    // Technique Breakdown Tags
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        if (strategy.tlsSplitOffset != 0) {
-                            ExpressiveChip(
-                                text = if (strategy.tlsSplitOffset == -1) "SNI Split" else "Split Pos ${strategy.tlsSplitOffset}",
-                                backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
-                                textColor = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                        }
-
-                        if (strategy.fakeSni.isNotEmpty()) {
-                            ExpressiveChip(
-                                text = "Fake ${strategy.fakeSni.substringBefore(".")}",
-                                backgroundColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                textColor = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        }
-
-                        if (strategy.useDisorder) {
-                            ExpressiveChip(
-                                text = "TCP Disorder",
-                                backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                textColor = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
                     }
                 }
             }
@@ -332,7 +302,7 @@ fun StrategiesScreen(
                                 if (checked) {
                                     strategyRepo.selectStrategy(customStrategy)
                                 } else {
-                                    strategyRepo.selectStrategy(BypassStrategy.YOUTUBE_TURBO)
+                                    strategyRepo.selectStrategy(BypassStrategy.AUTO_PILOT)
                                 }
                             }
                         )

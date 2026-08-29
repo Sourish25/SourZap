@@ -8,8 +8,7 @@ object DpiEngine {
 
     /**
      * Applies Zapret DPI circumvention techniques on the initial TLS/HTTP handshake stream.
-     * Ensures 100% TCP stream integrity while fragmenting across discrete TCP packets
-     * to evade ISP DPI middlebox signature matching.
+     * In Auto-Pilot mode, dynamically detects destination domain and tunes packet desync on the fly.
      */
     fun desyncAndSend(
         socket: Socket,
@@ -53,27 +52,49 @@ object DpiEngine {
         sniResult: TlsParser.SniResult,
         onTechniqueApplied: (String) -> Unit
     ) {
-        val appliedTechniques = mutableListOf<String>()
+        val hostname = (sniResult.hostname ?: "").lowercase()
 
-        // 1. Calculate Split Position
+        // Auto-Pilot Dynamic Intelligence: Inspect domain target
+        val effectiveStrategy = if (strategy.id == "auto_pilot") {
+            when {
+                // Streaming & Video Services -> Max Throughput SNI boundary split
+                hostname.contains("googlevideo") || hostname.contains("youtube") ||
+                hostname.contains("ytimg") || hostname.contains("twitch") ||
+                hostname.contains("netflix") || hostname.contains("instagram") ||
+                hostname.contains("fbcdn") || hostname.contains("tiktok") -> {
+                    BypassStrategy.STREAMING_TURBO
+                }
+
+                // Voice, Gaming & RTC -> Low-latency Split Offset 2
+                hostname.contains("discord") || hostname.contains("gateway") ||
+                hostname.contains("voice") || hostname.contains("rtc") ||
+                hostname.contains("telegram") -> {
+                    BypassStrategy.GAMING_VOICE
+                }
+
+                // Strict Censorship / General Blocked Hosts -> Deep Universal Split
+                else -> {
+                    BypassStrategy.STRICT_FIREWALL
+                }
+            }
+        } else {
+            strategy
+        }
+
+        // Calculate Split Position
         val splitPos = when {
-            strategy.tlsSplitOffset == -1 && sniResult.sniExtensionOffset > 5 -> {
+            effectiveStrategy.tlsSplitOffset == -1 && sniResult.sniExtensionOffset > 5 -> {
                 sniResult.sniExtensionOffset.coerceIn(2, length - 2)
             }
-            strategy.tlsSplitOffset > 0 -> {
-                strategy.tlsSplitOffset.coerceIn(1, length - 1)
+            effectiveStrategy.tlsSplitOffset > 0 -> {
+                effectiveStrategy.tlsSplitOffset.coerceIn(1, length - 1)
             }
             else -> {
-                // Default split at position 2 or middle of ClientHello
                 if (sniResult.sniExtensionOffset > 0) sniResult.sniExtensionOffset.coerceIn(2, length - 2) else (length / 2).coerceIn(2, length - 2)
             }
         }
 
-        if (strategy.useMultisplit && length > 12) {
-            // Multisplit into 3 micro-segments:
-            // Chunk 1: TLS Record header (5 bytes: 0x16, 0x03, 0x01, length)
-            // Chunk 2: ClientHello prefix up to SNI
-            // Chunk 3: SNI payload and extensions
+        if (effectiveStrategy.useMultisplit && length > 12) {
             val p1 = 5.coerceAtMost(splitPos - 1)
             val p2 = splitPos.coerceIn(p1 + 1, length - 1)
 
@@ -92,9 +113,8 @@ object DpiEngine {
             outputStream.write(c3)
             outputStream.flush()
 
-            appliedTechniques.add("MULTISPLIT(5,$p2)")
+            onTechniqueApplied(if (strategy.id == "auto_pilot") "AUTO:MULTISPLIT" else "MULTISPLIT(5,$p2)")
         } else {
-            // Clean 2-segment SNI split
             val c1 = payload.copyOfRange(0, splitPos)
             val c2 = payload.copyOfRange(splitPos, length)
 
@@ -105,10 +125,8 @@ object DpiEngine {
             outputStream.write(c2)
             outputStream.flush()
 
-            appliedTechniques.add("SNI_SPLIT($splitPos)")
+            onTechniqueApplied(if (strategy.id == "auto_pilot") "AUTO:SNI_SPLIT" else "SNI_SPLIT($splitPos)")
         }
-
-        onTechniqueApplied(appliedTechniques.joinToString("+"))
     }
 
     private fun applyHttpDesync(

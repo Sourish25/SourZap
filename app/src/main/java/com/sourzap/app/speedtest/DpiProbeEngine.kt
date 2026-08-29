@@ -42,28 +42,28 @@ object DpiProbeEngine {
         _state.value = _state.value.copy(progress = 0.35f, currentStep = "Testing SNI Split Desync...")
 
         // 2. Test SNI Split
-        val sniSplitOk = testDesyncStrategy(testHost, testPort, BypassStrategy.YOUTUBE_TURBO)
-        _state.value = _state.value.copy(progress = 0.65f, currentStep = "Testing Fake SNI + Disorder...")
+        val sniSplitOk = testDesyncStrategy(testHost, testPort, BypassStrategy.STREAMING_TURBO)
+        _state.value = _state.value.copy(progress = 0.65f, currentStep = "Testing Micro-Fragmentation...")
 
-        // 3. Test Fake SNI & Disorder
-        val fakeSniOk = testDesyncStrategy(testHost, testPort, BypassStrategy.AGGRESSIVE_CENSOR)
+        // 3. Test Micro-Fragmentation
+        val microSplitOk = testDesyncStrategy(testHost, testPort, BypassStrategy.STRICT_FIREWALL)
         _state.value = _state.value.copy(progress = 0.85f, currentStep = "Measuring evasion latency...")
 
         // 4. Test Latency
         val latency = measureLatency(testHost, testPort)
-        _state.value = _state.value.copy(progress = 0.95f, currentStep = "Selecting optimal preset...")
+        _state.value = _state.value.copy(progress = 0.95f, currentStep = "Selecting optimal mode...")
 
         val recommended = when {
-            fakeSniOk -> BypassStrategy.AGGRESSIVE_CENSOR
-            sniSplitOk -> BypassStrategy.YOUTUBE_TURBO
-            else -> BypassStrategy.DISCORD_FIX
+            sniSplitOk -> BypassStrategy.AUTO_PILOT
+            microSplitOk -> BypassStrategy.STRICT_FIREWALL
+            else -> BypassStrategy.GAMING_VOICE
         }
 
         val result = DpiProbeResult(
             targetHost = testHost,
             directSuccess = directOk,
             sniSplitSuccess = sniSplitOk,
-            fakeSniSuccess = fakeSniOk,
+            fakeSniSuccess = microSplitOk,
             disorderSuccess = true,
             latencyMs = latency,
             recommendedPreset = recommended

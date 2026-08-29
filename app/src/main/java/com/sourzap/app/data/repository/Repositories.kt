@@ -45,9 +45,9 @@ class StrategyRepository(private val context: Context) {
     }
 
     private fun loadCurrentStrategy(): BypassStrategy {
-        val id = prefs.getString("selected_strategy_id", BypassStrategy.YOUTUBE_TURBO.id)
+        val id = prefs.getString("selected_strategy_id", BypassStrategy.AUTO_PILOT.id)
         if (id == "custom_user") return loadCustomStrategy()
-        return BypassStrategy.DEFAULT_PRESETS.firstOrNull { it.id == id } ?: BypassStrategy.YOUTUBE_TURBO
+        return BypassStrategy.DEFAULT_PRESETS.firstOrNull { it.id == id } ?: BypassStrategy.AUTO_PILOT
     }
 
     private fun loadCustomStrategy(): BypassStrategy {
