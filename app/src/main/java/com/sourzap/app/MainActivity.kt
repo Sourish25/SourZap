@@ -19,6 +19,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -105,10 +106,19 @@ fun MainAppScreen() {
             currentRoute = currentRoute,
             onNavigate = { route ->
                 if (currentRoute != route) {
-                    navController.navigate(route) {
-                        popUpTo("dashboard") { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
+                    val popped = if (route == "dashboard") {
+                        navController.popBackStack("dashboard", inclusive = false)
+                    } else {
+                        false
+                    }
+                    if (!popped) {
+                        navController.navigate(route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
                     }
                 }
             },
