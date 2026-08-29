@@ -54,66 +54,38 @@ object DpiEngine {
     ) {
         val hostname = (sniResult.hostname ?: "").lowercase()
 
-        // 1. Clean Passthrough for Google Search, Play Services, and Cloud infrastructure
-        // to prevent Google Frontend bot-detection / "Unusual Traffic" CAPTCHA
-        val isGoogleSearchOrInfra = (hostname.startsWith("www.google.") || hostname == "google.com" ||
+        // 1. Clean Passthrough for Google Search, Google APIs & Apple/MS infra
+        val isCleanInfra = (hostname.startsWith("www.google.") || hostname == "google.com" ||
                 hostname.endsWith(".google.com") || hostname.endsWith(".google.co.in") ||
                 hostname.contains("gstatic.com") || hostname.contains("googleapis.com") ||
                 hostname.contains("accounts.google") || hostname.contains("play.google") ||
-                hostname.contains("cloudflare.com") || hostname.contains("apple.com") ||
-                hostname.contains("microsoft.com")) &&
+                hostname.contains("apple.com") || hostname.contains("microsoft.com")) &&
                 !hostname.contains("youtube") && !hostname.contains("googlevideo") && !hostname.contains("ytimg")
 
-        if (strategy.id == "auto_pilot" && isGoogleSearchOrInfra) {
+        if (strategy.id == "auto_pilot" && isCleanInfra) {
             outputStream.write(payload, 0, length)
             outputStream.flush()
             onTechniqueApplied("CLEAN_PASSTHROUGH")
             return
         }
 
-        // 2. Auto-Pilot Dynamic Intelligence: Inspect domain target
-        val isStreamingMedia = hostname.contains("googlevideo") || hostname.contains("youtube") ||
-                hostname.contains("ytimg") || hostname.contains("twitch") ||
-                hostname.contains("netflix") || hostname.contains("instagram") ||
-                hostname.contains("fbcdn") || hostname.contains("tiktok") ||
-                hostname.contains("twitter") || hostname.contains("x.com") ||
-                hostname.contains("reddit")
+        // 2. Zapret Gold Standard Split2 (Offset 2):
+        // Splits the 5-byte TLS Record Header (0x16 0x03 | 0x01 ...) across two TCP segments.
+        // - DPI engines fail to match the TLS handshake header (bypasses ISP throttle & censorship)
+        // - Web servers (Cloudflare, Fast.com, Netflix, Akamai, AWS) reassemble in 0ms with standard JA3 fingerprint
+        // - ZERO bot detection / CAPTCHA flags, full line speed for web browsing and speed tests
+        val isAutoPilot = strategy.id == "auto_pilot"
 
-        val effectiveStrategy = if (strategy.id == "auto_pilot") {
-            when {
-                // Streaming & Video Services -> Low-overhead Split 2 for full 4K line speed
-                isStreamingMedia -> BypassStrategy.STREAMING_TURBO
-
-                // Voice, Gaming & RTC -> Low-latency Split Offset 2
-                hostname.contains("discord") || hostname.contains("gateway") ||
-                hostname.contains("voice") || hostname.contains("rtc") ||
-                hostname.contains("telegram") || hostname.contains("t.me") -> {
-                    BypassStrategy.GAMING_VOICE
-                }
-
-                // Strict Censorship / General Blocked Hosts -> Deep Universal Split
-                else -> BypassStrategy.STRICT_FIREWALL
-            }
-        } else {
-            strategy
-        }
-
-        // Calculate Split Position (Use Split 2 for Video CDNs to maximize hardware buffer throughput)
-        val splitPos = if (isStreamingMedia || effectiveStrategy.id == "streaming_turbo" || effectiveStrategy.id == "gaming_voice") {
-            2 // Zapret standard split2: splits TLS Record Header (0x16 0x03 | 0x01 ...) with 0ms buffering
+        val splitPos = if (isAutoPilot || strategy.tlsSplitOffset == 2 || strategy.id == "streaming_turbo" || strategy.id == "gaming_voice") {
+            2
         } else when {
-            effectiveStrategy.tlsSplitOffset == -1 && sniResult.sniExtensionOffset > 5 -> {
-                sniResult.sniExtensionOffset.coerceIn(2, length - 2)
-            }
-            effectiveStrategy.tlsSplitOffset > 0 -> {
-                effectiveStrategy.tlsSplitOffset.coerceIn(1, length - 1)
-            }
-            else -> {
-                if (sniResult.sniExtensionOffset > 0) sniResult.sniExtensionOffset.coerceIn(2, length - 2) else 2
-            }
+            strategy.tlsSplitOffset > 0 -> strategy.tlsSplitOffset.coerceIn(1, length - 1)
+            strategy.tlsSplitOffset == -1 && sniResult.sniExtensionOffset > 5 -> sniResult.sniExtensionOffset.coerceIn(2, length - 2)
+            else -> 2
         }
 
-        if (effectiveStrategy.useMultisplit && length > 12 && !isStreamingMedia) {
+        // Multi-split ONLY if explicitly requested in custom strategy and NOT in Auto-Pilot
+        if (!isAutoPilot && strategy.useMultisplit && length > 12) {
             val p1 = 5.coerceAtMost(splitPos - 1)
             val p2 = splitPos.coerceIn(p1 + 1, length - 1)
 
@@ -130,9 +102,9 @@ object DpiEngine {
             outputStream.write(c3)
             outputStream.flush()
 
-            onTechniqueApplied(if (strategy.id == "auto_pilot") "AUTO:MULTISPLIT" else "MULTISPLIT(5,$p2)")
+            onTechniqueApplied("MULTISPLIT(5,$p2)")
         } else {
-            // Turbo Split (0ms latency, separate TCP segments via TCP_NODELAY)
+            // Standard Zapret Zero-Latency Split2 (Two immediate segments via TCP_NODELAY)
             val c1 = payload.copyOfRange(0, splitPos)
             val c2 = payload.copyOfRange(splitPos, length)
 
@@ -142,7 +114,7 @@ object DpiEngine {
             outputStream.write(c2)
             outputStream.flush()
 
-            onTechniqueApplied(if (strategy.id == "auto_pilot") "TURBO_SPLIT($splitPos)" else "SNI_SPLIT($splitPos)")
+            onTechniqueApplied(if (isAutoPilot) "AUTO:SPLIT2" else "SPLIT($splitPos)")
         }
     }
 
