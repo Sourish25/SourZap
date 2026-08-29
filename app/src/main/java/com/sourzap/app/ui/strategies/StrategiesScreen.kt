@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -22,17 +25,21 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sourzap.app.SourZapApp
 import com.sourzap.app.data.model.BypassStrategy
 import com.sourzap.app.data.model.DohProvider
+import com.sourzap.app.speedtest.DpiProbeEngine
 import com.sourzap.app.ui.components.ExpressiveCard
 import com.sourzap.app.ui.components.ExpressiveChip
 import com.sourzap.app.ui.components.SegmentedPillSwitch
+import kotlinx.coroutines.launch
 
 @Composable
 fun StrategiesScreen(
@@ -43,6 +50,8 @@ fun StrategiesScreen(
 
     val currentStrategy by strategyRepo.currentStrategy.collectAsState()
     val customStrategy by strategyRepo.customStrategy.collectAsState()
+    val probeState by DpiProbeEngine.state.collectAsState()
+    val scope = rememberCoroutineScope()
 
     LazyColumn(
         modifier = modifier
@@ -80,6 +89,105 @@ fun StrategiesScreen(
                     backgroundColor = MaterialTheme.colorScheme.primaryContainer,
                     textColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
+            }
+        }
+
+        // ISP DPI Diagnostic Card
+        item {
+            ExpressiveCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(28.dp),
+                backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "ISP DPI DIAGNOSTIC & AUTO-TUNE",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 12.sp,
+                        letterSpacing = 0.8.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Text(
+                        text = "Probes your mobile or Wi-Fi ISP filter to recommend the optimal evasion preset.",
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (probeState.isRunning) {
+                        LinearProgressIndicator(
+                            progress = { probeState.progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                        )
+                        Text(
+                            text = probeState.currentStep,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    probeState.result?.let { result ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                .padding(14.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = "Optimal: ${result.recommendedPreset.name}",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 15.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Evasion Latency: ${String.format("%.0f ms", result.latencyMs)} • DPI Evasion: 100% Active",
+                                    fontWeight = FontWeight.Normal,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            if (probeState.result != null && !probeState.isRunning) {
+                                strategyRepo.selectStrategy(probeState.result!!.recommendedPreset)
+                            } else {
+                                scope.launch { DpiProbeEngine.runDpiAnalysis() }
+                            }
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp)
+                    ) {
+                        Text(
+                            text = if (probeState.isRunning) "ANALYZING ISP FILTER..." else if (probeState.result != null) "APPLY RECOMMENDED PRESET" else "RUN ISP DIAGNOSTIC PROBE",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 14.sp,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+                }
             }
         }
 

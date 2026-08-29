@@ -91,6 +91,9 @@ class SettingsRepository(private val context: Context) {
     private val _speedTestHistory = MutableStateFlow<List<SpeedTestResult>>(loadSpeedHistory())
     val speedTestHistory: StateFlow<List<SpeedTestResult>> = _speedTestHistory.asStateFlow()
 
+    private val _disallowedPackages = MutableStateFlow<Set<String>>(loadDisallowedPackages())
+    val disallowedPackages: StateFlow<Set<String>> = _disallowedPackages.asStateFlow()
+
     fun setThemePreset(preset: String) {
         prefs.edit().putString("theme_preset", preset).apply()
         _themePreset.value = preset
@@ -111,9 +114,28 @@ class SettingsRepository(private val context: Context) {
         _autoConnectOnBoot.value = enabled
     }
 
+    fun toggleAppBypass(packageName: String) {
+        val current = _disallowedPackages.value.toMutableSet()
+        if (current.contains(packageName)) {
+            current.remove(packageName)
+        } else {
+            current.add(packageName)
+        }
+        prefs.edit().putStringSet("disallowed_packages", current).apply()
+        _disallowedPackages.value = current
+    }
+
+    fun isAppBypassed(packageName: String): Boolean {
+        return _disallowedPackages.value.contains(packageName)
+    }
+
     fun saveSpeedTestResult(result: SpeedTestResult) {
         _speedTestHistory.update { (listOf(result) + it).take(20) }
         saveSpeedHistory(_speedTestHistory.value)
+    }
+
+    private fun loadDisallowedPackages(): Set<String> {
+        return prefs.getStringSet("disallowed_packages", emptySet()) ?: emptySet()
     }
 
     private fun loadSpeedHistory(): List<SpeedTestResult> {

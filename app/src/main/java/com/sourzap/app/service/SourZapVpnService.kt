@@ -57,17 +57,26 @@ class SourZapVpnService : VpnService() {
         isRunning = true
         TrafficMonitor.startMonitoring()
 
-        startForeground(NOTIFICATION_ID, buildNotification("⚡ SourZap Turbo Active", "DPI Bypass Engine Running at Maximum Line Speed"))
+        startForeground(NOTIFICATION_ID, buildNotification("SourZap Turbo Active", "DPI Bypass Engine Running"))
 
         serviceScope.launch {
             try {
+                val settingsRepo = SourZapApp.instance.settingsRepository
                 val builder = Builder().apply {
                     setSession("SourZap Turbo DPI")
                     addAddress("10.0.0.2", 24)
                     addRoute("0.0.0.0", 0)
                     addDnsServer("10.0.0.1")
-                    setMtu(1500) // Standard 1500 MTU for optimal fragmentation
+                    setMtu(1500)
                     setBlocking(true)
+
+                    // Per-App Split Tunneling
+                    val disallowed = settingsRepo.disallowedPackages.value
+                    disallowed.forEach { pkg ->
+                        try {
+                            addDisallowedApplication(pkg)
+                        } catch (_: Exception) {}
+                    }
                 }
 
                 vpnInterface = builder.establish()
@@ -288,8 +297,8 @@ class SourZapVpnService : VpnService() {
                 val stats = TrafficMonitor.stats.value
                 val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
                 val notification = buildNotification(
-                    title = "⚡ SourZap Turbo: ",
-                    content = "↓  • ↑  | Line Speed Max"
+                    title = "SourZap: ${strategy.name}",
+                    content = "${stats.formattedDownloadSpeed()} DL • ${stats.formattedUploadSpeed()} UL"
                 )
                 val manager = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
                 manager.notify(NOTIFICATION_ID, notification)

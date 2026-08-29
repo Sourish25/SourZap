@@ -2,16 +2,9 @@ package com.sourzap.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -50,7 +42,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,8 +58,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Large Smartphone-Tailored Hero Connect Control
- * Designed for human thumb ergonomics: large surface, bold typography, tactile spring response.
+ * Large Smartphone-Tailored Hero Connect Control with Tactile Haptics
  */
 @Composable
 fun HeroConnectButton(
@@ -75,6 +68,7 @@ fun HeroConnectButton(
 ) {
     val scaleAnim = remember { Animatable(1f) }
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
 
     val targetContainerColor = if (isConnected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
     val targetBorderColor = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
@@ -124,6 +118,7 @@ fun HeroConnectButton(
             .pointerInput(isConnected) {
                 detectTapGestures(
                     onPress = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         scope.launch {
                             scaleAnim.animateTo(0.94f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium))
                         }
@@ -172,7 +167,6 @@ fun HeroConnectButton(
 
 /**
  * Large, Non-Clipping Expressive Pill Chip
- * Clean typographic badge without cluttered icons.
  */
 @Composable
 fun ExpressiveChip(
@@ -204,7 +198,6 @@ fun ExpressiveChip(
 
 /**
  * Material 3 Expressive Container Card
- * Generous smartphone padding and large rounded corners.
  */
 @Composable
 fun ExpressiveCard(
@@ -399,8 +392,7 @@ fun ExpressiveTrafficWave(
 }
 
 /**
- * Large Smartphone Segmented Pill Switch (56dp height)
- * Generous touch targets with clear text labels and no icon clutter.
+ * Large Smartphone Segmented Pill Switch (56dp height) with Haptic Feedback
  */
 @Composable
 fun <T> SegmentedPillSwitch(
@@ -410,6 +402,8 @@ fun <T> SegmentedPillSwitch(
     onItemSelected: (T) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val haptics = LocalHapticFeedback.current
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = ExpressiveShapes.SuperPill,
@@ -432,7 +426,10 @@ fun <T> SegmentedPillSwitch(
                         .height(48.dp)
                         .clip(ExpressiveShapes.SuperPill)
                         .background(bgColor)
-                        .clickable { onItemSelected(item) }
+                        .clickable {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onItemSelected(item)
+                        }
                         .padding(horizontal = 6.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -452,7 +449,7 @@ fun <T> SegmentedPillSwitch(
 }
 
 /**
- * Clean Floating Navigation Dock Tailored for Thumbs (No Icons)
+ * Clean Floating Navigation Dock Tailored for Thumbs with Haptics
  */
 @Composable
 fun FloatingExpressiveDock(
@@ -460,6 +457,8 @@ fun FloatingExpressiveDock(
     onNavigate: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val haptics = LocalHapticFeedback.current
+
     val items = listOf(
         DockItem("dashboard", "Home"),
         DockItem("speedtest", "Speed"),
@@ -500,7 +499,10 @@ fun FloatingExpressiveDock(
                             .height(44.dp)
                             .clip(ExpressiveShapes.SuperPill)
                             .background(pillBg)
-                            .clickable { onNavigate(item.route) }
+                            .clickable {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onNavigate(item.route)
+                            }
                             .padding(horizontal = 4.dp),
                         contentAlignment = Alignment.Center
                     ) {
