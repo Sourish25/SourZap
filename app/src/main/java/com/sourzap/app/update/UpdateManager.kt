@@ -69,10 +69,13 @@ class UpdateManager(private val context: Context) {
 
     private val httpClient = OkHttpClient.Builder()
         .dns(dohDns)
+        .protocols(listOf(okhttp3.Protocol.HTTP_1_1)) // HTTP/1.1 prevents CDN HTTP/2 stream resets & unexpected end of stream
         .followRedirects(true)
         .followSslRedirects(true)
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
     fun checkForUpdates(currentVersion: String): Flow<UpdateState> = flow {
@@ -155,47 +158,80 @@ class UpdateManager(private val context: Context) {
 
         emit(UpdateState.Downloading(0.01f, 0L, 1L))
 
-        try {
-            val request = Request.Builder()
-                .url(downloadUrl)
-                .header("User-Agent", "SourZap-Android-App")
-                .build()
+        var bytesDownloaded = 0L
+        var totalLength = -1L
+        var attempts = 0
+        val maxAttempts = 3
 
-            httpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    emit(UpdateState.Error("Download failed with HTTP ${response.code}"))
-                    return@use
+        while (attempts < maxAttempts) {
+            attempts++
+            try {
+                val reqBuilder = Request.Builder()
+                    .url(downloadUrl)
+                    .header("User-Agent", "SourZap-Android-App")
+                    .header("Accept", "application/octet-stream")
+
+                if (bytesDownloaded > 0) {
+                    reqBuilder.header("Range", "bytes=$bytesDownloaded-")
                 }
 
-                val body = response.body ?: throw Exception("Empty response body")
-                val totalLength = body.contentLength()
-                val inputStream: InputStream = body.byteStream()
-                val outputStream = FileOutputStream(targetApk)
+                httpClient.newCall(reqBuilder.build()).execute().use { response ->
+                    if (!response.isSuccessful && response.code != 206) {
+                        if (response.code == 416 && totalLength > 0 && bytesDownloaded >= totalLength) {
+                            emit(UpdateState.ReadyToInstall(targetApk))
+                            return@flow
+                        }
+                        throw Exception("HTTP ${response.code}: ${response.message}")
+                    }
 
-                val buffer = ByteArray(65536)
-                var bytesDownloaded = 0L
-                var read = inputStream.read(buffer)
+                    val body = response.body ?: throw Exception("Empty response body")
+                    val contentLen = body.contentLength()
+                    if (totalLength <= 0) {
+                        totalLength = if (contentLen > 0) contentLen else -1L
+                    }
 
-                while (read != -1) {
-                    outputStream.write(buffer, 0, read)
-                    bytesDownloaded += read
+                    val append = (bytesDownloaded > 0 && response.code == 206)
+                    val outputStream = FileOutputStream(targetApk, append)
+                    val inputStream: InputStream = body.byteStream()
+                    val buffer = ByteArray(32768)
 
-                    val progress = if (totalLength > 0) {
-                        (bytesDownloaded.toFloat() / totalLength.toFloat()).coerceIn(0f, 1f)
-                    } else 0.5f
+                    try {
+                        var read = inputStream.read(buffer)
+                        while (read != -1) {
+                            outputStream.write(buffer, 0, read)
+                            bytesDownloaded += read
 
-                    emit(UpdateState.Downloading(progress, bytesDownloaded, totalLength))
-                    read = inputStream.read(buffer)
+                            val progress = if (totalLength > 0) {
+                                (bytesDownloaded.toFloat() / totalLength.toFloat()).coerceIn(0f, 1f)
+                            } else 0.5f
+
+                            emit(UpdateState.Downloading(progress, bytesDownloaded, totalLength))
+                            read = inputStream.read(buffer)
+                        }
+                        outputStream.flush()
+                    } finally {
+                        try { outputStream.close() } catch (_: Exception) {}
+                        try { inputStream.close() } catch (_: Exception) {}
+                    }
+
+                    if (totalLength <= 0 || bytesDownloaded >= totalLength) {
+                        emit(UpdateState.ReadyToInstall(targetApk))
+                        return@flow
+                    }
                 }
-
-                outputStream.flush()
-                outputStream.close()
-                inputStream.close()
-
-                emit(UpdateState.ReadyToInstall(targetApk))
+            } catch (e: Exception) {
+                if (attempts >= maxAttempts) {
+                    emit(UpdateState.Error("Download interrupted: ${e.localizedMessage}"))
+                    return@flow
+                }
+                kotlinx.coroutines.delay(800)
             }
-        } catch (e: Exception) {
-            emit(UpdateState.Error("Download interrupted: ${e.localizedMessage}"))
+        }
+
+        if (targetApk.exists() && targetApk.length() > 5_000_000L) {
+            emit(UpdateState.ReadyToInstall(targetApk))
+        } else {
+            emit(UpdateState.Error("Download could not be completed"))
         }
     }.flowOn(Dispatchers.IO)
 
