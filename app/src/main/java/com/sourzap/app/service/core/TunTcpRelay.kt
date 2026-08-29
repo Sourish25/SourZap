@@ -7,6 +7,7 @@ import com.sourzap.app.service.TrafficMonitor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.FileOutputStream
@@ -20,8 +21,8 @@ import java.util.concurrent.atomic.AtomicLong
 
 /**
  * High-Throughput Rootless Userspace TCP Stack for Android VpnService.
- * Seamlessly accepts TCP connections from all Android apps and browsers,
- * applies Zapret DPI evasion upstream, and streams full-duplex responses back to the TUN interface.
+ * Uses sequential FIFO channels to guarantee 100% in-order packet streaming
+ * for WhatsApp Noise Protocol, TLS, SSH, XMPP, and all Android socket traffic.
  */
 class TunTcpRelay(
     private val vpnService: VpnService,
@@ -39,8 +40,9 @@ class TunTcpRelay(
         val clientSeq: AtomicLong,
         val serverSeq: AtomicLong,
         var clientAck: Long = 0L,
-        var isConnected: AtomicBoolean = AtomicBoolean(false),
-        var isHandshakeDesynced: AtomicBoolean = AtomicBoolean(false),
+        val isConnected: AtomicBoolean = AtomicBoolean(false),
+        val isHandshakeDesynced: AtomicBoolean = AtomicBoolean(false),
+        val sendQueue: Channel<ByteArray> = Channel(Channel.UNLIMITED),
         var socket: Socket? = null,
         var upstreamOut: OutputStream? = null,
         var streamJob: Job? = null
@@ -160,58 +162,8 @@ class TunTcpRelay(
             )
             writeTunPacket(ackPacket)
 
-            // Forward to upstream socket
-            scope.launch(Dispatchers.IO) {
-                try {
-                    // Wait up to 5000ms if socket is still connecting
-                    var retries = 0
-                    while (!session.isConnected.get() && retries < 200 && scope.isActive) {
-                        kotlinx.coroutines.delay(25)
-                        retries++
-                    }
-
-                    val socket = session.socket
-                    val out = session.upstreamOut
-                    if (socket == null || out == null || !session.isConnected.get()) {
-                        closeSession(sessionKey)
-                        return@launch
-                    }
-
-                    if (!session.isHandshakeDesynced.getAndSet(true)) {
-                        // Apply Zapret Desync on Initial Handshake Payload
-                        val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
-                        var appliedTechnique = "DIRECT"
-
-                        val sniResult = TlsParser.parseClientHello(payload, payload.size)
-                        val logDomain = sniResult.hostname ?: dstIp.hostAddress ?: "Stream"
-
-                        DpiEngine.desyncAndSend(
-                            socket = socket,
-                            outputStream = out,
-                            payload = payload,
-                            length = payload.size,
-                            strategy = strategy,
-                            onTechniqueApplied = { appliedTechnique = it }
-                        )
-
-                        TrafficMonitor.addConnectionLog(
-                            ConnectionLog(
-                                domain = logDomain,
-                                port = dstPort,
-                                protocol = if (dstPort == 443) "TLS" else "HTTP",
-                                technique = appliedTechnique,
-                                bytesTransferred = payload.size.toLong()
-                            )
-                        )
-                    } else {
-                        // Subsequent stream data
-                        out.write(payload)
-                        out.flush()
-                    }
-                } catch (_: Exception) {
-                    closeSession(sessionKey)
-                }
-            }
+            // Enqueue in sequential FIFO channel (guarantees perfect in-order delivery)
+            session.sendQueue.trySend(payload)
         }
     }
 
@@ -220,23 +172,67 @@ class TunTcpRelay(
             TrafficMonitor.onConnectionOpened()
             try {
                 val socket = Socket().apply {
-                    receiveBufferSize = 1048576 // 1MB Turbo Receive Buffer for 4K/8K Video
+                    receiveBufferSize = 1048576 // 1MB Turbo Receive Buffer
                     sendBufferSize = 524288     // 512KB Send Buffer
                     tcpNoDelay = true
                     keepAlive = true
+                    soTimeout = 0               // Persistent keepalive for WhatsApp/messaging
                     trafficClass = 0x08         // IPTOS_THROUGHPUT
                     setPerformancePreferences(0, 1, 2)
                 }
 
                 vpnService.protect(socket)
-                socket.connect(InetSocketAddress(session.dstIp, session.dstPort), 5000)
+                socket.connect(InetSocketAddress(session.dstIp, session.dstPort), 6000)
 
                 session.socket = socket
-                session.upstreamOut = socket.getOutputStream()
+                val upstreamOut = socket.getOutputStream()
+                session.upstreamOut = upstreamOut
                 session.isConnected.set(true)
 
+                // Dedicated sequential sender loop (FIFO order)
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        for (payload in session.sendQueue) {
+                            if (!session.isConnected.get() || !scope.isActive) break
+
+                            if (!session.isHandshakeDesynced.getAndSet(true)) {
+                                val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
+                                var appliedTechnique = "DIRECT"
+
+                                val sniResult = TlsParser.parseClientHello(payload, payload.size)
+                                val logDomain = sniResult.hostname ?: session.dstIp.hostAddress ?: "Socket"
+
+                                DpiEngine.desyncAndSend(
+                                    socket = socket,
+                                    outputStream = upstreamOut,
+                                    payload = payload,
+                                    length = payload.size,
+                                    strategy = strategy,
+                                    onTechniqueApplied = { appliedTechnique = it }
+                                )
+
+                                TrafficMonitor.addConnectionLog(
+                                    ConnectionLog(
+                                        domain = logDomain,
+                                        port = session.dstPort,
+                                        protocol = if (session.dstPort == 443) "TLS" else "TCP",
+                                        technique = appliedTechnique,
+                                        bytesTransferred = payload.size.toLong()
+                                    )
+                                )
+                            } else {
+                                upstreamOut.write(payload)
+                                upstreamOut.flush()
+                            }
+                        }
+                    } catch (_: Exception) {
+                        closeSession(session.key)
+                    }
+                }
+
+                // Downstream reader loop
                 val input = socket.getInputStream()
-                val readBuffer = ByteArray(1400) // MTU size chunks
+                val readBuffer = ByteArray(1400)
 
                 var bytesRead = input.read(readBuffer)
                 while (scope.isActive && bytesRead != -1 && session.isConnected.get()) {
@@ -260,7 +256,7 @@ class TunTcpRelay(
                     bytesRead = input.read(readBuffer)
                 }
 
-                // Upstream reached EOF: send FIN-ACK to client app
+                // Upstream EOF: send FIN-ACK to client
                 if (session.isConnected.get()) {
                     val finAck = buildTcpPacket(
                         srcIp = session.dstIp,
@@ -275,7 +271,6 @@ class TunTcpRelay(
                     writeTunPacket(finAck)
                 }
             } catch (_: Exception) {
-                // Connection failed: send RST to client app so it retries cleanly
                 val rstPacket = buildTcpPacket(
                     srcIp = session.dstIp,
                     dstIp = session.srcIp,
@@ -306,6 +301,7 @@ class TunTcpRelay(
     private fun closeSession(key: String) {
         val session = sessions.remove(key) ?: return
         session.isConnected.set(false)
+        session.sendQueue.close()
         session.streamJob?.cancel()
         try {
             session.socket?.close()
