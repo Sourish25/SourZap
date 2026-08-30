@@ -91,11 +91,6 @@ class SourZapVpnService : VpnService() {
                         addRoute("::", 0)
                     } catch (_: Exception) {}
 
-                    // Set Local Direct Proxy on Android API 21+ for instant browser & app traffic interception
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        setHttpProxy(ProxyInfo.buildDirectProxy("127.0.0.1", proxyPort))
-                    }
-
                     // Exclude SourZap's own app to prevent internal download / updater recursive loops
                     try {
                         addDisallowedApplication(packageName)
