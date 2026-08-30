@@ -10,7 +10,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,10 +27,26 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.StackedLineChart
+import androidx.compose.material.icons.rounded.VpnKey
+import androidx.compose.material.icons.rounded.VpnLock
+import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -48,6 +64,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -55,17 +72,19 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sourzap.app.ui.theme.NumberDisplayLarge
+import com.sourzap.app.ui.theme.NumberDisplayMedium
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Large Smartphone Hero Connect Control with Tactile Haptics
- * Generous 170dp touch target with bold 32sp state text.
+ * Large Smartphone Hero Connect Control with Tactile Haptics and Vector Icon
+ * Generous 174dp touch target with bold state text and spring physics.
  */
 @Composable
 fun HeroConnectButton(
@@ -111,10 +130,10 @@ fun HeroConnectButton(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(170.dp)
+            .height(174.dp)
             .scale(scaleAnim.value)
             .shadow(
-                elevation = if (isConnected) 10.dp else 2.dp,
+                elevation = if (isConnected) 12.dp else 2.dp,
                 shape = heroShape,
                 spotColor = containerColor,
                 ambientColor = containerColor
@@ -142,43 +161,69 @@ fun HeroConnectButton(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(24.dp)
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)
         ) {
-            Text(
-                text = if (isConnected) "ACTIVE" else "DISCONNECTED",
-                fontWeight = FontWeight.Black,
-                fontSize = 32.sp,
-                letterSpacing = 1.sp,
-                color = textColor,
-                textAlign = TextAlign.Center
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = if (isConnected) Icons.Rounded.Shield else Icons.Rounded.PowerSettingsNew,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.size(30.dp)
+                )
 
-            Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Text(
+                    text = if (isConnected) "ACTIVE" else "DISCONNECTED",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 30.sp,
+                    letterSpacing = 1.sp,
+                    color = textColor,
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
-                Text(
-                    text = if (isConnected) "DPI BYPASS RUNNING" else "TAP TO ACTIVATE ZAPRET",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    letterSpacing = 0.5.sp,
-                    color = if (isConnected) MaterialTheme.colorScheme.onPrimary else subtextColor,
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isConnected) Icons.Rounded.VpnLock else Icons.Rounded.VpnKey,
+                        contentDescription = null,
+                        tint = if (isConnected) MaterialTheme.colorScheme.onPrimary else subtextColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isConnected) "DPI BYPASS RUNNING" else "TAP TO ACTIVATE ZAPRET",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.5.sp,
+                        letterSpacing = 0.4.sp,
+                        color = if (isConnected) MaterialTheme.colorScheme.onPrimary else subtextColor
+                    )
+                }
             }
         }
     }
 }
 
 /**
- * Thick, Substantive Expressive Pill Chip (Zero-Clipping)
+ * Thick, Substantive Expressive Pill Chip with Optional Vector Icon (Zero-Clipping)
  */
 @Composable
 fun ExpressiveChip(
     text: String,
     modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
     backgroundColor: Color = MaterialTheme.colorScheme.secondaryContainer,
     textColor: Color = MaterialTheme.colorScheme.onSecondaryContainer
 ) {
@@ -188,10 +233,20 @@ fun ExpressiveChip(
         shape = pillShape,
         color = backgroundColor
     ) {
-        Box(
+        Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            contentAlignment = Alignment.Center
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
         ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+            }
             Text(
                 text = text,
                 fontWeight = FontWeight.Black,
@@ -228,7 +283,115 @@ fun ExpressiveCard(
 }
 
 /**
- * Large Speedometer Arc Gauge with Big Typography
+ * Diagnostic Metric Tile with Material Vector Icon Badge, high-contrast typography, and spring physics
+ */
+@Composable
+fun ExpressiveMetricTile(
+    title: String,
+    value: String,
+    unit: String? = null,
+    icon: ImageVector,
+    iconTint: Color = MaterialTheme.colorScheme.primary,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainer,
+    borderColor: Color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+    onClick: (() -> Unit)? = null
+) {
+    val haptics = LocalHapticFeedback.current
+    val tileShape = RoundedCornerShape(24.dp)
+
+    val clickableModifier = if (onClick != null) {
+        Modifier.clickable {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        }
+    } else Modifier
+
+    Surface(
+        modifier = modifier
+            .border(1.dp, borderColor, tileShape)
+            .clip(tileShape)
+            .then(clickableModifier),
+        shape = tileShape,
+        color = backgroundColor
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.5.sp,
+                    letterSpacing = 0.6.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(iconTint.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = iconTint,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = value,
+                    style = NumberDisplayMedium.copy(fontSize = 24.sp),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (unit != null) {
+                    Text(
+                        text = unit,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 3.dp)
+                    )
+                }
+            }
+
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Large Speedometer Arc Gauge with Material Vector Icon and Big Typography
  */
 @Composable
 fun ExpressiveSpeedGauge(
@@ -238,7 +401,7 @@ fun ExpressiveSpeedGauge(
 ) {
     val animatedSpeed by animateFloatAsState(
         targetValue = speedMbps,
-        animationSpec = spring(dampingRatio = 0.7f, stiffness = 250f),
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 220f),
         label = "SpeedNeedle"
     )
 
@@ -250,7 +413,7 @@ fun ExpressiveSpeedGauge(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(240.dp),
+            .height(245.dp),
         contentAlignment = Alignment.Center
     ) {
         val sizePx = minOf(maxWidth.value, maxHeight.value).dp
@@ -261,7 +424,7 @@ fun ExpressiveSpeedGauge(
             val strokeWidth = 20.dp.toPx()
             val diameter = size.minDimension - strokeWidth
             val radius = diameter / 2f
-            val center = Offset(size.width / 2f, size.height / 2f + 10.dp.toPx())
+            val center = Offset(size.width / 2f, size.height / 2f + 12.dp.toPx())
 
             val startAngle = 150f
             val sweepTotal = 240f
@@ -276,6 +439,25 @@ fun ExpressiveSpeedGauge(
                 size = Size(diameter, diameter),
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             )
+
+            // Tick Marks along circumference
+            val totalTicks = 9
+            val tickStepAngle = sweepTotal / (totalTicks - 1)
+            for (t in 0 until totalTicks) {
+                val tickAngleDeg = startAngle + t * tickStepAngle
+                val tickAngleRad = tickAngleDeg * (PI / 180f)
+                val innerR = radius - 14.dp.toPx()
+                val outerR = radius - 20.dp.toPx()
+                val p1 = Offset(center.x + innerR * cos(tickAngleRad).toFloat(), center.y + innerR * sin(tickAngleRad).toFloat())
+                val p2 = Offset(center.x + outerR * cos(tickAngleRad).toFloat(), center.y + outerR * sin(tickAngleRad).toFloat())
+                drawLine(
+                    color = onSurfaceVariantColor.copy(alpha = 0.35f),
+                    start = p1,
+                    end = p2,
+                    strokeWidth = 2.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+            }
 
             // Active Progress Arc
             val currentFraction = (animatedSpeed / 150f).coerceIn(0.01f, 1f)
@@ -300,7 +482,12 @@ fun ExpressiveSpeedGauge(
 
             drawCircle(
                 color = onSurfaceColor,
-                radius = 9.dp.toPx(),
+                radius = 8.5.dp.toPx(),
+                center = needleTip
+            )
+            drawCircle(
+                color = primaryColor,
+                radius = 5.dp.toPx(),
                 center = needleTip
             )
         }
@@ -309,28 +496,42 @@ fun ExpressiveSpeedGauge(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(top = 16.dp)
+            modifier = Modifier.padding(top = 18.dp)
         ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Speed,
+                    contentDescription = null,
+                    tint = primaryColor,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Mbps",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 17.sp,
+                    color = primaryColor
+                )
+            }
+
             Text(
                 text = String.format("%.1f", animatedSpeed),
-                style = NumberDisplayLarge.copy(fontSize = 56.sp),
+                style = NumberDisplayLarge.copy(fontSize = 54.sp),
                 color = onSurfaceColor
             )
 
-            Text(
-                text = "Mbps",
-                fontWeight = FontWeight.Black,
-                fontSize = 18.sp,
-                color = primaryColor
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
 
             Text(
                 text = statusText,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
-                color = onSurfaceVariantColor
+                color = onSurfaceVariantColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -462,9 +663,6 @@ fun <T> SegmentedPillSwitch(
 }
 
 /**
- * Thick, Floating Navigation Dock (66dp height) Tailored for Smartphone Thumbs
- */
-/**
  * Material You Expressive Wavy Progress Indicator.
  * Renders an organic, undulating sine-wave progress bar with animated phase shifting.
  */
@@ -549,7 +747,7 @@ fun ExpressiveWavyProgressIndicator(
 }
 
 /**
- * Thick, Floating Navigation Dock Tailored for Smartphone Thumbs (4 ergonomic tabs)
+ * Thick, Floating Navigation Dock Tailored for Smartphone Thumbs with Material Vector Icons
  */
 @Composable
 fun FloatingExpressiveDock(
@@ -562,10 +760,10 @@ fun FloatingExpressiveDock(
     val itemShape = RoundedCornerShape(26.dp)
 
     val items = listOf(
-        DockItem("dashboard", "Home"),
-        DockItem("speedtest", "Speed"),
-        DockItem("traffic", "Traffic"),
-        DockItem("settings", "Settings")
+        DockItem("dashboard", "Home", Icons.Rounded.Home),
+        DockItem("speedtest", "Speed", Icons.Rounded.Speed),
+        DockItem("traffic", "Traffic", Icons.Rounded.StackedLineChart),
+        DockItem("settings", "Settings", Icons.Rounded.Settings)
     )
 
     Box(
@@ -578,10 +776,10 @@ fun FloatingExpressiveDock(
             shape = dockShape,
             color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.98f),
             shadowElevation = 10.dp,
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(66.dp)
+                .height(68.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -599,26 +797,38 @@ fun FloatingExpressiveDock(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(48.dp)
+                            .height(52.dp)
                             .clip(itemShape)
                             .background(pillBg)
                             .clickable {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onNavigate(item.route)
                             }
-                            .padding(horizontal = 6.dp),
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = item.label,
-                            fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
-                            fontSize = 13.sp,
-                            letterSpacing = (-0.1).sp,
-                            color = itemColor,
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = item.icon,
+                                contentDescription = item.label,
+                                tint = itemColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = item.label,
+                                fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
+                                fontSize = 11.sp,
+                                letterSpacing = (-0.1).sp,
+                                color = itemColor,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }
@@ -626,4 +836,78 @@ fun FloatingExpressiveDock(
     }
 }
 
-data class DockItem(val route: String, val label: String)
+/**
+ * Material 3 Expressive Confirmation Dialog with tactile haptic buttons and vector icon
+ */
+@Composable
+fun ExpressiveConfirmationDialog(
+    title: String,
+    message: String,
+    confirmText: String = "Confirm",
+    dismissText: String = "Cancel",
+    icon: ImageVector = Icons.Rounded.WarningAmber,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val haptics = LocalHapticFeedback.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(28.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        icon = {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(32.dp)
+            )
+        },
+        title = {
+            Text(
+                text = title,
+                fontWeight = FontWeight.Black,
+                fontSize = 20.sp,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        text = {
+            Text(
+                text = message,
+                fontWeight = FontWeight.Normal,
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onConfirm()
+                },
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                )
+            ) {
+                Text(confirmText, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onDismiss()
+                },
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Text(dismissText, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    )
+}
+
+data class DockItem(val route: String, val label: String, val icon: ImageVector)

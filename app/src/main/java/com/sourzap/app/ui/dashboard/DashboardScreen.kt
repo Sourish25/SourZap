@@ -20,10 +20,32 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.FlashOn
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.NewReleases
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Sensors
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.VpnLock
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,7 +58,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,8 +72,8 @@ import com.sourzap.app.service.TrafficMonitor
 import com.sourzap.app.ui.components.ExpressiveCard
 import com.sourzap.app.ui.components.ExpressiveChip
 import com.sourzap.app.ui.components.ExpressiveTrafficWave
+import com.sourzap.app.ui.components.ExpressiveWavyProgressIndicator
 import com.sourzap.app.ui.components.HeroConnectButton
-import com.sourzap.app.ui.theme.ExpressiveShapes
 import com.sourzap.app.ui.theme.NumberDisplayMedium
 import com.sourzap.app.ui.theme.NumberDisplaySmall
 import com.sourzap.app.update.AppReleaseInfo
@@ -64,6 +89,7 @@ fun DashboardScreen(
     val context = LocalContext.current
     val app = SourZapApp.instance
     val strategyRepo = app.strategyRepository
+    val haptics = LocalHapticFeedback.current
 
     val isConnected by TrafficMonitor.isVpnActive.collectAsState()
     val stats by TrafficMonitor.stats.collectAsState()
@@ -151,6 +177,23 @@ fun DashboardScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.NewReleases,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "Update Available: v${release.versionName}",
@@ -174,6 +217,7 @@ fun DashboardScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Button(
                                     onClick = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         isDownloadingUpdate = true
                                         scope.launch {
                                             updateManager.downloadAndPrepareApk(release.apkDownloadUrl).collect { st ->
@@ -195,7 +239,15 @@ fun DashboardScreen(
                                         contentColor = MaterialTheme.colorScheme.onPrimary
                                     )
                                 ) {
-                                    Text("Update", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Download,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Update", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                                    }
                                 }
                             }
                         }
@@ -219,7 +271,7 @@ fun DashboardScreen(
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 }
-                                com.sourzap.app.ui.components.ExpressiveWavyProgressIndicator(
+                                ExpressiveWavyProgressIndicator(
                                     progress = downloadProgress,
                                     color = MaterialTheme.colorScheme.primary,
                                     trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
@@ -231,7 +283,7 @@ fun DashboardScreen(
             }
         }
 
-        // Human Material You Top Bar
+        // Material You Top Bar
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -258,6 +310,7 @@ fun DashboardScreen(
 
                 ExpressiveChip(
                     text = if (isConnected) "RUNNING" else "OFF",
+                    icon = if (isConnected) Icons.Rounded.Shield else Icons.Rounded.FlashOn,
                     backgroundColor = if (isConnected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
                     textColor = if (isConnected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -291,16 +344,26 @@ fun DashboardScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "SMART ENGINE STATUS",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 12.sp,
-                            letterSpacing = 0.8.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "SMART ENGINE STATUS",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 12.sp,
+                                letterSpacing = 0.8.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
 
                         ExpressiveChip(
                             text = "AUTO TUNED",
+                            icon = Icons.Rounded.Bolt,
                             backgroundColor = MaterialTheme.colorScheme.primaryContainer,
                             textColor = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -328,7 +391,10 @@ fun DashboardScreen(
             ExpressiveCard(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onNavigateToTraffic() },
+                    .clickable {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onNavigateToTraffic()
+                    },
                 shape = RoundedCornerShape(28.dp),
                 backgroundColor = MaterialTheme.colorScheme.surfaceContainer
             ) {
@@ -342,16 +408,27 @@ fun DashboardScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "LIVE THROUGHPUT",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 12.sp,
-                            letterSpacing = 0.8.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Sensors,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "LIVE THROUGHPUT",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 12.sp,
+                                letterSpacing = 0.8.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
 
                         Spacer(modifier = Modifier.width(8.dp))
 
@@ -371,12 +448,21 @@ fun DashboardScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "DOWNLOAD",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Rounded.ArrowDownward,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "DOWNLOAD",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = stats.formattedDownloadSpeed(),
@@ -393,12 +479,21 @@ fun DashboardScreen(
                             modifier = Modifier.weight(1f),
                             horizontalAlignment = Alignment.End
                         ) {
-                            Text(
-                                text = "UPLOAD",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Rounded.ArrowUpward,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "UPLOAD",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = stats.formattedUploadSpeed(),
@@ -442,14 +537,28 @@ fun DashboardScreen(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    Text(
-                        text = "View Inspector",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable { onNavigateToTraffic() },
-                        maxLines = 1
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onNavigateToTraffic()
+                        }
+                    ) {
+                        Text(
+                            text = "View Inspector",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Icon(
+                            imageVector = Icons.Rounded.ArrowForward,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -473,6 +582,13 @@ fun DashboardScreen(
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         recentLogs.take(3).forEach { log ->
+                            val protoIcon: ImageVector = when {
+                                log.protocol.contains("TLS", ignoreCase = true) || log.protocol.contains("HTTPS", ignoreCase = true) -> Icons.Rounded.Lock
+                                log.protocol.contains("HTTP", ignoreCase = true) -> Icons.Rounded.Language
+                                log.protocol.contains("DNS", ignoreCase = true) || log.protocol.contains("DOH", ignoreCase = true) -> Icons.Rounded.Dns
+                                else -> Icons.Rounded.Bolt
+                            }
+
                             ExpressiveCard(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(20.dp),
@@ -485,6 +601,23 @@ fun DashboardScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = protoIcon,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = log.domain,
@@ -522,7 +655,10 @@ fun DashboardScreen(
         // Large Thumb Action Button for Speed Test
         item {
             Button(
-                onClick = { onNavigateToSpeedTest() },
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onNavigateToSpeedTest()
+                },
                 shape = RoundedCornerShape(24.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -532,12 +668,23 @@ fun DashboardScreen(
                     .fillMaxWidth()
                     .height(60.dp)
             ) {
-                Text(
-                    text = "TEST INTERNET SPEED",
-                    fontWeight = FontWeight.Black,
-                    fontSize = 15.sp,
-                    letterSpacing = 0.5.sp
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Speed,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "TEST INTERNET SPEED",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 15.sp,
+                        letterSpacing = 0.5.sp
+                    )
+                }
             }
         }
     }

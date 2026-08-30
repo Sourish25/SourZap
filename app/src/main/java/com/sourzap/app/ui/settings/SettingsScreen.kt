@@ -18,17 +18,40 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AltRoute
+import androidx.compose.material.icons.rounded.Android
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Lan
+import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Router
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -42,7 +65,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,6 +77,7 @@ import com.sourzap.app.data.model.AppInfo
 import com.sourzap.app.data.repository.AppListHelper
 import com.sourzap.app.ui.components.ExpressiveCard
 import com.sourzap.app.ui.components.ExpressiveChip
+import com.sourzap.app.ui.components.ExpressiveWavyProgressIndicator
 import com.sourzap.app.ui.components.SegmentedPillSwitch
 import com.sourzap.app.ui.theme.AppThemePreset
 import com.sourzap.app.update.UpdateState
@@ -77,6 +103,7 @@ fun SettingsScreen(
     var appSearchQuery by remember { mutableStateOf("") }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
 
     val updateManager = app.updateManager
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
@@ -125,23 +152,34 @@ fun SettingsScreen(
 
                 ExpressiveChip(
                     text = "PREFS",
+                    icon = Icons.Rounded.Tune,
                     backgroundColor = MaterialTheme.colorScheme.primaryContainer,
                     textColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
         }
 
-        // Material You Theme Customizer
+        // Section Title: Theme Customizer
         item {
-            Text(
-                text = "MATERIAL YOU THEME SYSTEM",
-                fontWeight = FontWeight.Black,
-                fontSize = 12.sp,
-                letterSpacing = 0.8.sp,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Rounded.Palette,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "MATERIAL YOU THEME SYSTEM",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 12.sp,
+                    letterSpacing = 0.8.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
 
+        // Material You Theme Customizer Card
         item {
             ExpressiveCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -152,7 +190,7 @@ fun SettingsScreen(
                     modifier = Modifier.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Color Palette Chooser (2 per row for generous boundary fitting)
+                    // Color Palette Chooser
                     Column {
                         Text(
                             text = "Color Palette",
@@ -215,6 +253,12 @@ fun SettingsScreen(
                             fontSize = 16.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
+                        Text(
+                            text = "Choose light, dark, or follow system default theme",
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Spacer(modifier = Modifier.height(10.dp))
 
                         SegmentedPillSwitch(
@@ -222,9 +266,9 @@ fun SettingsScreen(
                             selectedItem = darkModePref,
                             itemLabel = {
                                 when (it) {
-                                    "SYSTEM" -> "System"
-                                    "DARK" -> "Dark"
-                                    else -> "Light"
+                                    "SYSTEM" -> "System Default"
+                                    "DARK" -> "Dark Mode"
+                                    else -> "Light Mode"
                                 }
                             },
                             onItemSelected = { settingsRepo.setDarkModePref(it) }
@@ -234,17 +278,27 @@ fun SettingsScreen(
             }
         }
 
-        // Routing Rules Large Tiles
+        // Section Title: Network & Routing
         item {
-            Text(
-                text = "NETWORK & ROUTING",
-                fontWeight = FontWeight.Black,
-                fontSize = 12.sp,
-                letterSpacing = 0.8.sp,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Rounded.AltRoute,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "NETWORK & ROUTING",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 12.sp,
+                    letterSpacing = 0.8.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
 
+        // Routing Rules Card
         item {
             ExpressiveCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -259,15 +313,37 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { showAppSheet = true },
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                showAppSheet = true
+                            }
+                            .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Apps,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "App Bypass (Split Tunneling)",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
+                                fontSize = 15.5.sp,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -275,7 +351,7 @@ fun SettingsScreen(
                             Text(
                                 text = if (disallowedPackages.isEmpty()) "All apps go through DPI circumvention" else "${disallowedPackages.size} app(s) bypass the VPN",
                                 fontWeight = FontWeight.Normal,
-                                fontSize = 13.sp,
+                                fontSize = 12.5.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -289,16 +365,41 @@ fun SettingsScreen(
                         )
                     }
 
+                    // Bypass Local LAN Tile
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                settingsRepo.setBypassLan(!bypassLan)
+                            }
+                            .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Lan,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Bypass Local LAN",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
+                                fontSize = 15.5.sp,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -306,7 +407,7 @@ fun SettingsScreen(
                             Text(
                                 text = "Direct connectivity for Chromecast, printers & home LAN",
                                 fontWeight = FontWeight.Normal,
-                                fontSize = 13.sp,
+                                fontSize = 12.5.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -315,20 +416,48 @@ fun SettingsScreen(
 
                         Switch(
                             checked = bypassLan,
-                            onCheckedChange = { settingsRepo.setBypassLan(it) }
+                            onCheckedChange = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                settingsRepo.setBypassLan(it)
+                            }
                         )
                     }
 
+                    // Auto-Connect on Boot Tile
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                settingsRepo.setAutoConnect(!autoConnect)
+                            }
+                            .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PowerSettingsNew,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Auto-Connect on Boot",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
+                                fontSize = 15.5.sp,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -336,7 +465,7 @@ fun SettingsScreen(
                             Text(
                                 text = "Automatically activates DPI desync upon device restart",
                                 fontWeight = FontWeight.Normal,
-                                fontSize = 13.sp,
+                                fontSize = 12.5.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -345,24 +474,37 @@ fun SettingsScreen(
 
                         Switch(
                             checked = autoConnect,
-                            onCheckedChange = { settingsRepo.setAutoConnect(it) }
+                            onCheckedChange = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                settingsRepo.setAutoConnect(it)
+                            }
                         )
                     }
                 }
             }
         }
 
-        // In-App Updates Card (Open-Source Live Updater)
+        // Section Title: In-App Updates & Releases
         item {
-            Text(
-                text = "IN-APP UPDATES & RELEASES",
-                fontWeight = FontWeight.Black,
-                fontSize = 12.sp,
-                letterSpacing = 0.8.sp,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Rounded.SystemUpdate,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "IN-APP UPDATES & RELEASES",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 12.sp,
+                    letterSpacing = 0.8.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
 
+        // In-App Updates Card (Open-Source Live Updater)
         item {
             ExpressiveCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -401,6 +543,7 @@ fun SettingsScreen(
 
                         Button(
                             onClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                 scope.launch {
                                     updateManager.checkForUpdates(currentAppVersion).collect {
                                         updateState = it
@@ -413,7 +556,15 @@ fun SettingsScreen(
                                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         ) {
-                            Text("Check Now", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Check Now", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                            }
                         }
                     }
 
@@ -434,7 +585,7 @@ fun SettingsScreen(
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                                com.sourzap.app.ui.components.ExpressiveWavyProgressIndicator(
+                                ExpressiveWavyProgressIndicator(
                                     progress = null,
                                     color = MaterialTheme.colorScheme.primary,
                                     trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
@@ -443,13 +594,21 @@ fun SettingsScreen(
                         }
 
                         is UpdateState.UpToDate -> {
-                            Box(
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                    .padding(14.dp)
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
                                 Text(
                                     text = "You are on the latest version of SourZap.",
                                     fontWeight = FontWeight.Medium,
@@ -483,6 +642,7 @@ fun SettingsScreen(
                                     val sizeMb = String.format("%.1f MB", state.release.apkSizeBytes / (1024f * 1024f))
                                     ExpressiveChip(
                                         text = sizeMb,
+                                        icon = Icons.Rounded.Download,
                                         backgroundColor = MaterialTheme.colorScheme.primary,
                                         textColor = MaterialTheme.colorScheme.onPrimary
                                     )
@@ -498,6 +658,7 @@ fun SettingsScreen(
 
                                 Button(
                                     onClick = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         scope.launch {
                                             updateManager.downloadAndPrepareApk(state.release.apkDownloadUrl).collect {
                                                 updateState = it
@@ -511,6 +672,12 @@ fun SettingsScreen(
                                         contentColor = MaterialTheme.colorScheme.onPrimary
                                     )
                                 ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Download,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     Text("Download & Install Update", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                 }
                             }
@@ -543,7 +710,7 @@ fun SettingsScreen(
                                     )
                                 }
 
-                                com.sourzap.app.ui.components.ExpressiveWavyProgressIndicator(
+                                ExpressiveWavyProgressIndicator(
                                     progress = state.progress,
                                     color = MaterialTheme.colorScheme.primary,
                                     trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
@@ -576,7 +743,10 @@ fun SettingsScreen(
                                 )
 
                                 Button(
-                                    onClick = { updateManager.installApk(state.apkFile) },
+                                    onClick = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        updateManager.installApk(state.apkFile)
+                                    },
                                     modifier = Modifier.fillMaxWidth().height(48.dp),
                                     shape = RoundedCornerShape(18.dp),
                                     colors = ButtonDefaults.buttonColors(
@@ -584,6 +754,12 @@ fun SettingsScreen(
                                         contentColor = MaterialTheme.colorScheme.onPrimary
                                     )
                                 ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.CheckCircle,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     Text("Install Update Now", fontWeight = FontWeight.Black, fontSize = 14.sp)
                                 }
                             }
@@ -599,6 +775,13 @@ fun SettingsScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.WarningAmber,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = state.message,
                                     fontSize = 12.sp,
@@ -644,36 +827,50 @@ fun SettingsScreen(
 
                         ExpressiveChip(
                             text = "OPEN SOURCE",
+                            icon = Icons.Rounded.Code,
                             backgroundColor = MaterialTheme.colorScheme.primaryContainer,
                             textColor = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
 
                     Text(
-                        text = "A rootless implementation of Zapret DPI circumvention for Android, built with Google Material You 3 Expressive design architecture.",
+                        text = "A rootless implementation of Zapret DPI circumvention for Android, built with Google Material You Expressive design architecture.",
                         fontWeight = FontWeight.Normal,
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    Box(
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(16.dp))
-                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                             .clickable {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Sourish25/SourZap"))
                                 context.startActivity(intent)
                             }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "github.com/Sourish25/SourZap",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.OpenInNew,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "github.com/Sourish25/SourZap",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             }
@@ -714,11 +911,33 @@ fun SettingsScreen(
                     value = appSearchQuery,
                     onValueChange = { appSearchQuery = it },
                     placeholder = { Text("Search installed applications...") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Rounded.Search,
+                            contentDescription = "Search",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    },
+                    trailingIcon = {
+                        if (appSearchQuery.isNotEmpty()) {
+                            IconButton(onClick = { appSearchQuery = "" }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "Clear search",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                     ),
                     singleLine = true
                 )
@@ -742,7 +961,10 @@ fun SettingsScreen(
                         ExpressiveCard(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { settingsRepo.toggleAppBypass(appInfo.packageName) },
+                                .clickable {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    settingsRepo.toggleAppBypass(appInfo.packageName)
+                                },
                             shape = RoundedCornerShape(18.dp),
                             backgroundColor = if (isBypassed) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainer
                         ) {
@@ -753,6 +975,23 @@ fun SettingsScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Android,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = appInfo.appName,
@@ -776,7 +1015,10 @@ fun SettingsScreen(
 
                                 Switch(
                                     checked = isBypassed,
-                                    onCheckedChange = { settingsRepo.toggleAppBypass(appInfo.packageName) }
+                                    onCheckedChange = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        settingsRepo.toggleAppBypass(appInfo.packageName)
+                                    }
                                 )
                             }
                         }

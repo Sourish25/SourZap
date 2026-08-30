@@ -132,4 +132,8 @@ object TrafficMonitor {
             )
         }
     }
+
+    fun clearLogs() {
+        _recentLogs.value = emptyList()
+    }
 }

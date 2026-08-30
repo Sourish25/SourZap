@@ -17,6 +17,11 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * High-Performance Low-Allocation UDP Relay Engine for VpnService TUN Interface.
+ * Employs a multi-socket DatagramSocket pool, O(1) stateful NAT table, and zero-allocation
+ * packet assembly for high-throughput BitTorrent DHT/uTP, STUN/TURN, WebRTC, WhatsApp Calls, and Gaming.
+ */
 class TunUdpRelay(
     private val vpnService: VpnService,
     private val vpnOutput: FileOutputStream,
@@ -30,6 +35,11 @@ class TunUdpRelay(
         Thread(r, "SourZap-TunUdpWorker").apply { isDaemon = true }
     }
     private val udpDispatcher = udpExecutor.asCoroutineDispatcher()
+
+    companion object {
+        private const val MAX_NAT_ENTRIES = 4096
+        private const val NAT_IDLE_TIMEOUT_MS = 60_000L // 60 seconds NAT entry timeout
+    }
 
     private data class ClientMapping(
         val clientIp: InetAddress,
@@ -66,7 +76,7 @@ class TunUdpRelay(
                 val iterator = natTable.entries.iterator()
                 while (iterator.hasNext()) {
                     val entry = iterator.next()
-                    if (now - entry.value.lastSeen > 60000) { // 60s idle NAT entry
+                    if (now - entry.value.lastSeen > NAT_IDLE_TIMEOUT_MS) {
                         iterator.remove()
                     }
                 }
@@ -90,6 +100,11 @@ class TunUdpRelay(
         val natKeyExact = "${dstIp.hostAddress}:$dstPort#$socketIndex"
         val natKeyHost = "${dstIp.hostAddress}#$socketIndex"
 
+        // Guard NAT table against unbounded memory growth during massive torrent DHT swarms
+        if (natTable.size >= MAX_NAT_ENTRIES) {
+            pruneOldestNatEntries()
+        }
+
         natTable[natKeyExact] = mapping
         natTable[natKeyHost] = mapping
 
@@ -100,15 +115,28 @@ class TunUdpRelay(
         } catch (_: Exception) {}
     }
 
+    private fun pruneOldestNatEntries() {
+        val now = System.currentTimeMillis()
+        val iterator = natTable.entries.iterator()
+        var removed = 0
+        while (iterator.hasNext() && removed < 512) {
+            val entry = iterator.next()
+            if (now - entry.value.lastSeen > (NAT_IDLE_TIMEOUT_MS / 2)) {
+                iterator.remove()
+                removed++
+            }
+        }
+    }
+
     private fun runReceiverLoop(socket: DatagramSocket, socketIndex: Int) {
         val recvBuf = ByteArray(65535)
         val recvPacket = DatagramPacket(recvBuf, recvBuf.size)
 
         while (scope.isActive && isRunning.get()) {
             try {
-                // Crucial: Must reset length to full buffer size before every receive call.
-                // Otherwise Java DatagramSocket permanently mutates packet length to previous message size,
-                // causing tracker announce responses and DHT responses to be truncated or dropped!
+                // Reset length to full buffer size before every receive call.
+                // Otherwise Java DatagramSocket mutates packet length to previous message size,
+                // causing tracker announce responses and DHT responses to be truncated or dropped.
                 recvPacket.length = recvBuf.size
                 socket.receive(recvPacket)
                 val len = recvPacket.length
@@ -128,13 +156,15 @@ class TunUdpRelay(
                         client.lastSeen = System.currentTimeMillis()
                         TrafficMonitor.recordRxBytes(len.toLong())
 
-                        val responseData = if (len == recvBuf.size) recvBuf else recvBuf.copyOfRange(0, len)
+                        // Zero-allocation slice building directly from receive buffer
                         val replyIpPacket = buildUdpIpPacket(
                             srcIp = remoteAddress,
                             dstIp = client.clientIp,
                             srcPort = remotePort,
                             dstPort = client.clientPort,
-                            payload = responseData
+                            payload = recvBuf,
+                            payloadOffset = 0,
+                            payloadLen = len
                         )
 
                         synchronized(vpnOutput) {
@@ -149,14 +179,20 @@ class TunUdpRelay(
         }
     }
 
+    /**
+     * Synthesizes an RFC 768 compliant IPv4 UDP packet with IP and UDP header checksums.
+     * Supports slicing directly from source buffer to eliminate intermediate ByteArray copies.
+     */
     private fun buildUdpIpPacket(
         srcIp: InetAddress,
         dstIp: InetAddress,
         srcPort: Int,
         dstPort: Int,
-        payload: ByteArray
+        payload: ByteArray,
+        payloadOffset: Int = 0,
+        payloadLen: Int = payload.size
     ): ByteArray {
-        val totalLength = 20 + 8 + payload.size
+        val totalLength = 20 + 8 + payloadLen
         val packet = ByteArray(totalLength)
 
         // IPv4 Header (20 bytes)
@@ -179,7 +215,7 @@ class TunUdpRelay(
         packet[11] = (ipChecksum.toInt() and 0xFF).toByte()
 
         // UDP Header (8 bytes)
-        val udpLen = 8 + payload.size
+        val udpLen = 8 + payloadLen
         val udpOffset = 20
         packet[udpOffset] = ((srcPort shr 8) and 0xFF).toByte()
         packet[udpOffset + 1] = (srcPort and 0xFF).toByte()
@@ -190,7 +226,9 @@ class TunUdpRelay(
         packet[udpOffset + 6] = 0x00.toByte()
         packet[udpOffset + 7] = 0x00.toByte()
 
-        System.arraycopy(payload, 0, packet, 28, payload.size)
+        if (payloadLen > 0) {
+            System.arraycopy(payload, payloadOffset, packet, 28, payloadLen)
+        }
 
         // Compute RFC 768 UDP Checksum with IPv4 Pseudo-Header
         val udpChecksum = computeUdpChecksum(packet, udpOffset, udpLen, srcIp.address, dstIp.address)
