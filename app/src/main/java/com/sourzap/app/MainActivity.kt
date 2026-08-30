@@ -69,8 +69,6 @@ fun MainAppScreen() {
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
-            .statusBarsPadding()
-            .navigationBarsPadding()
     ) {
         NavHost(
             navController = navController,
@@ -117,7 +115,9 @@ fun MainAppScreen() {
                     }
                 }
             },
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
         )
     }
 }

@@ -2,6 +2,7 @@ package com.sourzap.app.ui.settings
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,15 +30,17 @@ import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Code
-import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Devices
+import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Router
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WarningAmber
@@ -51,7 +55,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -68,6 +71,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -91,12 +98,14 @@ fun SettingsScreen(
     val context = LocalContext.current
     val app = SourZapApp.instance
     val settingsRepo = app.settingsRepository
+    val strategyRepo = app.strategyRepository
 
     val bypassLan by settingsRepo.bypassLan.collectAsState()
     val autoConnect by settingsRepo.autoConnectOnBoot.collectAsState()
     val themePreset by settingsRepo.themePreset.collectAsState()
     val darkModePref by settingsRepo.darkModePref.collectAsState()
     val disallowedPackages by settingsRepo.disallowedPackages.collectAsState()
+    val currentStrategy by strategyRepo.currentStrategy.collectAsState()
 
     var showAppSheet by remember { mutableStateOf(false) }
     var installedApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
@@ -119,8 +128,9 @@ fun SettingsScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
+            .statusBarsPadding()
             .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 24.dp, bottom = 100.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Header
@@ -159,7 +169,7 @@ fun SettingsScreen(
             }
         }
 
-        // Section Title: Theme Customizer
+        // Section 1: Theme & Appearance
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -179,7 +189,6 @@ fun SettingsScreen(
             }
         }
 
-        // Material You Theme Customizer Card
         item {
             ExpressiveCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -278,7 +287,7 @@ fun SettingsScreen(
             }
         }
 
-        // Section Title: Network & Routing
+        // Section 2: Network & Routing
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -298,7 +307,6 @@ fun SettingsScreen(
             }
         }
 
-        // Routing Rules Card
         item {
             ExpressiveCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -314,6 +322,10 @@ fun SettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(16.dp))
+                            .semantics {
+                                role = Role.Button
+                                contentDescription = "App Bypass Split Tunneling. ${if (disallowedPackages.isEmpty()) "All apps go through VPN" else "${disallowedPackages.size} apps bypassed"}."
+                            }
                             .clickable {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 showAppSheet = true
@@ -484,7 +496,186 @@ fun SettingsScreen(
             }
         }
 
-        // Section Title: In-App Updates & Releases
+        // Section 3: DPI Evasion & DNS Engine
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Rounded.Security,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "DPI EVASION & DNS ENGINE",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 12.sp,
+                    letterSpacing = 0.8.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        item {
+            ExpressiveCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(28.dp),
+                backgroundColor = MaterialTheme.colorScheme.surfaceContainer
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "DoH DNS Security",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.5.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Encrypted DNS-over-HTTPS bypasses ISP DNS poisoning",
+                                fontWeight = FontWeight.Normal,
+                                fontSize = 12.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        ExpressiveChip(
+                            text = currentStrategy.dohProvider.displayName,
+                            icon = Icons.Rounded.Dns,
+                            backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                            textColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "TLS Desync Mode",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.5.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Split2 TLS record header splitting & SNI desynchronization",
+                                fontWeight = FontWeight.Normal,
+                                fontSize = 12.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        ExpressiveChip(
+                            text = "SPLIT2 ACTIVE",
+                            icon = Icons.Rounded.Shield,
+                            backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            textColor = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+        }
+
+        // Section 4: System & Diagnostics
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Rounded.Devices,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "SYSTEM & DIAGNOSTICS",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 12.sp,
+                    letterSpacing = 0.8.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        item {
+            ExpressiveCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(28.dp),
+                backgroundColor = MaterialTheme.colorScheme.surfaceContainer
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Engine Architecture",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Rootless Userspace TUN (${Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"})",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Android OS Version",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Interface & MTU",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "tun0 • 1500 MTU • Dual-Stack IPv4/IPv6",
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        // Section 5: In-App Updates & Releases
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -504,7 +695,6 @@ fun SettingsScreen(
             }
         }
 
-        // In-App Updates Card (Open-Source Live Updater)
         item {
             ExpressiveCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -568,7 +758,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    // Update States
+                    // Update States with Expressive Wavy Progress
                     when (val state = updateState) {
                         is UpdateState.Checking -> {
                             Column(
@@ -639,7 +829,7 @@ fun SettingsScreen(
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
 
-                                    val sizeMb = String.format("%.1f MB", state.release.apkSizeBytes / (1024f * 1024f))
+                                    val sizeMb = String.format(java.util.Locale.US, "%.1f MB", state.release.apkSizeBytes / (1024f * 1024f))
                                     ExpressiveChip(
                                         text = sizeMb,
                                         icon = Icons.Rounded.Download,
@@ -716,8 +906,8 @@ fun SettingsScreen(
                                     trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                                 )
 
-                                val dlMb = String.format("%.1f", state.downloadedBytes / (1024f * 1024f))
-                                val totMb = String.format("%.1f", state.totalBytes / (1024f * 1024f))
+                                val dlMb = String.format(java.util.Locale.US, "%.1f", state.downloadedBytes / (1024f * 1024f))
+                                val totMb = String.format(java.util.Locale.US, "%.1f", state.totalBytes / (1024f * 1024f))
                                 Text(
                                     text = "$dlMb MB / $totMb MB",
                                     fontSize = 12.sp,
@@ -797,7 +987,7 @@ fun SettingsScreen(
             }
         }
 
-        // About & Open Source Tile
+        // Section 6: About & Open Source
         item {
             ExpressiveCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -814,7 +1004,7 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "SourZap v${com.sourzap.app.BuildConfig.VERSION_NAME}",
+                            text = "SourZap v$currentAppVersion",
                             fontWeight = FontWeight.Black,
                             fontSize = 18.sp,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -846,6 +1036,10 @@ fun SettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(16.dp))
+                            .semantics {
+                                role = Role.Button
+                                contentDescription = "Open SourZap GitHub repository in browser"
+                            }
                             .clickable {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Sourish25/SourZap"))
@@ -921,7 +1115,10 @@ fun SettingsScreen(
                     },
                     trailingIcon = {
                         if (appSearchQuery.isNotEmpty()) {
-                            IconButton(onClick = { appSearchQuery = "" }) {
+                            IconButton(onClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                appSearchQuery = ""
+                            }) {
                                 Icon(
                                     imageVector = Icons.Rounded.Close,
                                     contentDescription = "Clear search",
@@ -974,7 +1171,7 @@ fun SettingsScreen(
                             }
                         }
                     } else {
-                        items(filteredApps) { appInfo ->
+                        items(filteredApps, key = { it.packageName }) { appInfo ->
                             val isBypassed = disallowedPackages.contains(appInfo.packageName)
 
                             ExpressiveCard(

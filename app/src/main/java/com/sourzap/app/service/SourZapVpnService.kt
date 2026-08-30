@@ -2,8 +2,14 @@ package com.sourzap.app.service
 
 import android.app.Notification
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
 import com.sourzap.app.MainActivity
@@ -37,6 +43,9 @@ class SourZapVpnService : VpnService() {
     private var tcpRelay: TunTcpRelay? = null
     private var udpRelay: TunUdpRelay? = null
 
+    private var connectivityManager: ConnectivityManager? = null
+    private var defaultNetworkCallback: ConnectivityManager.NetworkCallback? = null
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
         if (action == ACTION_STOP) {
@@ -63,6 +72,9 @@ class SourZapVpnService : VpnService() {
 
         // Initialize DohResolver with protected socket factory
         DohResolver.init(this)
+
+        // Register default network callback for seamless Wi-Fi <-> Cellular handover without dropping sessions
+        registerNetworkCallback()
 
         serviceScope.launch {
             try {
@@ -115,9 +127,64 @@ class SourZapVpnService : VpnService() {
         }
     }
 
+    private fun registerNetworkCallback() {
+        unregisterNetworkCallback()
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+            connectivityManager = cm
+
+            val callback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    super.onAvailable(network)
+                    updateUnderlyingNetwork(network)
+                }
+
+                override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                    super.onCapabilitiesChanged(network, networkCapabilities)
+                    updateUnderlyingNetwork(network)
+                }
+
+                override fun onLost(network: Network) {
+                    super.onLost(network)
+                    updateUnderlyingNetwork(null)
+                }
+            }
+            defaultNetworkCallback = callback
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                cm.registerDefaultNetworkCallback(callback)
+            } else {
+                val request = NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build()
+                cm.registerNetworkCallback(request, callback)
+            }
+        } catch (_: Exception) {
+            // Fallback gracefully if system restrictions prevent callback registration
+        }
+    }
+
+    private fun updateUnderlyingNetwork(network: Network?) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+            try {
+                setUnderlyingNetworks(if (network != null) arrayOf(network) else null)
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun unregisterNetworkCallback() {
+        defaultNetworkCallback?.let { callback ->
+            try {
+                connectivityManager?.unregisterNetworkCallback(callback)
+            } catch (_: Exception) {}
+            defaultNetworkCallback = null
+        }
+    }
+
     private fun stopVpn() {
         isRunning = false
         TrafficMonitor.stopMonitoring()
+        unregisterNetworkCallback()
         notificationJob?.cancel()
         proxyServer?.stop()
         tcpRelay?.closeAll()
@@ -180,6 +247,16 @@ class SourZapVpnService : VpnService() {
                         vpnOutput.flush()
                     }
                 } catch (_: Exception) {}
+
+                TrafficMonitor.addConnectionLog(
+                    ConnectionLog(
+                        domain = ipv6Header.dstIp.hostAddress ?: "IPv6 Endpoint",
+                        port = 0,
+                        protocol = "IPv6",
+                        technique = "ICMP6_UNREACHABLE_REJECT",
+                        bytesTransferred = length.toLong()
+                    )
+                )
             }
             return
         }

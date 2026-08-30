@@ -67,14 +67,15 @@ fun SourZapTheme(
                 ctx = ctx.baseContext
             }
             activity?.window?.let { window ->
+                WindowCompat.setDecorFitsSystemWindows(window, false)
                 val insetsController = WindowCompat.getInsetsController(window, view)
                 insetsController.isAppearanceLightStatusBars = !darkTheme
                 insetsController.isAppearanceLightNavigationBars = !darkTheme
                 if (Build.VERSION.SDK_INT < 35) {
                     @Suppress("DEPRECATION")
-                    window.statusBarColor = colorScheme.surface.toArgb()
+                    window.statusBarColor = android.graphics.Color.TRANSPARENT
                     @Suppress("DEPRECATION")
-                    window.navigationBarColor = colorScheme.surfaceContainer.toArgb()
+                    window.navigationBarColor = android.graphics.Color.TRANSPARENT
                 }
             }
         }

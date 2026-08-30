@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -420,7 +421,7 @@ fun ExpressiveMetricTile(
 }
 
 /**
- * Large Speedometer Arc Gauge with Material Vector Icon and Big Typography
+ * Large Speedometer Arc Gauge with Dynamic Monet Gradient Arcs, Glowing Needle, and Big Typography
  */
 @Composable
 fun ExpressiveSpeedGauge(
@@ -430,38 +431,51 @@ fun ExpressiveSpeedGauge(
 ) {
     val animatedSpeed by animateFloatAsState(
         targetValue = speedMbps,
-        animationSpec = spring(dampingRatio = 0.75f, stiffness = 220f),
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 180f),
         label = "SpeedNeedle"
     )
 
     val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
+    val tertiaryColor = MaterialTheme.colorScheme.tertiary
     val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
     val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
 
+    val infiniteTransition = rememberInfiniteTransition(label = "GaugePulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 0.85f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1000, easing = LinearEasing),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "PulseAlpha"
+    )
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(245.dp)
+            .height(255.dp)
             .semantics(mergeDescendants = true) {
-                contentDescription = "Speed: ${String.format("%.1f", animatedSpeed)} Mbps. Status: $statusText"
+                contentDescription = "Speed: ${String.format(java.util.Locale.US, "%.1f", animatedSpeed)} Mbps. Status: $statusText"
             },
         contentAlignment = Alignment.Center
     ) {
         val sizePx = minOf(maxWidth.value, maxHeight.value).dp
 
         Canvas(
-            modifier = Modifier.size(sizePx * 0.88f)
+            modifier = Modifier.size(sizePx * 0.90f)
         ) {
             val strokeWidth = 20.dp.toPx()
-            val diameter = size.minDimension - strokeWidth
+            val diameter = size.minDimension - strokeWidth - 12.dp.toPx()
             val radius = diameter / 2f
-            val center = Offset(size.width / 2f, size.height / 2f + 12.dp.toPx())
+            val center = Offset(size.width / 2f, size.height / 2f + 14.dp.toPx())
 
-            val startAngle = 150f
-            val sweepTotal = 240f
+            val startAngle = 145f
+            val sweepTotal = 250f
 
-            // Track Arc
+            // 1. Background Track Arc
             drawArc(
                 color = trackColor,
                 startAngle = startAngle,
@@ -472,31 +486,53 @@ fun ExpressiveSpeedGauge(
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             )
 
-            // Tick Marks along circumference
-            val totalTicks = 9
+            // 2. Tick Marks along circumference
+            val totalTicks = 11
             val tickStepAngle = sweepTotal / (totalTicks - 1)
             for (t in 0 until totalTicks) {
                 val tickAngleDeg = startAngle + t * tickStepAngle
                 val tickAngleRad = tickAngleDeg * (PI / 180f)
-                val innerR = radius - 14.dp.toPx()
-                val outerR = radius - 20.dp.toPx()
+                val isMajor = (t % 2 == 0)
+                val innerR = if (isMajor) radius - 16.dp.toPx() else radius - 12.dp.toPx()
+                val outerR = radius - 22.dp.toPx()
                 val p1 = Offset(center.x + innerR * cos(tickAngleRad).toFloat(), center.y + innerR * sin(tickAngleRad).toFloat())
                 val p2 = Offset(center.x + outerR * cos(tickAngleRad).toFloat(), center.y + outerR * sin(tickAngleRad).toFloat())
                 drawLine(
-                    color = onSurfaceVariantColor.copy(alpha = 0.35f),
+                    color = if (isMajor) onSurfaceVariantColor.copy(alpha = 0.6f) else onSurfaceVariantColor.copy(alpha = 0.25f),
                     start = p1,
                     end = p2,
-                    strokeWidth = 2.dp.toPx(),
+                    strokeWidth = if (isMajor) 2.5.dp.toPx() else 1.5.dp.toPx(),
                     cap = StrokeCap.Round
                 )
             }
 
-            // Active Progress Arc
-            val currentFraction = (animatedSpeed / 150f).coerceIn(0.01f, 1f)
+            // 3. Dynamic Monet Gradient Progress Arc
+            val currentFraction = (animatedSpeed / 150f).coerceIn(0.005f, 1f)
             val activeSweep = sweepTotal * currentFraction
 
+            val monetBrush = Brush.linearGradient(
+                colors = listOf(primaryColor, tertiaryColor, secondaryColor),
+                start = Offset(center.x - radius, center.y + radius),
+                end = Offset(center.x + radius, center.y - radius)
+            )
+
+            // Luminous Glow Halo
+            if (activeSweep > 2f) {
+                drawArc(
+                    brush = monetBrush,
+                    startAngle = startAngle,
+                    sweepAngle = activeSweep,
+                    useCenter = false,
+                    topLeft = Offset(center.x - radius, center.y - radius),
+                    size = Size(diameter, diameter),
+                    style = Stroke(width = strokeWidth + 6.dp.toPx(), cap = StrokeCap.Round),
+                    alpha = 0.28f * pulseAlpha
+                )
+            }
+
+            // Main Gradient Progress Stroke
             drawArc(
-                color = primaryColor,
+                brush = monetBrush,
                 startAngle = startAngle,
                 sweepAngle = activeSweep,
                 useCenter = false,
@@ -505,21 +541,29 @@ fun ExpressiveSpeedGauge(
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             )
 
-            // Needle Tip Indicator
+            // 4. Needle Tip Indicator with Pulsing Ring
             val needleAngleRad = (startAngle + activeSweep) * (PI / 180f)
             val needleTip = Offset(
                 center.x + radius * cos(needleAngleRad).toFloat(),
                 center.y + radius * sin(needleAngleRad).toFloat()
             )
 
+            // Outer Pulsing Glow
+            drawCircle(
+                color = primaryColor.copy(alpha = 0.3f * pulseAlpha),
+                radius = 14.dp.toPx(),
+                center = needleTip
+            )
+
+            // Core Needle Cap
             drawCircle(
                 color = onSurfaceColor,
-                radius = 8.5.dp.toPx(),
+                radius = 9.dp.toPx(),
                 center = needleTip
             )
             drawCircle(
                 color = primaryColor,
-                radius = 5.dp.toPx(),
+                radius = 5.5.dp.toPx(),
                 center = needleTip
             )
         }
@@ -528,7 +572,7 @@ fun ExpressiveSpeedGauge(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(top = 18.dp)
+            modifier = Modifier.padding(top = 22.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -538,33 +582,50 @@ fun ExpressiveSpeedGauge(
                     imageVector = Icons.Rounded.Speed,
                     contentDescription = null,
                     tint = primaryColor,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(20.dp)
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(5.dp))
                 Text(
                     text = "Mbps",
                     fontWeight = FontWeight.Black,
-                    fontSize = 17.sp,
+                    fontSize = 16.sp,
                     color = primaryColor
                 )
             }
 
             Text(
-                text = String.format("%.1f", animatedSpeed),
+                text = String.format(java.util.Locale.US, "%.1f", animatedSpeed),
                 style = NumberDisplayLarge.copy(fontSize = 54.sp),
                 color = onSurfaceColor
             )
 
             Spacer(modifier = Modifier.height(2.dp))
 
-            Text(
-                text = statusText,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-                color = onSurfaceVariantColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(if (animatedSpeed > 0.5f) primaryColor else onSurfaceVariantColor)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = statusText,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        color = onSurfaceVariantColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
     }
 }
@@ -816,6 +877,7 @@ fun FloatingExpressiveDock(
             shadowElevation = 10.dp,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
             modifier = Modifier
+                .widthIn(max = 560.dp)
                 .fillMaxWidth()
                 .height(68.dp)
         ) {

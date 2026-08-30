@@ -1,6 +1,9 @@
 package com.sourzap.app.ui.speedtest
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -15,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -45,6 +49,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -77,6 +82,28 @@ fun SpeedTestScreen(
     val haptics = LocalHapticFeedback.current
     val isRunning = state.phase != SpeedTestPhase.IDLE && state.phase != SpeedTestPhase.COMPLETED && state.phase != SpeedTestPhase.FAILED
 
+    // Spring-animated diagnostic metric values
+    val animatedPing by animateFloatAsState(
+        targetValue = state.currentPingMs,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "AnimPing"
+    )
+    val animatedJitter by animateFloatAsState(
+        targetValue = state.currentJitterMs,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "AnimJitter"
+    )
+    val animatedDownload by animateFloatAsState(
+        targetValue = state.currentDownloadMbps,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "AnimDL"
+    )
+    val animatedUpload by animateFloatAsState(
+        targetValue = state.currentUploadMbps,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "AnimUL"
+    )
+
     // Stability grade computation based on ping and jitter
     val stabilityRating = when {
         state.currentJitterMs > 0 && state.currentJitterMs < 3.5f -> "A+ (Optimal)"
@@ -90,8 +117,9 @@ fun SpeedTestScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
+            .statusBarsPadding()
             .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 24.dp, bottom = 100.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Header
@@ -130,7 +158,7 @@ fun SpeedTestScreen(
             }
         }
 
-        // Speedometer Gauge Card
+        // Speedometer Gauge Card with Dynamic Monet Gradient Arcs
         item {
             ExpressiveCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -159,7 +187,7 @@ fun SpeedTestScreen(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Large Smartphone Action Button (64dp height)
+                    // Large Smartphone Action Button (64dp height) with Spring Tactile Haptics
                     Button(
                         onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -211,7 +239,7 @@ fun SpeedTestScreen(
             )
         }
 
-        // Diagnostic Metrics: Row 1 (Ping & Jitter)
+        // Diagnostic Metrics: Row 1 (Ping & Jitter with Spring Physics)
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -219,8 +247,8 @@ fun SpeedTestScreen(
             ) {
                 ExpressiveMetricTile(
                     title = "LATENCY / PING",
-                    value = if (state.currentPingMs > 0) String.format("%.0f", state.currentPingMs) else "--",
-                    unit = if (state.currentPingMs > 0) "ms" else null,
+                    value = if (animatedPing > 0) String.format(java.util.Locale.US, "%.0f", animatedPing) else "--",
+                    unit = if (animatedPing > 0) "ms" else null,
                     icon = Icons.Rounded.Timer,
                     iconTint = MaterialTheme.colorScheme.primary,
                     subtitle = "Edge Server Round-Trip",
@@ -229,8 +257,8 @@ fun SpeedTestScreen(
 
                 ExpressiveMetricTile(
                     title = "JITTER",
-                    value = if (state.currentJitterMs > 0) String.format("%.1f", state.currentJitterMs) else "--",
-                    unit = if (state.currentJitterMs > 0) "ms" else null,
+                    value = if (animatedJitter > 0) String.format(java.util.Locale.US, "%.1f", animatedJitter) else "--",
+                    unit = if (animatedJitter > 0) "ms" else null,
                     icon = Icons.Rounded.Timeline,
                     iconTint = MaterialTheme.colorScheme.secondary,
                     subtitle = "Packet Delay Variance",
@@ -239,7 +267,7 @@ fun SpeedTestScreen(
             }
         }
 
-        // Diagnostic Metrics: Row 2 (Download & Upload Speeds)
+        // Diagnostic Metrics: Row 2 (Download & Upload Speeds with Spring Physics)
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -247,8 +275,8 @@ fun SpeedTestScreen(
             ) {
                 ExpressiveMetricTile(
                     title = "DOWNLOAD SPEED",
-                    value = if (state.currentDownloadMbps > 0) String.format("%.1f", state.currentDownloadMbps) else "--",
-                    unit = if (state.currentDownloadMbps > 0) "Mbps" else null,
+                    value = if (animatedDownload > 0) String.format(java.util.Locale.US, "%.1f", animatedDownload) else "--",
+                    unit = if (animatedDownload > 0) "Mbps" else null,
                     icon = Icons.Rounded.ArrowDownward,
                     iconTint = MaterialTheme.colorScheme.primary,
                     subtitle = "4-Stream Parallel Pipe",
@@ -257,8 +285,8 @@ fun SpeedTestScreen(
 
                 ExpressiveMetricTile(
                     title = "UPLOAD SPEED",
-                    value = if (state.currentUploadMbps > 0) String.format("%.1f", state.currentUploadMbps) else "--",
-                    unit = if (state.currentUploadMbps > 0) "Mbps" else null,
+                    value = if (animatedUpload > 0) String.format(java.util.Locale.US, "%.1f", animatedUpload) else "--",
+                    unit = if (animatedUpload > 0) "Mbps" else null,
                     icon = Icons.Rounded.ArrowUpward,
                     iconTint = MaterialTheme.colorScheme.secondary,
                     subtitle = "Upstream Throughput",
@@ -293,7 +321,7 @@ fun SpeedTestScreen(
             }
         }
 
-        // Test History Section
+        // Benchmark History Section
         item {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -385,7 +413,7 @@ fun SpeedTestScreen(
                                                 )
                                                 Spacer(modifier = Modifier.width(2.dp))
                                                 Text(
-                                                    text = String.format("%.1f Mbps", test.downloadMbps),
+                                                    text = String.format(java.util.Locale.US, "%.1f Mbps", test.downloadMbps),
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 12.5.sp,
                                                     color = MaterialTheme.colorScheme.primary,
@@ -402,7 +430,7 @@ fun SpeedTestScreen(
                                                 )
                                                 Spacer(modifier = Modifier.width(2.dp))
                                                 Text(
-                                                    text = String.format("%.1f Mbps", test.uploadMbps),
+                                                    text = String.format(java.util.Locale.US, "%.1f Mbps", test.uploadMbps),
                                                     fontWeight = FontWeight.Medium,
                                                     fontSize = 11.sp,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -413,7 +441,7 @@ fun SpeedTestScreen(
                                         }
 
                                         ExpressiveChip(
-                                            text = String.format("%.0f ms", test.pingMs),
+                                            text = String.format(java.util.Locale.US, "%.0f ms", test.pingMs),
                                             backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                                             textColor = MaterialTheme.colorScheme.onSurface
                                         )

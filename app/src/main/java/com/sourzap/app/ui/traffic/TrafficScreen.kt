@@ -1,8 +1,15 @@
 package com.sourzap.app.ui.traffic
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -17,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -41,6 +49,7 @@ import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -57,9 +66,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -75,6 +90,14 @@ import com.sourzap.app.ui.theme.NumberDisplaySmall
 import java.text.SimpleDateFormat
 import java.util.Locale
 
+enum class TrafficFilterTab(val id: String, val displayName: String, val icon: ImageVector) {
+    ALL("ALL", "All Flows", Icons.Rounded.SwapVert),
+    TLS("TLS", "HTTPS/TLS", Icons.Rounded.Lock),
+    DNS("DNS", "DNS", Icons.Rounded.Dns),
+    P2P("P2P", "BitTorrent/P2P", Icons.Rounded.CloudDownload),
+    UDP("UDP", "UDP", Icons.Rounded.Bolt)
+}
+
 @Composable
 fun TrafficScreen(
     modifier: Modifier = Modifier
@@ -84,32 +107,39 @@ fun TrafficScreen(
     val isVpnActive by TrafficMonitor.isVpnActive.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
-    var selectedProtocolFilter by remember { mutableStateOf("ALL") }
+    var selectedTab by remember { mutableStateOf(TrafficFilterTab.ALL) }
     var showClearConfirmDialog by remember { mutableStateOf(false) }
 
     val haptics = LocalHapticFeedback.current
     val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
 
-    val protocolFilterOptions = listOf("ALL", "TLS", "HTTP", "DNS", "QUIC", "TCP")
-
-    val filteredLogs = remember(logs, searchQuery, selectedProtocolFilter) {
+    val filteredLogs = remember(logs, searchQuery, selectedTab) {
         logs.filter { log ->
             val matchesSearch = searchQuery.isBlank() ||
                     log.domain.contains(searchQuery, ignoreCase = true) ||
                     log.protocol.contains(searchQuery, ignoreCase = true) ||
-                    log.technique.contains(searchQuery, ignoreCase = true)
+                    log.technique.contains(searchQuery, ignoreCase = true) ||
+                    log.port.toString().contains(searchQuery)
 
-            val matchesProtocol = when (selectedProtocolFilter) {
-                "ALL" -> true
-                "TLS" -> log.protocol.contains("TLS", ignoreCase = true) || log.protocol.contains("HTTPS", ignoreCase = true)
-                "HTTP" -> log.protocol.equals("HTTP", ignoreCase = true)
-                "DNS" -> log.protocol.contains("DNS", ignoreCase = true) || log.protocol.contains("DOH", ignoreCase = true)
-                "QUIC" -> log.protocol.contains("QUIC", ignoreCase = true) || log.protocol.contains("UDP", ignoreCase = true)
-                "TCP" -> log.protocol.contains("TCP", ignoreCase = true)
-                else -> true
+            val matchesTab = when (selectedTab) {
+                TrafficFilterTab.ALL -> true
+                TrafficFilterTab.TLS -> log.protocol.contains("TLS", ignoreCase = true) ||
+                        log.protocol.contains("HTTPS", ignoreCase = true) ||
+                        log.port == 443
+                TrafficFilterTab.DNS -> log.protocol.contains("DNS", ignoreCase = true) ||
+                        log.protocol.contains("DOH", ignoreCase = true) ||
+                        log.port == 53 || log.port == 853
+                TrafficFilterTab.P2P -> log.protocol.contains("P2P", ignoreCase = true) ||
+                        log.protocol.contains("Torrent", ignoreCase = true) ||
+                        log.technique.contains("P2P", ignoreCase = true) ||
+                        log.technique.contains("BitTorrent", ignoreCase = true) ||
+                        (log.port in 6881..6889)
+                TrafficFilterTab.UDP -> log.protocol.contains("UDP", ignoreCase = true) ||
+                        log.protocol.contains("QUIC", ignoreCase = true) ||
+                        log.technique.contains("QUIC", ignoreCase = true)
             }
 
-            matchesSearch && matchesProtocol
+            matchesSearch && matchesTab
         }
     }
 
@@ -134,8 +164,9 @@ fun TrafficScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
+            .statusBarsPadding()
             .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 24.dp, bottom = 100.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Header
@@ -172,6 +203,10 @@ fun TrafficScreen(
                         color = MaterialTheme.colorScheme.surfaceContainerHighest,
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
+                            .semantics {
+                                role = Role.Button
+                                contentDescription = "Clear intercepted traffic logs"
+                            }
                             .clickable {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 showClearConfirmDialog = true
@@ -183,7 +218,7 @@ fun TrafficScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.DeleteOutline,
-                                contentDescription = "Clear Logs",
+                                contentDescription = null,
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -204,6 +239,10 @@ fun TrafficScreen(
                         color = MaterialTheme.colorScheme.surfaceContainerHighest,
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
+                            .semantics {
+                                role = Role.Button
+                                contentDescription = "Reset session traffic counters"
+                            }
                             .clickable {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 TrafficMonitor.resetSession()
@@ -215,7 +254,7 @@ fun TrafficScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.RestartAlt,
-                                contentDescription = "Reset Session",
+                                contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -360,7 +399,7 @@ fun TrafficScreen(
             }
         }
 
-        // Search & Filter Header
+        // Search & Animated Filter Tabs Header
         item {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -387,13 +426,13 @@ fun TrafficScreen(
                     )
                 }
 
-                // Expressive Search & Filter Bar
+                // Expressive Real-Time Live Search Bar
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     placeholder = {
                         Text(
-                            text = "Filter by domain (e.g. cloudflare, google) or protocol...",
+                            text = "Search by domain, protocol, technique, or port...",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             maxLines = 1,
@@ -410,7 +449,10 @@ fun TrafficScreen(
                     },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
+                            IconButton(onClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                searchQuery = ""
+                            }) {
                                 Icon(
                                     imageVector = Icons.Rounded.Close,
                                     contentDescription = "Clear search",
@@ -431,7 +473,7 @@ fun TrafficScreen(
                     singleLine = true
                 )
 
-                // Protocol Filter Pills
+                // Smooth Animated Material 3 Expressive Filter Tabs
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -439,35 +481,60 @@ fun TrafficScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    protocolFilterOptions.forEach { proto ->
-                        val isSelected = selectedProtocolFilter == proto
+                    TrafficFilterTab.values().forEach { tab ->
+                        val isSelected = selectedTab == tab
+                        val animatedScale by animateFloatAsState(
+                            targetValue = if (isSelected) 1.03f else 1f,
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+                            label = "TabScale"
+                        )
                         val bg = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest
                         val textCol = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        val border = if (isSelected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
 
                         Surface(
-                            shape = RoundedCornerShape(16.dp),
+                            shape = RoundedCornerShape(18.dp),
                             color = bg,
+                            border = border,
                             modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
+                                .scale(animatedScale)
+                                .clip(RoundedCornerShape(18.dp))
+                                .semantics {
+                                    role = Role.Tab
+                                    selected = isSelected
+                                    contentDescription = "${tab.displayName} filter"
+                                }
                                 .clickable {
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    selectedProtocolFilter = proto
+                                    selectedTab = tab
                                 }
                         ) {
-                            Text(
-                                text = proto,
-                                fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = textCol,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = tab.icon,
+                                    contentDescription = null,
+                                    tint = textCol,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = tab.displayName,
+                                    fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
+                                    fontSize = 12.5.sp,
+                                    color = textCol,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Intercepted Connection Logs List
+        // Intercepted Connection Logs List with Smooth Animated Transitions
         if (filteredLogs.isEmpty()) {
             item {
                 Box(
@@ -489,7 +556,7 @@ fun TrafficScreen(
                             modifier = Modifier.size(32.dp)
                         )
                         Text(
-                            text = if (logs.isEmpty()) "No connection streams intercepted yet" else "No streams match filter criteria",
+                            text = if (logs.isEmpty()) "No connection streams intercepted yet" else "No streams match \"${selectedTab.displayName}\"",
                             fontWeight = FontWeight.Medium,
                             fontSize = 13.5.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -498,11 +565,12 @@ fun TrafficScreen(
                 }
             }
         } else {
-            items(filteredLogs) { log ->
+            items(filteredLogs, key = { it.id }) { log ->
                 val protocolIcon: ImageVector = when {
                     log.protocol.contains("TLS", ignoreCase = true) || log.protocol.contains("HTTPS", ignoreCase = true) -> Icons.Rounded.Lock
                     log.protocol.contains("HTTP", ignoreCase = true) -> Icons.Rounded.Language
                     log.protocol.contains("DNS", ignoreCase = true) || log.protocol.contains("DOH", ignoreCase = true) -> Icons.Rounded.Dns
+                    log.protocol.contains("Torrent", ignoreCase = true) || log.protocol.contains("P2P", ignoreCase = true) || (log.port in 6881..6889) -> Icons.Rounded.CloudDownload
                     else -> Icons.Rounded.Bolt
                 }
 
@@ -510,6 +578,7 @@ fun TrafficScreen(
                     log.protocol.contains("TLS", ignoreCase = true) || log.protocol.contains("HTTPS", ignoreCase = true) -> MaterialTheme.colorScheme.primary
                     log.protocol.contains("HTTP", ignoreCase = true) -> MaterialTheme.colorScheme.secondary
                     log.protocol.contains("DNS", ignoreCase = true) -> MaterialTheme.colorScheme.tertiary
+                    log.protocol.contains("Torrent", ignoreCase = true) || log.protocol.contains("P2P", ignoreCase = true) -> MaterialTheme.colorScheme.primary
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
 

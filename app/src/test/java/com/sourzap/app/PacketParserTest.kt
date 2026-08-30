@@ -747,4 +747,107 @@ class PacketParserTest {
         assertEquals(3.toByte(), icmp[20])   // Type 3 (Destination Unreachable)
         assertEquals(3.toByte(), icmp[21])   // Code 3 (Port Unreachable)
     }
+
+    @Test
+    fun testPacketParser_Icmpv6DestinationUnreachableAllCodes() {
+        val srcIp = InetAddress.getByName("2001:db8::1")
+        val dstIp = InetAddress.getByName("2606:4700::6810:84e5")
+
+        val ipv6Packet = ByteArray(80)
+        ipv6Packet[0] = 0x60.toByte()
+        ipv6Packet[6] = 17.toByte() // UDP
+        System.arraycopy(srcIp.address, 0, ipv6Packet, 8, 16)
+        System.arraycopy(dstIp.address, 0, ipv6Packet, 24, 16)
+
+        // 1. Address Unreachable (Code 3)
+        val icmpAddrUnreach = PacketParser.buildIcmpv6AddressUnreachablePacket(
+            originalBuffer = ipv6Packet,
+            originalLength = ipv6Packet.size,
+            srcIp = srcIp,
+            dstIp = dstIp
+        )
+        assertEquals(0x60.toByte(), icmpAddrUnreach[0])
+        assertEquals(58.toByte(), icmpAddrUnreach[6]) // Next Header: ICMPv6
+        assertEquals(1.toByte(), icmpAddrUnreach[40]) // Type 1: Destination Unreachable
+        assertEquals(3.toByte(), icmpAddrUnreach[41]) // Code 3: Address Unreachable
+
+        // 2. Port Unreachable (Code 4)
+        val icmpPortUnreach = PacketParser.buildIcmpv6PortUnreachablePacket(
+            originalBuffer = ipv6Packet,
+            originalLength = ipv6Packet.size,
+            srcIp = srcIp,
+            dstIp = dstIp
+        )
+        assertEquals(1.toByte(), icmpPortUnreach[40])
+        assertEquals(4.toByte(), icmpPortUnreach[41]) // Code 4: Port Unreachable
+
+        // 3. Admin Prohibited (Code 1)
+        val icmpAdminProhib = PacketParser.buildIcmpv6AdminProhibitedPacket(
+            originalBuffer = ipv6Packet,
+            originalLength = ipv6Packet.size,
+            srcIp = srcIp,
+            dstIp = dstIp
+        )
+        assertEquals(1.toByte(), icmpAdminProhib[40])
+        assertEquals(1.toByte(), icmpAdminProhib[41]) // Code 1: Admin Prohibited
+
+        // Verify Checksum is computed and non-zero
+        val cs = (((icmpAddrUnreach[42].toInt() and 0xFF) shl 8) or (icmpAddrUnreach[43].toInt() and 0xFF)).toShort()
+        assertTrue("ICMPv6 Checksum must be non-zero", cs != 0.toShort())
+    }
+
+    @Test
+    fun testPacketParser_Icmpv6LargePacketPayloadClipping() {
+        val srcIp = InetAddress.getByName("2001:db8::1")
+        val dstIp = InetAddress.getByName("2606:4700::6810:84e5")
+
+        // 2000 byte offending jumbo packet
+        val largeOffendingPacket = ByteArray(2000) { (it % 256).toByte() }
+        largeOffendingPacket[0] = 0x60.toByte()
+
+        val icmpv6 = PacketParser.buildIcmpv6DestinationUnreachablePacket(
+            originalBuffer = largeOffendingPacket,
+            originalLength = largeOffendingPacket.size,
+            srcIp = srcIp,
+            dstIp = dstIp,
+            code = 3
+        )
+
+        // RFC 4443: Maximum payload is 1232 bytes -> Total IPv6 packet size <= 1280 bytes (40 IPv6 + 8 ICMP + 1232 payload)
+        assertEquals(1280, icmpv6.size)
+        assertEquals(0x60.toByte(), icmpv6[0])
+        assertEquals(58.toByte(), icmpv6[6])
+    }
+
+    @Test
+    fun testPacketParser_Icmpv4DestinationUnreachableCodes() {
+        val srcIp = InetAddress.getByName("10.0.0.2")
+        val dstIp = InetAddress.getByName("8.8.8.8")
+        val origPacket = ByteArray(40)
+
+        // Code 1: Host Unreachable
+        val hostUnreach = PacketParser.buildIcmpv4DestinationUnreachablePacket(
+            originalBuffer = origPacket,
+            originalLength = 40,
+            ipHeaderLen = 20,
+            srcIp = srcIp,
+            dstIp = dstIp,
+            code = 1
+        )
+        assertEquals(1.toByte(), hostUnreach[9])  // Protocol ICMP
+        assertEquals(3.toByte(), hostUnreach[20]) // Type 3
+        assertEquals(1.toByte(), hostUnreach[21]) // Code 1: Host Unreachable
+
+        // Code 13: Communication Administratively Prohibited
+        val adminProhib = PacketParser.buildIcmpv4DestinationUnreachablePacket(
+            originalBuffer = origPacket,
+            originalLength = 40,
+            ipHeaderLen = 20,
+            srcIp = srcIp,
+            dstIp = dstIp,
+            code = 13
+        )
+        assertEquals(3.toByte(), adminProhib[20])
+        assertEquals(13.toByte(), adminProhib[21]) // Code 13: Admin Prohibited
+    }
 }

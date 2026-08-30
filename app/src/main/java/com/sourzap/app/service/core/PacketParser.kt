@@ -274,6 +274,45 @@ object PacketParser {
         return if (checksum == 0.toShort()) 0xFFFF.toShort() else checksum
     }
 
+    /**
+     * RFC 4443 ICMPv6 Checksum with IPv6 Pseudo-Header.
+     */
+    fun computeIcmpv6Checksum(
+        packet: ByteArray,
+        icmpOffset: Int,
+        icmpLen: Int,
+        srcIp: ByteArray,
+        dstIp: ByteArray
+    ): Short {
+        var sum = 0L
+
+        // IPv6 Pseudo-Header (40 bytes):
+        // Source Address (16 bytes)
+        // Destination Address (16 bytes)
+        // Upper-Layer Packet Length (32 bits)
+        // Next Header (32 bits with 3 zero octets + 1 octet = 58)
+        for (i in 0 until 16 step 2) {
+            sum += ((srcIp[i].toInt() and 0xFF) shl 8) or (srcIp[i + 1].toInt() and 0xFF)
+            sum += ((dstIp[i].toInt() and 0xFF) shl 8) or (dstIp[i + 1].toInt() and 0xFF)
+        }
+        sum += (icmpLen shr 16) and 0xFFFF
+        sum += icmpLen and 0xFFFF
+        sum += 58L // Next Header ICMPv6 (58)
+
+        // ICMPv6 Header and Payload
+        for (i in icmpOffset until icmpOffset + icmpLen step 2) {
+            val b1 = packet[i].toInt() and 0xFF
+            val b2 = if (i + 1 < icmpOffset + icmpLen) packet[i + 1].toInt() and 0xFF else 0
+            sum += (b1 shl 8) or b2
+        }
+
+        while ((sum shr 16) > 0) {
+            sum = (sum and 0xFFFF) + (sum shr 16)
+        }
+        val checksum = (sum.inv() and 0xFFFF).toShort()
+        return if (checksum == 0.toShort()) 0xFFFF.toShort() else checksum
+    }
+
     // --- Packet Synthesis Engines ---
 
     /**
@@ -293,6 +332,10 @@ object PacketParser {
         payloadLen: Int = payload.size,
         windowSize: Int = 0xFFFF
     ): ByteArray {
+        val srcIpBytes = srcIp.address
+        val dstIpBytes = dstIp.address
+        if (srcIpBytes.size != 4 || dstIpBytes.size != 4) return EMPTY_BYTE_ARRAY
+
         val ipHeaderLen = 20
         val isSynAck = (flags == 0x12)
         val tcpHeaderLen = if (isSynAck) 24 else 20
@@ -313,8 +356,8 @@ object PacketParser {
         packet[10] = 0x00.toByte()
         packet[11] = 0x00.toByte()
 
-        System.arraycopy(srcIp.address, 0, packet, 12, 4)
-        System.arraycopy(dstIp.address, 0, packet, 16, 4)
+        System.arraycopy(srcIpBytes, 0, packet, 12, 4)
+        System.arraycopy(dstIpBytes, 0, packet, 16, 4)
 
         // IPv4 Header Checksum
         val ipChecksum = computeIpChecksum(packet, 0, ipHeaderLen)
@@ -390,6 +433,10 @@ object PacketParser {
         payloadOffset: Int = 0,
         payloadLen: Int = payload.size
     ): ByteArray {
+        val srcIpBytes = srcIp.address
+        val dstIpBytes = dstIp.address
+        if (srcIpBytes.size != 4 || dstIpBytes.size != 4) return EMPTY_BYTE_ARRAY
+
         val totalLength = 20 + 8 + payloadLen
         val packet = ByteArray(totalLength)
 
@@ -405,8 +452,8 @@ object PacketParser {
         packet[8] = 64.toByte()   // TTL
         packet[9] = 17.toByte()   // UDP (17)
 
-        System.arraycopy(srcIp.address, 0, packet, 12, 4)
-        System.arraycopy(dstIp.address, 0, packet, 16, 4)
+        System.arraycopy(srcIpBytes, 0, packet, 12, 4)
+        System.arraycopy(dstIpBytes, 0, packet, 16, 4)
 
         val ipChecksum = computeIpChecksum(packet, 0, 20)
         packet[10] = ((ipChecksum.toInt() shr 8) and 0xFF).toByte()
@@ -428,7 +475,7 @@ object PacketParser {
             System.arraycopy(payload, payloadOffset, packet, 28, payloadLen)
         }
 
-        val udpChecksum = computeUdpChecksum(packet, udpOffset, udpLen, srcIp.address, dstIp.address)
+        val udpChecksum = computeUdpChecksum(packet, udpOffset, udpLen, srcIpBytes, dstIpBytes)
         packet[udpOffset + 6] = ((udpChecksum.toInt() shr 8) and 0xFF).toByte()
         packet[udpOffset + 7] = (udpChecksum.toInt() and 0xFF).toByte()
 
@@ -436,15 +483,24 @@ object PacketParser {
     }
 
     /**
-     * Synthesizes an RFC 792 compliant ICMP Destination Unreachable (Port Unreachable: Type 3, Code 3) packet.
+     * Synthesizes an RFC 792 compliant ICMP Destination Unreachable packet for IPv4.
+     * Common codes:
+     * - Code 1: Host Unreachable
+     * - Code 3: Port Unreachable
+     * - Code 13: Communication Administratively Prohibited
      */
-    fun buildIcmpPortUnreachablePacket(
+    fun buildIcmpv4DestinationUnreachablePacket(
         originalBuffer: ByteArray,
         originalLength: Int,
         ipHeaderLen: Int,
         srcIp: InetAddress,
-        dstIp: InetAddress
+        dstIp: InetAddress,
+        code: Int = 3
     ): ByteArray {
+        val srcIpBytes = srcIp.address
+        val dstIpBytes = dstIp.address
+        if (srcIpBytes.size != 4 || dstIpBytes.size != 4) return EMPTY_BYTE_ARRAY
+
         val includedOriginalLen = (ipHeaderLen + 8).coerceAtMost(originalLength)
         val ipTotalLen = 20 + 8 + includedOriginalLen
         val packet = ByteArray(ipTotalLen)
@@ -463,8 +519,10 @@ object PacketParser {
         packet[10] = 0x00.toByte()
         packet[11] = 0x00.toByte()
 
-        System.arraycopy(dstIp.address, 0, packet, 12, 4)
-        System.arraycopy(srcIp.address, 0, packet, 16, 4)
+        // Source of ICMP error is the destination that was unreachable
+        System.arraycopy(dstIpBytes, 0, packet, 12, 4)
+        // Destination of ICMP error is the originating client
+        System.arraycopy(srcIpBytes, 0, packet, 16, 4)
 
         val ipChecksum = computeIpChecksum(packet, 0, 20)
         packet[10] = ((ipChecksum.toInt() shr 8) and 0xFF).toByte()
@@ -472,15 +530,15 @@ object PacketParser {
 
         // 2. ICMP Header (8 bytes)
         packet[20] = 3.toByte() // Type 3: Destination Unreachable
-        packet[21] = 3.toByte() // Code 3: Port Unreachable
-        packet[22] = 0x00.toByte()
+        packet[21] = code.toByte() // Code
+        packet[22] = 0x00.toByte() // Checksum placeholder
         packet[23] = 0x00.toByte()
-        packet[24] = 0x00.toByte() // 4 unused bytes
+        packet[24] = 0x00.toByte() // 4 unused bytes per RFC 792
         packet[25] = 0x00.toByte()
         packet[26] = 0x00.toByte()
         packet[27] = 0x00.toByte()
 
-        // 3. ICMP Data (Original IP Header + first 8 bytes of original UDP payload)
+        // 3. ICMP Data (Original IP Header + first 8 bytes of original upper-layer datagram)
         System.arraycopy(originalBuffer, 0, packet, 28, includedOriginalLen)
 
         // ICMP Checksum
@@ -493,23 +551,53 @@ object PacketParser {
     }
 
     /**
-     * Synthesizes an RFC 4443 compliant ICMPv6 Destination Unreachable (Code 3: Address Unreachable)
-     * packet to force client apps running Happy Eyeballs (RFC 6555) to immediately fallback
+     * Synthesizes an RFC 792 compliant ICMP Destination Unreachable (Port Unreachable: Type 3, Code 3) packet.
+     */
+    fun buildIcmpPortUnreachablePacket(
+        originalBuffer: ByteArray,
+        originalLength: Int,
+        ipHeaderLen: Int,
+        srcIp: InetAddress,
+        dstIp: InetAddress
+    ): ByteArray = buildIcmpv4DestinationUnreachablePacket(
+        originalBuffer = originalBuffer,
+        originalLength = originalLength,
+        ipHeaderLen = ipHeaderLen,
+        srcIp = srcIp,
+        dstIp = dstIp,
+        code = 3
+    )
+
+    /**
+     * Synthesizes an RFC 4443 compliant ICMPv6 Destination Unreachable packet.
+     * Common codes:
+     * - Code 1: Communication with destination administratively prohibited
+     * - Code 3: Address Unreachable
+     * - Code 4: Port Unreachable
+     *
+     * Forces client apps running RFC 6555 Happy Eyeballs to immediately fallback
      * to IPv4 in 0ms without wasting 250-3000ms connection timeout delays.
      */
-    fun buildIcmpv6AddressUnreachablePacket(
+    fun buildIcmpv6DestinationUnreachablePacket(
         originalBuffer: ByteArray,
         originalLength: Int,
         srcIp: InetAddress,
-        dstIp: InetAddress
+        dstIp: InetAddress,
+        code: Int = 3
     ): ByteArray {
-        val includedOriginalLen = 48.coerceAtMost(originalLength)
+        val srcIpBytes = srcIp.address
+        val dstIpBytes = dstIp.address
+        if (srcIpBytes.size != 16 || dstIpBytes.size != 16) return EMPTY_BYTE_ARRAY
+
+        // RFC 4443 Section 2.4: Include as much of offending packet as fits in 1280 MTU (1280 - 48 = 1232)
+        val maxPayload = 1232
+        val includedOriginalLen = minOf(originalLength, maxPayload)
         val icmpv6Len = 8 + includedOriginalLen
         val totalLength = 40 + icmpv6Len
         val packet = ByteArray(totalLength)
 
-        // IPv6 Header (40 bytes)
-        packet[0] = 0x60.toByte() // Version 6
+        // 1. IPv6 Header (40 bytes)
+        packet[0] = 0x60.toByte() // Version 6, Traffic Class 0
         packet[1] = 0x00.toByte()
         packet[2] = 0x00.toByte()
         packet[3] = 0x00.toByte()
@@ -518,48 +606,84 @@ object PacketParser {
         packet[6] = 58.toByte()   // Next Header: ICMPv6 (58)
         packet[7] = 64.toByte()   // Hop Limit: 64
 
-        System.arraycopy(dstIp.address, 0, packet, 8, 16)
-        System.arraycopy(srcIp.address, 0, packet, 24, 16)
+        // Source IPv6 address of ICMPv6 error is the destination that was unreachable
+        System.arraycopy(dstIpBytes, 0, packet, 8, 16)
+        // Destination IPv6 address of ICMPv6 error is the originating client
+        System.arraycopy(srcIpBytes, 0, packet, 24, 16)
 
-        // ICMPv6 Header (8 bytes)
+        // 2. ICMPv6 Header (8 bytes)
         val icmpOffset = 40
         packet[icmpOffset] = 1.toByte() // Type 1: Destination Unreachable
-        packet[icmpOffset + 1] = 3.toByte() // Code 3: Address Unreachable
-        packet[icmpOffset + 2] = 0x00.toByte() // Checksum
+        packet[icmpOffset + 1] = code.toByte() // Code (1 = Admin Prohibited, 3 = Address Unreachable, 4 = Port Unreachable)
+        packet[icmpOffset + 2] = 0x00.toByte() // Checksum placeholder
         packet[icmpOffset + 3] = 0x00.toByte()
-        packet[icmpOffset + 4] = 0x00.toByte() // 4 unused bytes
+        packet[icmpOffset + 4] = 0x00.toByte() // 4 unused bytes per RFC 4443
         packet[icmpOffset + 5] = 0x00.toByte()
         packet[icmpOffset + 6] = 0x00.toByte()
         packet[icmpOffset + 7] = 0x00.toByte()
 
-        // ICMPv6 Body: Original IPv6 header and payload
+        // 3. ICMPv6 Body: Offending packet
         System.arraycopy(originalBuffer, 0, packet, icmpOffset + 8, includedOriginalLen)
 
-        // ICMPv6 Checksum with IPv6 Pseudo-Header (40 bytes pseudo header)
-        var sum = 0
-        val srcBytes = dstIp.address
-        val dstBytes = srcIp.address
-        for (i in 0 until 16 step 2) {
-            sum += ((srcBytes[i].toInt() and 0xFF) shl 8) or (srcBytes[i + 1].toInt() and 0xFF)
-            sum += ((dstBytes[i].toInt() and 0xFF) shl 8) or (dstBytes[i + 1].toInt() and 0xFF)
-        }
-        sum += (icmpv6Len shr 16) and 0xFFFF
-        sum += icmpv6Len and 0xFFFF
-        sum += 58 // Next Header ICMPv6
-
-        for (i in icmpOffset until icmpOffset + icmpv6Len step 2) {
-            val b1 = packet[i].toInt() and 0xFF
-            val b2 = if (i + 1 < icmpOffset + icmpv6Len) packet[i + 1].toInt() and 0xFF else 0
-            sum += (b1 shl 8) or b2
-        }
-
-        while ((sum shr 16) > 0) {
-            sum = (sum and 0xFFFF) + (sum shr 16)
-        }
-        val checksum = (sum.inv() and 0xFFFF).toShort()
+        // Compute RFC 4443 Checksum with IPv6 Pseudo-Header
+        val checksum = computeIcmpv6Checksum(
+            packet = packet,
+            icmpOffset = icmpOffset,
+            icmpLen = icmpv6Len,
+            srcIp = dstIpBytes,
+            dstIp = srcIpBytes
+        )
         packet[icmpOffset + 2] = ((checksum.toInt() shr 8) and 0xFF).toByte()
         packet[icmpOffset + 3] = (checksum.toInt() and 0xFF).toByte()
 
         return packet
     }
+
+    /**
+     * Synthesizes an RFC 4443 compliant ICMPv6 Destination Unreachable (Code 3: Address Unreachable) packet.
+     */
+    fun buildIcmpv6AddressUnreachablePacket(
+        originalBuffer: ByteArray,
+        originalLength: Int,
+        srcIp: InetAddress,
+        dstIp: InetAddress
+    ): ByteArray = buildIcmpv6DestinationUnreachablePacket(
+        originalBuffer = originalBuffer,
+        originalLength = originalLength,
+        srcIp = srcIp,
+        dstIp = dstIp,
+        code = 3
+    )
+
+    /**
+     * Synthesizes an RFC 4443 compliant ICMPv6 Destination Unreachable (Code 4: Port Unreachable) packet.
+     */
+    fun buildIcmpv6PortUnreachablePacket(
+        originalBuffer: ByteArray,
+        originalLength: Int,
+        srcIp: InetAddress,
+        dstIp: InetAddress
+    ): ByteArray = buildIcmpv6DestinationUnreachablePacket(
+        originalBuffer = originalBuffer,
+        originalLength = originalLength,
+        srcIp = srcIp,
+        dstIp = dstIp,
+        code = 4
+    )
+
+    /**
+     * Synthesizes an RFC 4443 compliant ICMPv6 Destination Unreachable (Code 1: Administratively Prohibited) packet.
+     */
+    fun buildIcmpv6AdminProhibitedPacket(
+        originalBuffer: ByteArray,
+        originalLength: Int,
+        srcIp: InetAddress,
+        dstIp: InetAddress
+    ): ByteArray = buildIcmpv6DestinationUnreachablePacket(
+        originalBuffer = originalBuffer,
+        originalLength = originalLength,
+        srcIp = srcIp,
+        dstIp = dstIp,
+        code = 1
+    )
 }

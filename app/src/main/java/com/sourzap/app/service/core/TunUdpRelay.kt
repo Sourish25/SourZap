@@ -128,50 +128,54 @@ class TunUdpRelay(
     }
 
     private fun runReceiverLoop(socket: DatagramSocket, socketIndex: Int) {
-        val recvBuf = ByteArray(65535)
+        val recvBuf = ByteArrayPool.obtainStreamBuffer()
         val recvPacket = DatagramPacket(recvBuf, recvBuf.size)
 
-        while (scope.isActive && isRunning.get()) {
-            try {
-                // Reset length to full buffer size before every receive call.
-                recvPacket.length = recvBuf.size
-                socket.receive(recvPacket)
-                val len = recvPacket.length
-                val remoteAddress = recvPacket.address ?: continue
-                val remotePort = recvPacket.port
+        try {
+            while (scope.isActive && isRunning.get()) {
+                try {
+                    // Reset length to full buffer size before every receive call.
+                    recvPacket.length = recvBuf.size
+                    socket.receive(recvPacket)
+                    val len = recvPacket.length
+                    val remoteAddress = recvPacket.address ?: continue
+                    val remotePort = recvPacket.port
 
-                if (len > 0) {
-                    val natKeyExact = "${remoteAddress.hostAddress}:$remotePort#$socketIndex"
-                    val natKeyHost = "${remoteAddress.hostAddress}#$socketIndex"
+                    if (len > 0) {
+                        val natKeyExact = "${remoteAddress.hostAddress}:$remotePort#$socketIndex"
+                        val natKeyHost = "${remoteAddress.hostAddress}#$socketIndex"
 
-                    val client = natTable[natKeyExact]
-                        ?: natTable[natKeyHost]
-                        ?: natTable.entries.firstOrNull { it.key.startsWith("${remoteAddress.hostAddress}:") }?.value
+                        val client = natTable[natKeyExact]
+                            ?: natTable[natKeyHost]
+                            ?: natTable.entries.firstOrNull { it.key.startsWith("${remoteAddress.hostAddress}:") }?.value
 
-                    if (client != null) {
-                        client.lastSeen = System.currentTimeMillis()
-                        TrafficMonitor.recordRxBytes(len.toLong())
+                        if (client != null) {
+                            client.lastSeen = System.currentTimeMillis()
+                            TrafficMonitor.recordRxBytes(len.toLong())
 
-                        // Zero-allocation slice building directly from receive buffer using PacketParser
-                        val replyIpPacket = PacketParser.buildUdpIpPacket(
-                            srcIp = remoteAddress,
-                            dstIp = client.clientIp,
-                            srcPort = remotePort,
-                            dstPort = client.clientPort,
-                            payload = recvBuf,
-                            payloadOffset = 0,
-                            payloadLen = len
-                        )
+                            // Zero-allocation slice building directly from receive buffer using PacketParser
+                            val replyIpPacket = PacketParser.buildUdpIpPacket(
+                                srcIp = remoteAddress,
+                                dstIp = client.clientIp,
+                                srcPort = remotePort,
+                                dstPort = client.clientPort,
+                                payload = recvBuf,
+                                payloadOffset = 0,
+                                payloadLen = len
+                            )
 
-                        synchronized(vpnOutput) {
-                            vpnOutput.write(replyIpPacket)
-                            vpnOutput.flush()
+                            synchronized(vpnOutput) {
+                                vpnOutput.write(replyIpPacket)
+                                vpnOutput.flush()
+                            }
                         }
                     }
+                } catch (_: Exception) {
+                    if (!isRunning.get()) break
                 }
-            } catch (_: Exception) {
-                if (!isRunning.get()) break
             }
+        } finally {
+            ByteArrayPool.recycleStreamBuffer(recvBuf)
         }
     }
 

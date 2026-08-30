@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -62,6 +63,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -155,8 +160,9 @@ fun DashboardScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
+            .statusBarsPadding()
             .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 24.dp, bottom = 100.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Update Available Banner
@@ -391,6 +397,10 @@ fun DashboardScreen(
             ExpressiveCard(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = "Live throughput: ${stats.formattedDownloadSpeed()} download, ${stats.formattedUploadSpeed()} upload. Tap to view traffic inspector."
+                    }
                     .clickable {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onNavigateToTraffic()
@@ -539,10 +549,15 @@ fun DashboardScreen(
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onNavigateToTraffic()
-                        }
+                        modifier = Modifier
+                            .semantics {
+                                role = Role.Button
+                                contentDescription = "View traffic inspector"
+                            }
+                            .clickable {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onNavigateToTraffic()
+                            }
                     ) {
                         Text(
                             text = "View Inspector",

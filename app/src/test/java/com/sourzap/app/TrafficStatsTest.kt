@@ -194,27 +194,84 @@ class TrafficStatsTest {
 
     @Test
     fun testByteArrayPoolMechanics() {
-        // Stream buffers (64 KB)
+        ByteArrayPool.clear()
+
+        // 1. Stream buffers (64 KB)
         val b1 = ByteArrayPool.obtainStreamBuffer()
         assertEquals(ByteArrayPool.BUFFER_SIZE, b1.size)
+        assertEquals(ByteArrayPool.BUFFER_64K, b1.size)
         assertEquals(65536, b1.size)
 
         ByteArrayPool.recycleStreamBuffer(b1)
+        assertEquals(1, ByteArrayPool.getPoolSize64k())
         val b2 = ByteArrayPool.obtainStreamBuffer()
-        assertEquals(ByteArrayPool.BUFFER_SIZE, b2.size)
+        assertEquals(ByteArrayPool.BUFFER_64K, b2.size)
+        assertEquals(0, ByteArrayPool.getPoolSize64k())
 
         // Discard invalid buffer sizes
         val invalidBuf = ByteArray(1024)
         ByteArrayPool.recycleStreamBuffer(invalidBuf)
+        assertEquals(0, ByteArrayPool.getPoolSize64k())
 
-        // Packet buffers (32 KB)
+        // 2. Packet buffers (32 KB)
         val p1 = ByteArrayPool.obtainPacketBuffer()
         assertEquals(ByteArrayPool.PACKET_BUFFER_SIZE, p1.size)
+        assertEquals(ByteArrayPool.BUFFER_32K, p1.size)
         assertEquals(32768, p1.size)
 
         ByteArrayPool.recyclePacketBuffer(p1)
+        assertEquals(1, ByteArrayPool.getPoolSize32k())
         val p2 = ByteArrayPool.obtainPacketBuffer()
-        assertEquals(ByteArrayPool.PACKET_BUFFER_SIZE, p2.size)
+        assertEquals(ByteArrayPool.BUFFER_32K, p2.size)
+        assertEquals(0, ByteArrayPool.getPoolSize32k())
+
+        // 3. 16 KB Handshake buffers
+        val h1 = ByteArrayPool.obtain16kBuffer()
+        assertEquals(ByteArrayPool.BUFFER_16K, h1.size)
+        assertEquals(16384, h1.size)
+
+        ByteArrayPool.recycle16kBuffer(h1)
+        assertEquals(1, ByteArrayPool.getPoolSize16k())
+        val h2 = ByteArrayPool.obtain16kBuffer()
+        assertEquals(ByteArrayPool.BUFFER_16K, h2.size)
+        assertEquals(0, ByteArrayPool.getPoolSize16k())
+
+        // 4. 4 KB Small / UDP buffers
+        val s1 = ByteArrayPool.obtainSmallBuffer()
+        assertEquals(ByteArrayPool.BUFFER_4K, s1.size)
+        assertEquals(4096, s1.size)
+
+        ByteArrayPool.recycleSmallBuffer(s1)
+        assertEquals(1, ByteArrayPool.getPoolSize4k())
+        val s2 = ByteArrayPool.obtainSmallBuffer()
+        assertEquals(ByteArrayPool.BUFFER_4K, s2.size)
+        assertEquals(0, ByteArrayPool.getPoolSize4k())
+
+        // 5. Dynamic size routing
+        val dyn4k = ByteArrayPool.obtain(2048)
+        assertEquals(ByteArrayPool.BUFFER_4K, dyn4k.size)
+        val dyn16k = ByteArrayPool.obtain(12000)
+        assertEquals(ByteArrayPool.BUFFER_16K, dyn16k.size)
+        val dyn32k = ByteArrayPool.obtain(25000)
+        assertEquals(ByteArrayPool.BUFFER_32K, dyn32k.size)
+        val dyn64k = ByteArrayPool.obtain(50000)
+        assertEquals(ByteArrayPool.BUFFER_64K, dyn64k.size)
+
+        ByteArrayPool.recycle(dyn4k)
+        ByteArrayPool.recycle(dyn16k)
+        ByteArrayPool.recycle(dyn32k)
+        ByteArrayPool.recycle(dyn64k)
+
+        assertEquals(1, ByteArrayPool.getPoolSize4k())
+        assertEquals(1, ByteArrayPool.getPoolSize16k())
+        assertEquals(1, ByteArrayPool.getPoolSize32k())
+        assertEquals(1, ByteArrayPool.getPoolSize64k())
+
+        ByteArrayPool.clear()
+        assertEquals(0, ByteArrayPool.getPoolSize4k())
+        assertEquals(0, ByteArrayPool.getPoolSize16k())
+        assertEquals(0, ByteArrayPool.getPoolSize32k())
+        assertEquals(0, ByteArrayPool.getPoolSize64k())
     }
 
     @Test

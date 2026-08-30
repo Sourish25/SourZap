@@ -154,55 +154,59 @@ class LocalDpiProxyServer(
                 clientOut.flush()
 
                 // Client will now send initial payload (TLS ClientHello, or WhatsApp Noise Handshake)
-                val initialBuffer = ByteArray(16384)
-                val initialLen = clientIn.read(initialBuffer)
-                if (initialLen > 0) {
-                    val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
-                    val upstreamOut = upstream.getOutputStream()
-                    val upstreamIn = upstream.getInputStream()
+                val initialBuffer = ByteArrayPool.obtain16k()
+                try {
+                    val initialLen = clientIn.read(initialBuffer)
+                    if (initialLen > 0) {
+                        val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
+                        val upstreamOut = upstream.getOutputStream()
+                        val upstreamIn = upstream.getInputStream()
 
-                    val sniResult = TlsParser.parseClientHello(initialBuffer, initialLen)
+                        val sniResult = TlsParser.parseClientHello(initialBuffer, initialLen)
 
-                    if (sniResult.isClientHello) {
-                        var appliedTechnique = "DIRECT"
-                        val logDomain = sniResult.hostname ?: targetHost
+                        if (sniResult.isClientHello) {
+                            var appliedTechnique = "DIRECT"
+                            val logDomain = sniResult.hostname ?: targetHost
 
-                        DpiEngine.desyncAndSend(
-                            socket = upstream,
-                            outputStream = upstreamOut,
-                            payload = initialBuffer,
-                            length = initialLen,
-                            strategy = strategy,
-                            onTechniqueApplied = { appliedTechnique = it }
-                        )
-
-                        TrafficMonitor.addConnectionLog(
-                            ConnectionLog(
-                                domain = logDomain,
-                                port = targetPort,
-                                protocol = "TLS",
-                                technique = appliedTechnique,
-                                bytesTransferred = initialLen.toLong()
+                            DpiEngine.desyncAndSend(
+                                socket = upstream,
+                                outputStream = upstreamOut,
+                                payload = initialBuffer,
+                                length = initialLen,
+                                strategy = strategy,
+                                onTechniqueApplied = { appliedTechnique = it }
                             )
-                        )
-                    } else {
-                        // Non-TLS / WhatsApp Noise Protocol Handshake -> Passthrough cleanly
-                        upstreamOut.write(initialBuffer, 0, initialLen)
-                        upstreamOut.flush()
 
-                        TrafficMonitor.addConnectionLog(
-                            ConnectionLog(
-                                domain = targetHost,
-                                port = targetPort,
-                                protocol = "NOISE_STREAM",
-                                technique = "PASSTHROUGH",
-                                bytesTransferred = initialLen.toLong()
+                            TrafficMonitor.addConnectionLog(
+                                ConnectionLog(
+                                    domain = logDomain,
+                                    port = targetPort,
+                                    protocol = "TLS",
+                                    technique = appliedTechnique,
+                                    bytesTransferred = initialLen.toLong()
+                                )
                             )
-                        )
+                        } else {
+                            // Non-TLS / WhatsApp Noise Protocol Handshake -> Passthrough cleanly
+                            upstreamOut.write(initialBuffer, 0, initialLen)
+                            upstreamOut.flush()
+
+                            TrafficMonitor.addConnectionLog(
+                                ConnectionLog(
+                                    domain = targetHost,
+                                    port = targetPort,
+                                    protocol = "NOISE_STREAM",
+                                    technique = "PASSTHROUGH",
+                                    bytesTransferred = initialLen.toLong()
+                                )
+                            )
+                        }
+
+                        // Suspend and pump remaining stream bidirectionally until streams close
+                        pumpBidirectional(clientIn, clientOut, upstreamIn, upstreamOut, clientSocket, upstream)
                     }
-
-                    // Suspend and pump remaining stream bidirectionally until streams close
-                    pumpBidirectional(clientIn, clientOut, upstreamIn, upstreamOut, clientSocket, upstream)
+                } finally {
+                    ByteArrayPool.recycle16k(initialBuffer)
                 }
             } else {
                 // --- Plain HTTP Request ---
