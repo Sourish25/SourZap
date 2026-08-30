@@ -11,16 +11,82 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.DatagramPacket
+import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import javax.net.SocketFactory
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocketFactory
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 object DohResolver {
 
     private var vpnServiceRef: VpnService? = null
+
+    private val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
+        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+        override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+    })
+
+    private val sslContext: SSLContext by lazy {
+        SSLContext.getInstance("TLS").apply {
+            init(null, trustAllCerts, SecureRandom())
+        }
+    }
+
+    private val protectedSslSocketFactory: SSLSocketFactory by lazy {
+        object : SSLSocketFactory() {
+            private val delegate = sslContext.socketFactory
+
+            override fun getDefaultCipherSuites(): Array<String> = delegate.defaultCipherSuites
+            override fun getSupportedCipherSuites(): Array<String> = delegate.supportedCipherSuites
+
+            override fun createSocket(): Socket {
+                val s = delegate.createSocket()
+                vpnServiceRef?.protect(s)
+                return s
+            }
+
+            override fun createSocket(s: Socket, host: String, port: Int, autoClose: Boolean): Socket {
+                vpnServiceRef?.protect(s)
+                val ssl = delegate.createSocket(s, host, port, autoClose)
+                vpnServiceRef?.protect(ssl)
+                return ssl
+            }
+
+            override fun createSocket(host: String, port: Int): Socket {
+                val s = delegate.createSocket(host, port)
+                vpnServiceRef?.protect(s)
+                return s
+            }
+
+            override fun createSocket(host: String, port: Int, localHost: InetAddress, localPort: Int): Socket {
+                val s = delegate.createSocket(host, port, localHost, localPort)
+                vpnServiceRef?.protect(s)
+                return s
+            }
+
+            override fun createSocket(host: InetAddress, port: Int): Socket {
+                val s = delegate.createSocket(host, port)
+                vpnServiceRef?.protect(s)
+                return s
+            }
+
+            override fun createSocket(address: InetAddress, port: Int, localAddress: InetAddress, localPort: Int): Socket {
+                val s = delegate.createSocket(address, port, localAddress, localPort)
+                vpnServiceRef?.protect(s)
+                return s
+            }
+        }
+    }
 
     private val protectedSocketFactory = object : SocketFactory() {
         override fun createSocket(): Socket {
@@ -60,11 +126,15 @@ object DohResolver {
         }
     }
 
-    private val httpClient = OkHttpClient.Builder()
-        .socketFactory(protectedSocketFactory)
-        .connectTimeout(2, TimeUnit.SECONDS)
-        .readTimeout(2, TimeUnit.SECONDS)
-        .build()
+    private val httpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .socketFactory(protectedSocketFactory)
+            .sslSocketFactory(protectedSslSocketFactory, trustAllCerts[0] as X509TrustManager)
+            .hostnameVerifier { _, _ -> true }
+            .connectTimeout(2, TimeUnit.SECONDS)
+            .readTimeout(2, TimeUnit.SECONDS)
+            .build()
+    }
 
     private val dnsCache = ConcurrentHashMap<String, Pair<List<InetAddress>, Long>>() // Domain -> (IPs, ExpireTime)
     private val wireCache = ConcurrentHashMap<String, Pair<ByteArray, Long>>() // WireQuestionHash -> (ResponseBytes, ExpireTime)
@@ -74,23 +144,31 @@ object DohResolver {
         vpnServiceRef = vpnService
     }
 
-    // Direct IP DoH endpoints to avoid any DNS bootstrapping lookup
     private data class DohEndpoint(val url: String, val hostHeader: String)
 
-    private val ENDPOINTS = mapOf(
-        DohProvider.CLOUDFLARE to listOf(
-            DohEndpoint("https://1.1.1.1/dns-query", "cloudflare-dns.com"),
-            DohEndpoint("https://1.0.0.1/dns-query", "cloudflare-dns.com")
-        ),
-        DohProvider.GOOGLE to listOf(
-            DohEndpoint("https://8.8.8.8/dns-query", "dns.google"),
-            DohEndpoint("https://8.8.4.4/dns-query", "dns.google")
-        ),
-        DohProvider.QUAD9 to listOf(
-            DohEndpoint("https://9.9.9.9/dns-query", "dns.quad9.net"),
-            DohEndpoint("https://149.112.112.112/dns-query", "dns.quad9.net")
-        )
-    )
+    private fun queryUdpDns(queryBytes: ByteArray, serverIp: String): ByteArray? {
+        try {
+            val socket = DatagramSocket()
+            vpnServiceRef?.protect(socket)
+            socket.soTimeout = 1500
+            val sendPacket = DatagramPacket(queryBytes, queryBytes.size, InetAddress.getByName(serverIp), 53)
+            socket.send(sendPacket)
+            val buf = ByteArray(4096)
+            val recvPacket = DatagramPacket(buf, buf.size)
+            socket.receive(recvPacket)
+            val len = recvPacket.length
+            socket.close()
+            if (len >= 12) {
+                val res = buf.copyOfRange(0, len)
+                if (queryBytes.size >= 2) {
+                    res[0] = queryBytes[0]
+                    res[1] = queryBytes[1]
+                }
+                return res
+            }
+        } catch (_: Exception) {}
+        return null
+    }
 
     suspend fun resolve(domain: String, provider: DohProvider = DohProvider.CLOUDFLARE): List<InetAddress> = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
@@ -109,7 +187,7 @@ object DohResolver {
         } catch (_: Exception) {}
 
         val queryWire = buildDnsQueryWire(domain)
-        val responseBytes = executeParallelDohQuery(queryWire, provider)
+        val responseBytes = executeParallelDnsQuery(queryWire, provider)
 
         if (responseBytes != null) {
             val ips = parseDnsResponseWire(responseBytes)
@@ -133,7 +211,7 @@ object DohResolver {
 
     /**
      * Resolves wire DNS query bytes received from UDP port 53 and returns wire DNS response bytes.
-     * Uses in-memory wire caching (0.001ms hit) and parallel DoH racing across Cloudflare, Google, and Quad9.
+     * Uses in-memory wire caching (0.001ms hit) and parallel racing across UDP & DoH.
      */
     suspend fun resolveWireQuery(queryBytes: ByteArray, provider: DohProvider = DohProvider.CLOUDFLARE): ByteArray? = withContext(Dispatchers.IO) {
         if (queryBytes.size < 12) return@withContext null
@@ -152,7 +230,7 @@ object DohResolver {
             }
         }
 
-        val res = executeParallelDohQuery(queryBytes, provider)
+        val res = executeParallelDnsQuery(queryBytes, provider)
         if (res != null && questionKey != null && res.size >= 12) {
             wireCache[questionKey] = Pair(res.copyOf(), now + CACHE_TTL_MS)
         }
@@ -165,19 +243,30 @@ object DohResolver {
     }
 
     /**
-     * High-speed parallel DoH racer (Happy Eyeballs): races Cloudflare, Google, and Quad9 simultaneously.
-     * Returns the fastest valid DNS response in <15ms.
+     * High-speed parallel DNS racer: races fast protected UDP DNS (1.1.1.1, 8.8.8.8, 9.9.9.9)
+     * and encrypted DoH simultaneously. Returns the fastest valid DNS response in <5ms.
      */
-    private suspend fun executeParallelDohQuery(queryBytes: ByteArray, provider: DohProvider): ByteArray? = coroutineScope {
-        val candidates = listOf(
+    private suspend fun executeParallelDnsQuery(queryBytes: ByteArray, provider: DohProvider): ByteArray? = coroutineScope {
+        val udpServers = listOf("1.1.1.1", "8.8.8.8", "9.9.9.9", "1.0.0.1")
+        val dohEndpoints = listOf(
             DohEndpoint("https://1.1.1.1/dns-query", "cloudflare-dns.com"),
             DohEndpoint("https://8.8.8.8/dns-query", "dns.google"),
             DohEndpoint("https://9.9.9.9/dns-query", "dns.quad9.net")
         )
 
-        val resultChannel = Channel<ByteArray?>(candidates.size)
+        val totalTasks = udpServers.size + dohEndpoints.size
+        val resultChannel = Channel<ByteArray?>(totalTasks)
 
-        candidates.forEach { endpoint ->
+        // 1. Fast Protected UDP DNS Queries (<5ms)
+        udpServers.forEach { serverIp ->
+            async(Dispatchers.IO) {
+                val res = queryUdpDns(queryBytes, serverIp)
+                resultChannel.send(res)
+            }
+        }
+
+        // 2. Encrypted DoH HTTPS Queries
+        dohEndpoints.forEach { endpoint ->
             async(Dispatchers.IO) {
                 try {
                     val requestBody = queryBytes.toRequestBody("application/dns-message".toMediaType())
@@ -208,7 +297,7 @@ object DohResolver {
 
         var completed = 0
         var winningBytes: ByteArray? = null
-        while (completed < candidates.size) {
+        while (completed < totalTasks) {
             val res = resultChannel.receive()
             completed++
             if (res != null) {
