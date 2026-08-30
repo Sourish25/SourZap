@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sourzap.app.service.TrafficMonitor
@@ -60,7 +61,7 @@ fun TrafficScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Traffic Inspector",
                         fontWeight = FontWeight.Black,
@@ -72,9 +73,13 @@ fun TrafficScreen(
                         text = "Real-Time DPI Packet Telemetry",
                         fontWeight = FontWeight.Medium,
                         fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 Box(
                     modifier = Modifier
@@ -318,13 +323,16 @@ fun TrafficScreen(
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 15.sp,
                                             color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
                                             text = "${log.protocol}:${log.port} • ${log.formattedBytes()} • ${timeFormatter.format(java.util.Date(log.timestamp))}",
                                             fontWeight = FontWeight.Normal,
                                             fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
 

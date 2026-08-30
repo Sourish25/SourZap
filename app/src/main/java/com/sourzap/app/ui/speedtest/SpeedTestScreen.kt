@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sourzap.app.SourZapApp
@@ -80,7 +81,9 @@ fun SpeedTestScreen(
                         text = "Bandwidth & Latency Benchmark",
                         fontWeight = FontWeight.Medium,
                         fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
@@ -182,7 +185,9 @@ fun SpeedTestScreen(
                         Text(
                             text = if (state.currentPingMs > 0) String.format("%.0f ms", state.currentPingMs) else "--",
                             style = NumberDisplayMedium,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -207,7 +212,9 @@ fun SpeedTestScreen(
                         Text(
                             text = if (state.currentJitterMs > 0) String.format("%.1f ms", state.currentJitterMs) else "--",
                             style = NumberDisplayMedium,
-                            color = MaterialTheme.colorScheme.secondary
+                            color = MaterialTheme.colorScheme.secondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -239,7 +246,9 @@ fun SpeedTestScreen(
                         Text(
                             text = if (state.currentDownloadMbps > 0) String.format("%.1f", state.currentDownloadMbps) else "--",
                             style = NumberDisplayMedium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -264,7 +273,9 @@ fun SpeedTestScreen(
                         Text(
                             text = if (state.currentUploadMbps > 0) String.format("%.1f", state.currentUploadMbps) else "--",
                             style = NumberDisplayMedium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -320,31 +331,42 @@ fun SpeedTestScreen(
                                             text = test.strategyName,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 15.sp,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
                                             text = test.formattedDate(),
                                             fontWeight = FontWeight.Normal,
                                             fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
 
                                     Spacer(modifier = Modifier.width(10.dp))
 
-                                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         Column(horizontalAlignment = Alignment.End) {
                                             Text(
                                                 text = String.format("DL %.1f Mbps", test.downloadMbps),
                                                 fontWeight = FontWeight.Bold,
-                                                fontSize = 14.sp,
-                                                color = MaterialTheme.colorScheme.primary
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
                                             Text(
                                                 text = String.format("UL %.1f Mbps", test.uploadMbps),
                                                 fontWeight = FontWeight.Medium,
-                                                fontSize = 12.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
                                         }
 

@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sourzap.app.SourZapApp
@@ -153,10 +154,14 @@ fun DashboardScreen(
                                 text = "🚀 Update Available: ${release.tagName}",
                                 fontWeight = FontWeight.Black,
                                 fontSize = 15.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
 
                             if (!isDownloadingUpdate) {
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Button(
                                     onClick = {
                                         isDownloadingUpdate = true
@@ -204,7 +209,7 @@ fun DashboardScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "SourZap",
                         fontWeight = FontWeight.Black,
@@ -219,6 +224,8 @@ fun DashboardScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 ExpressiveChip(
                     text = if (isConnected) "RUNNING" else "OFF",
@@ -329,14 +336,20 @@ fun DashboardScreen(
                             fontWeight = FontWeight.Black,
                             fontSize = 12.sp,
                             letterSpacing = 0.8.sp,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
+
+                        Spacer(modifier = Modifier.width(8.dp))
 
                         Text(
                             text = "${stats.activeConnections} active sockets",
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
                         )
                     }
 
@@ -346,7 +359,7 @@ fun DashboardScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "DOWNLOAD",
                                 fontWeight = FontWeight.Bold,
@@ -357,11 +370,18 @@ fun DashboardScreen(
                             Text(
                                 text = stats.formattedDownloadSpeed(),
                                 style = NumberDisplayMedium,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
 
-                        Column(horizontalAlignment = Alignment.End) {
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            horizontalAlignment = Alignment.End
+                        ) {
                             Text(
                                 text = "UPLOAD",
                                 fontWeight = FontWeight.Bold,
@@ -372,7 +392,9 @@ fun DashboardScreen(
                             Text(
                                 text = stats.formattedUploadSpeed(),
                                 style = NumberDisplayMedium,
-                                color = MaterialTheme.colorScheme.secondary
+                                color = MaterialTheme.colorScheme.secondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -401,15 +423,21 @@ fun DashboardScreen(
                         fontWeight = FontWeight.Black,
                         fontSize = 12.sp,
                         letterSpacing = 0.8.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
+
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Text(
                         text = "View Inspector",
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable { onNavigateToTraffic() }
+                        modifier = Modifier.clickable { onNavigateToTraffic() },
+                        maxLines = 1
                     )
                 }
 
@@ -452,13 +480,16 @@ fun DashboardScreen(
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 14.sp,
                                             color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
                                             text = "${log.protocol} : ${log.port}",
                                             fontWeight = FontWeight.Normal,
                                             fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
 

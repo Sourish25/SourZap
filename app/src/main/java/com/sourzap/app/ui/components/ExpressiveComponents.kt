@@ -182,13 +182,13 @@ fun ExpressiveChip(
         color = backgroundColor
     ) {
         Box(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = text,
                 fontWeight = FontWeight.Black,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 letterSpacing = 0.3.sp,
                 color = textColor,
                 maxLines = 1,
@@ -519,9 +519,12 @@ fun FloatingExpressiveDock(
                         Text(
                             text = item.label,
                             fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
-                            fontSize = 13.5.sp,
+                            fontSize = 12.sp,
+                            letterSpacing = (-0.2).sp,
                             color = itemColor,
-                            textAlign = TextAlign.Center
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }

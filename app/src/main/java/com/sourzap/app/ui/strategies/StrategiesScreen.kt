@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sourzap.app.SourZapApp
@@ -68,7 +70,7 @@ fun StrategiesScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Bypass Modes",
                         fontWeight = FontWeight.Black,
@@ -80,9 +82,13 @@ fun StrategiesScreen(
                         text = "Smart Anti-Censorship & Speed Profiles",
                         fontWeight = FontWeight.Medium,
                         fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 ExpressiveChip(
                     text = "MODES",
@@ -151,13 +157,17 @@ fun StrategiesScreen(
                                     text = "Optimal: ${result.recommendedPreset.name}",
                                     fontWeight = FontWeight.Black,
                                     fontSize = 15.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = "Evasion Latency: ${String.format("%.0f ms", result.latencyMs)} • DPI Evasion: 100% Active",
                                     fontWeight = FontWeight.Normal,
                                     fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -230,7 +240,9 @@ fun StrategiesScreen(
                                 text = strategy.name,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 18.sp,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = strategy.description,
@@ -239,6 +251,8 @@ fun StrategiesScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+
+                        Spacer(modifier = Modifier.width(8.dp))
 
                         ExpressiveChip(
                             text = if (isSelected) "ACTIVE" else strategy.tag,
@@ -281,20 +295,26 @@ fun StrategiesScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = customStrategy.name,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 18.sp,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "Tailored packet desync parameters",
                                 fontWeight = FontWeight.Normal,
                                 fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
+
+                        Spacer(modifier = Modifier.width(8.dp))
 
                         Switch(
                             checked = isCustomSelected,

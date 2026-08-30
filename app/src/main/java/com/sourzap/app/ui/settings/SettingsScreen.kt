@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sourzap.app.SourZapApp
@@ -79,7 +80,13 @@ fun SettingsScreen(
 
     val updateManager = app.updateManager
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
-    val currentAppVersion = "1.0.0"
+    val currentAppVersion = remember {
+        try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.5"
+        } catch (_: Exception) {
+            "1.0.5"
+        }
+    }
 
     LaunchedEffect(showAppSheet) {
         if (showAppSheet && installedApps.isEmpty()) {
@@ -102,7 +109,7 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Settings",
                         fontWeight = FontWeight.Black,
@@ -114,9 +121,13 @@ fun SettingsScreen(
                         text = "Theme, Preferences & Routing",
                         fontWeight = FontWeight.Medium,
                         fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
+
+                Spacer(modifier = Modifier.width(8.dp))
 
                 ExpressiveChip(
                     text = "PREFS",
@@ -263,7 +274,9 @@ fun SettingsScreen(
                                 text = "App Bypass (Split Tunneling)",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = if (disallowedPackages.isEmpty()) "All apps go through DPI circumvention" else "${disallowedPackages.size} app(s) bypass the VPN",
@@ -272,6 +285,8 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+
+                        Spacer(modifier = Modifier.width(8.dp))
 
                         ExpressiveChip(
                             text = if (disallowedPackages.isEmpty()) "CONFIGURE" else "${disallowedPackages.size} BYPASSED",
@@ -290,7 +305,9 @@ fun SettingsScreen(
                                 text = "Bypass Local LAN",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "Direct connectivity for Chromecast, printers & home LAN",
@@ -299,6 +316,8 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+
+                        Spacer(modifier = Modifier.width(10.dp))
 
                         Switch(
                             checked = bypassLan,
@@ -316,7 +335,9 @@ fun SettingsScreen(
                                 text = "Auto-Connect on Boot",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "Automatically activates DPI desync upon device restart",
@@ -325,6 +346,8 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+
+                        Spacer(modifier = Modifier.width(10.dp))
 
                         Switch(
                             checked = autoConnect,
@@ -366,15 +389,21 @@ fun SettingsScreen(
                                 text = "SourZap v$currentAppVersion",
                                 fontWeight = FontWeight.Black,
                                 fontSize = 18.sp,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "Automatic GitHub Release Updater",
                                 fontWeight = FontWeight.Normal,
                                 fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
+
+                        Spacer(modifier = Modifier.width(8.dp))
 
                         Button(
                             onClick = {
@@ -390,7 +419,7 @@ fun SettingsScreen(
                                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         ) {
-                            Text("Check Now", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Check Now", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
                         }
                     }
 
@@ -623,8 +652,13 @@ fun SettingsScreen(
                             text = "SourZap v$appVersionName",
                             fontWeight = FontWeight.Black,
                             fontSize = 18.sp,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
+
+                        Spacer(modifier = Modifier.width(8.dp))
 
                         ExpressiveChip(
                             text = "OPEN SOURCE",
@@ -681,7 +715,9 @@ fun SettingsScreen(
                     text = "App Bypass (Split Tunneling)",
                     fontWeight = FontWeight.Black,
                     fontSize = 22.sp,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = "Select apps to connect directly without DPI desynchronization",
@@ -741,14 +777,16 @@ fun SettingsScreen(
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 15.sp,
                                         color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         text = appInfo.packageName,
                                         fontWeight = FontWeight.Normal,
                                         fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
 
