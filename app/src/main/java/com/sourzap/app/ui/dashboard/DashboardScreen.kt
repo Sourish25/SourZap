@@ -78,10 +78,12 @@ fun DashboardScreen(
     var downloadProgress by remember { mutableStateOf(0f) }
 
     LaunchedEffect(Unit) {
-        val currentVer = try { context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0" } catch (_: Exception) { "1.0.0" }
+        val currentVer = com.sourzap.app.BuildConfig.VERSION_NAME
         updateManager.checkForUpdates(currentVer).collect { state ->
-            if (state is UpdateState.Available) {
-                availableRelease = state.release
+            when (state) {
+                is UpdateState.Available -> availableRelease = state.release
+                is UpdateState.UpToDate -> availableRelease = null
+                else -> {}
             }
         }
     }

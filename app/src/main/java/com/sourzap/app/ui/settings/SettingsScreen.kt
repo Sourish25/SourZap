@@ -80,13 +80,7 @@ fun SettingsScreen(
 
     val updateManager = app.updateManager
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
-    val currentAppVersion = remember {
-        try {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.5"
-        } catch (_: Exception) {
-            "1.0.5"
-        }
-    }
+    val currentAppVersion = com.sourzap.app.BuildConfig.VERSION_NAME
 
     LaunchedEffect(showAppSheet) {
         if (showAppSheet && installedApps.isEmpty()) {
@@ -626,14 +620,6 @@ fun SettingsScreen(
 
         // About & Open Source Tile
         item {
-            val appVersionName = remember {
-                try {
-                    context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.4"
-                } catch (_: Exception) {
-                    "1.0.4"
-                }
-            }
-
             ExpressiveCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
@@ -649,7 +635,7 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "SourZap v$appVersionName",
+                            text = "SourZap v${com.sourzap.app.BuildConfig.VERSION_NAME}",
                             fontWeight = FontWeight.Black,
                             fontSize = 18.sp,
                             color = MaterialTheme.colorScheme.onSurface,
