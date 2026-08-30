@@ -7,11 +7,11 @@ import com.sourzap.app.service.TrafficMonitor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.asCoroutineDispatcher
 import java.io.FileOutputStream
 import java.io.OutputStream
 import java.net.InetAddress
@@ -25,8 +25,9 @@ import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Ultra High-Performance Low-Allocation TCP Relay Engine for VpnService TUN Interface.
- * Handles thousands of simultaneous TCP connections, 4K/8K video streaming, and BitTorrent swarm traffic
- * with zero GC thrashing, optimized 2MB socket buffers, and bulletproof connection lifecycle cleanup.
+ * Handles thousands of simultaneous TCP connections, 4K/8K video streaming, and BitTorrent swarm traffic.
+ * Implements RFC 793 TCP state machine, resilient teardown with FIN/RST packet synthesis to prevent
+ * client CLOSE_WAIT hangs, duplicate SYN de-duplication, and zero GC thrashing.
  */
 class TunTcpRelay(
     private val vpnService: VpnService,
@@ -36,8 +37,6 @@ class TunTcpRelay(
     private val sessions = ConcurrentHashMap<String, TcpSession>()
     private val isRunning = AtomicBoolean(true)
     private val activeConnectingCount = AtomicInteger(0)
-    private val MAX_CONCURRENT_CONNECTING = 48
-    private val MAX_SESSIONS = 2048
 
     private val tcpExecutor = Executors.newCachedThreadPool { r ->
         Thread(r, "SourZap-TunTcpWorker").apply { isDaemon = true }
@@ -49,6 +48,17 @@ class TunTcpRelay(
         private val EMPTY_BYTE_ARRAY = ByteArray(0)
         private const val MAX_SEGMENT_SIZE = 1400 // Fits comfortably in standard 1500 MTU
         private const val IDLE_TIMEOUT_MS = 120_000L // 2 minutes idle timeout
+        private const val LINGER_TIMEOUT_MS = 15_000L // 15 seconds TIME_WAIT / CLOSED linger
+        private const val MAX_CONCURRENT_CONNECTING = 64
+        private const val MAX_SESSIONS = 4096
+    }
+
+    enum class TcpState {
+        SYN_RECEIVED,
+        ESTABLISHED,
+        SERVER_FIN_SENT,
+        CLIENT_FIN_RECEIVED,
+        CLOSED
     }
 
     data class TcpSession(
@@ -59,12 +69,13 @@ class TunTcpRelay(
         val dstPort: Int,
         val clientSeq: AtomicLong,
         val serverSeq: AtomicLong,
-        var clientAck: Long = 0L,
-        var lastActivity: Long = System.currentTimeMillis(),
+        @Volatile var clientAck: Long = 0L,
+        @Volatile var lastActivity: Long = System.currentTimeMillis(),
+        @Volatile var state: TcpState = TcpState.SYN_RECEIVED,
         val isConnected: AtomicBoolean = AtomicBoolean(false),
         val isHandshakeDesynced: AtomicBoolean = AtomicBoolean(false),
         val isClosed: AtomicBoolean = AtomicBoolean(false),
-        val sendQueue: Channel<ByteArray> = Channel(64),
+        val sendQueue: Channel<ByteArray> = Channel(Channel.UNLIMITED),
         var socket: Socket? = null,
         var upstreamOut: OutputStream? = null,
         var streamJob: Job? = null,
@@ -74,14 +85,19 @@ class TunTcpRelay(
     init {
         scavengerJob = scope.launch(tcpDispatcher) {
             while (isActive && isRunning.get()) {
-                delay(30000)
+                delay(15000)
                 val now = System.currentTimeMillis()
                 val iterator = sessions.entries.iterator()
                 while (iterator.hasNext()) {
                     val entry = iterator.next()
                     val session = entry.value
-                    if (now - session.lastActivity > IDLE_TIMEOUT_MS) {
-                        closeSession(session.key)
+                    val isExpired = if (session.state == TcpState.CLOSED || session.state == TcpState.SERVER_FIN_SENT) {
+                        now - session.lastActivity > LINGER_TIMEOUT_MS
+                    } else {
+                        now - session.lastActivity > IDLE_TIMEOUT_MS
+                    }
+                    if (isExpired) {
+                        closeSessionInternal(session, forceRemove = true)
                     }
                 }
             }
@@ -97,37 +113,42 @@ class TunTcpRelay(
     ) {
         if (length < ipHeaderLen + 20 || !isRunning.get()) return
 
-        val tcpOffset = ipHeaderLen
-        val srcPort = ((buffer[tcpOffset].toInt() and 0xFF) shl 8) or (buffer[tcpOffset + 1].toInt() and 0xFF)
-        val dstPort = ((buffer[tcpOffset + 2].toInt() and 0xFF) shl 8) or (buffer[tcpOffset + 3].toInt() and 0xFF)
+        val tcpHeader = PacketParser.parseTcpHeader(buffer, ipHeaderLen, length) ?: return
 
-        val seqNum = (((buffer[tcpOffset + 4].toLong() and 0xFF) shl 24) or
-                ((buffer[tcpOffset + 5].toLong() and 0xFF) shl 16) or
-                ((buffer[tcpOffset + 6].toLong() and 0xFF) shl 8) or
-                (buffer[tcpOffset + 7].toLong() and 0xFF)) and 0xFFFFFFFFL
-
-        val ackNum = (((buffer[tcpOffset + 8].toLong() and 0xFF) shl 24) or
-                ((buffer[tcpOffset + 9].toLong() and 0xFF) shl 16) or
-                ((buffer[tcpOffset + 10].toLong() and 0xFF) shl 8) or
-                (buffer[tcpOffset + 11].toLong() and 0xFF)) and 0xFFFFFFFFL
-
-        val dataOffset = ((buffer[tcpOffset + 12].toInt() shr 4) and 0x0F) * 4
-        val flags = buffer[tcpOffset + 13].toInt() and 0xFF
-
-        val isSyn = (flags and 0x02) != 0
-        val isAck = (flags and 0x10) != 0
-        val isFin = (flags and 0x01) != 0
-        val isRst = (flags and 0x04) != 0
-
-        val payloadOffset = tcpOffset + dataOffset
-        val payloadLen = length - payloadOffset
+        val srcPort = tcpHeader.srcPort
+        val dstPort = tcpHeader.dstPort
+        val seqNum = tcpHeader.seqNum
+        val ackNum = tcpHeader.ackNum
+        val isSyn = tcpHeader.isSyn
+        val isAck = tcpHeader.isAck
+        val isFin = tcpHeader.isFin
+        val isRst = tcpHeader.isRst
+        val payloadOffset = tcpHeader.payloadOffset
+        val payloadLen = tcpHeader.payloadLength
 
         val sessionKey = "${srcIp.hostAddress}:$srcPort->${dstIp.hostAddress}:$dstPort"
 
         if (isSyn && !isAck) {
+            // Guard against duplicate SYN retransmission: if session already exists and active, resend SYN-ACK
+            val existing = sessions[sessionKey]
+            if (existing != null && !existing.isClosed.get() && existing.state != TcpState.CLOSED) {
+                val synAckPacket = PacketParser.buildTcpPacket(
+                    srcIp = dstIp,
+                    dstIp = srcIp,
+                    srcPort = dstPort,
+                    dstPort = srcPort,
+                    seqNum = existing.serverSeq.get(),
+                    ackNum = existing.clientSeq.get(),
+                    flags = 0x12, // SYN | ACK
+                    payload = EMPTY_BYTE_ARRAY
+                )
+                writeTunPacket(synAckPacket)
+                return
+            }
+
             // Guard against torrent swarm socket flood & socket exhaustion
             if (activeConnectingCount.get() >= MAX_CONCURRENT_CONNECTING || sessions.size >= MAX_SESSIONS) {
-                val rstPacket = buildTcpPacket(
+                val rstPacket = PacketParser.buildTcpPacket(
                     srcIp = dstIp,
                     dstIp = srcIp,
                     srcPort = dstPort,
@@ -150,12 +171,13 @@ class TunTcpRelay(
                 dstPort = dstPort,
                 clientSeq = AtomicLong((seqNum + 1) and 0xFFFFFFFFL),
                 serverSeq = AtomicLong(1000000L),
-                lastActivity = System.currentTimeMillis()
+                lastActivity = System.currentTimeMillis(),
+                state = TcpState.SYN_RECEIVED
             )
             sessions[sessionKey] = session
 
             // Reply with SYN-ACK immediately to complete handshake with client app (<1ms)
-            val synAckPacket = buildTcpPacket(
+            val synAckPacket = PacketParser.buildTcpPacket(
                 srcIp = dstIp,
                 dstIp = srcIp,
                 srcPort = dstPort,
@@ -165,7 +187,7 @@ class TunTcpRelay(
                 flags = 0x12, // SYN | ACK
                 payload = EMPTY_BYTE_ARRAY
             )
-            session.serverSeq.incrementAndGet()
+            session.serverSeq.updateAndGet { (it + 1) and 0xFFFFFFFFL }
             writeTunPacket(synAckPacket)
 
             // Connect upstream socket asynchronously on isolated thread pool
@@ -173,42 +195,77 @@ class TunTcpRelay(
             return
         }
 
-        val session = sessions[sessionKey] ?: return
+        val session = sessions[sessionKey]
+        if (session == null) {
+            // Unsolicited packet or packet for dead session: if client sent FIN or data, reject with RST|ACK
+            if (isFin || payloadLen > 0) {
+                val rstPacket = PacketParser.buildTcpPacket(
+                    srcIp = dstIp,
+                    dstIp = srcIp,
+                    srcPort = dstPort,
+                    dstPort = srcPort,
+                    seqNum = ackNum,
+                    ackNum = if (isFin) (seqNum + 1) and 0xFFFFFFFFL else (seqNum + payloadLen) and 0xFFFFFFFFL,
+                    flags = 0x14, // RST | ACK
+                    payload = EMPTY_BYTE_ARRAY
+                )
+                writeTunPacket(rstPacket)
+            }
+            return
+        }
+
         session.lastActivity = System.currentTimeMillis()
 
         if (isRst) {
-            closeSession(sessionKey)
+            closeSessionInternal(session, forceRemove = true)
             return
         }
 
         if (isFin) {
             // Client is closing connection
-            val finAck = buildTcpPacket(
+            session.state = TcpState.CLIENT_FIN_RECEIVED
+            session.clientSeq.updateAndGet { ((seqNum + 1) and 0xFFFFFFFFL) }
+
+            // Reply with ACK or FIN|ACK to client
+            val finAck = PacketParser.buildTcpPacket(
                 srcIp = dstIp,
                 dstIp = srcIp,
                 srcPort = dstPort,
                 dstPort = srcPort,
                 seqNum = session.serverSeq.get(),
-                ackNum = (seqNum + 1) and 0xFFFFFFFFL,
+                ackNum = session.clientSeq.get(),
                 flags = 0x11, // FIN | ACK
                 payload = EMPTY_BYTE_ARRAY
             )
+            session.serverSeq.updateAndGet { (it + 1) and 0xFFFFFFFFL }
             writeTunPacket(finAck)
-            closeSession(sessionKey)
+
+            // Gracefully half-close upstream write side so remote server can finish responding
+            try {
+                session.socket?.shutdownOutput()
+            } catch (_: Exception) {}
+
+            closeSessionInternal(session, forceRemove = false)
             return
         }
 
         if (isAck && payloadLen == 0) {
             session.clientAck = ackNum
+            if (session.state == TcpState.SYN_RECEIVED) {
+                session.state = TcpState.ESTABLISHED
+            } else if (session.state == TcpState.SERVER_FIN_SENT) {
+                // Client ACK'd server FIN
+                session.state = TcpState.CLOSED
+            }
         }
 
         if (payloadLen > 0) {
             // Data Payload received from App
             val payload = buffer.copyOfRange(payloadOffset, length)
-            session.clientSeq.set((seqNum + payloadLen) and 0xFFFFFFFFL)
+            session.clientSeq.updateAndGet { (seqNum + payloadLen) and 0xFFFFFFFFL }
 
             // Send immediate ACK back to app so its TCP window stays wide open
-            val ackPacket = buildTcpPacket(
+            val ackPacket = PacketParser.buildTcpPacket(
                 srcIp = dstIp,
                 dstIp = srcIp,
                 srcPort = dstPort,
@@ -220,7 +277,7 @@ class TunTcpRelay(
             )
             writeTunPacket(ackPacket)
 
-            // Enqueue in sequential FIFO channel (guarantees perfect in-order delivery)
+            // Enqueue in sequential FIFO channel
             session.sendQueue.trySend(payload)
         }
     }
@@ -232,9 +289,9 @@ class TunTcpRelay(
             var socketConnected = false
             try {
                 val socket = Socket().apply {
-                    receiveBufferSize = 2097152 // 2MB Turbo Receive Buffer for 4K/8K media & Gigabit downloads
+                    receiveBufferSize = 2097152 // 2MB Turbo Receive Buffer
                     sendBufferSize = 1048576    // 1MB Send Buffer
-                    tcpNoDelay = true           // Disable Nagle's algorithm for minimum roundtrip latency
+                    tcpNoDelay = true           // Disable Nagle's algorithm
                     keepAlive = true
                     soTimeout = 0               // Persistent keepalive
                     trafficClass = 0x08         // IPTOS_THROUGHPUT
@@ -242,12 +299,13 @@ class TunTcpRelay(
                 }
 
                 vpnService.protect(socket)
-                socket.connect(InetSocketAddress(session.dstIp, session.dstPort), 2500)
+                socket.connect(InetSocketAddress(session.dstIp, session.dstPort), 3000)
 
                 session.socket = socket
                 val upstreamOut = socket.getOutputStream()
                 session.upstreamOut = upstreamOut
                 session.isConnected.set(true)
+                session.state = TcpState.ESTABLISHED
                 socketConnected = true
                 activeConnectingCount.decrementAndGet()
 
@@ -289,7 +347,7 @@ class TunTcpRelay(
                             }
                         }
                     } catch (_: Exception) {
-                        closeSession(session.key)
+                        closeSessionInternal(session, forceRemove = false)
                     }
                 }
 
@@ -306,19 +364,20 @@ class TunTcpRelay(
                             var offset = 0
                             while (offset < bytesRead) {
                                 val chunkLen = minOf(bytesRead - offset, MAX_SEGMENT_SIZE)
-                                val dataPacket = buildTcpPacket(
+                                val currentSeq = session.serverSeq.get()
+                                val dataPacket = PacketParser.buildTcpPacket(
                                     srcIp = session.dstIp,
                                     dstIp = session.srcIp,
                                     srcPort = session.dstPort,
                                     dstPort = session.srcPort,
-                                    seqNum = session.serverSeq.get(),
+                                    seqNum = currentSeq,
                                     ackNum = session.clientSeq.get(),
                                     flags = 0x18, // PSH | ACK
                                     payload = readBuffer,
                                     payloadOffset = offset,
                                     payloadLen = chunkLen
                                 )
-                                session.serverSeq.addAndGet(chunkLen.toLong())
+                                session.serverSeq.updateAndGet { (it + chunkLen) and 0xFFFFFFFFL }
                                 writeTunPacket(dataPacket)
                                 offset += chunkLen
                             }
@@ -329,9 +388,10 @@ class TunTcpRelay(
                     ByteArrayPool.recycleStreamBuffer(readBuffer)
                 }
 
-                // Upstream EOF: send FIN-ACK to client
-                if (session.isConnected.get()) {
-                    val finAck = buildTcpPacket(
+                // Upstream EOF reached: send FIN-ACK to client app TUN interface
+                if (session.isConnected.get() && session.state != TcpState.CLOSED) {
+                    session.state = TcpState.SERVER_FIN_SENT
+                    val finAck = PacketParser.buildTcpPacket(
                         srcIp = session.dstIp,
                         dstIp = session.srcIp,
                         srcPort = session.dstPort,
@@ -341,25 +401,27 @@ class TunTcpRelay(
                         flags = 0x11, // FIN | ACK
                         payload = EMPTY_BYTE_ARRAY
                     )
+                    session.serverSeq.updateAndGet { (it + 1) and 0xFFFFFFFFL }
                     writeTunPacket(finAck)
                 }
             } catch (_: Exception) {
                 if (!socketConnected) {
                     activeConnectingCount.decrementAndGet()
                 }
-                val rstPacket = buildTcpPacket(
+                // Send RST | ACK on upstream connect or runtime socket failures so client apps never hang in CLOSE_WAIT
+                val rstPacket = PacketParser.buildTcpPacket(
                     srcIp = session.dstIp,
                     dstIp = session.srcIp,
                     srcPort = session.dstPort,
                     dstPort = session.srcPort,
                     seqNum = session.serverSeq.get(),
                     ackNum = session.clientSeq.get(),
-                    flags = 0x04, // RST
+                    flags = 0x14, // RST | ACK
                     payload = EMPTY_BYTE_ARRAY
                 )
                 writeTunPacket(rstPacket)
             } finally {
-                closeSession(session.key)
+                closeSessionInternal(session, forceRemove = false)
                 TrafficMonitor.onConnectionClosed()
             }
         }
@@ -374,10 +436,10 @@ class TunTcpRelay(
         } catch (_: Exception) {}
     }
 
-    private fun closeSession(key: String) {
-        val session = sessions.remove(key) ?: return
+    private fun closeSessionInternal(session: TcpSession, forceRemove: Boolean) {
         if (session.isClosed.compareAndSet(false, true)) {
             session.isConnected.set(false)
+            session.state = TcpState.CLOSED
             session.sendQueue.close()
             session.senderJob?.cancel()
             session.streamJob?.cancel()
@@ -385,162 +447,18 @@ class TunTcpRelay(
                 session.socket?.close()
             } catch (_: Exception) {}
         }
+        if (forceRemove) {
+            sessions.remove(session.key)
+        }
     }
 
     fun closeAll() {
         isRunning.set(false)
         scavengerJob?.cancel()
-        sessions.keys().toList().forEach { closeSession(it) }
+        sessions.values.forEach { closeSessionInternal(it, forceRemove = true) }
+        sessions.clear()
         try {
             tcpExecutor.shutdownNow()
         } catch (_: Exception) {}
-    }
-
-    /**
-     * Synthesizes a 100% RFC-Compliant IPv4 + TCP packet with checksums.
-     * Supports slicing directly from source buffer to eliminate intermediate ByteArray copies.
-     */
-    private fun buildTcpPacket(
-        srcIp: InetAddress,
-        dstIp: InetAddress,
-        srcPort: Int,
-        dstPort: Int,
-        seqNum: Long,
-        ackNum: Long,
-        flags: Int,
-        payload: ByteArray = EMPTY_BYTE_ARRAY,
-        payloadOffset: Int = 0,
-        payloadLen: Int = payload.size
-    ): ByteArray {
-        val ipHeaderLen = 20
-        val isSynAck = (flags == 0x12)
-        val tcpHeaderLen = if (isSynAck) 24 else 20
-        val totalLength = ipHeaderLen + tcpHeaderLen + payloadLen
-        val packet = ByteArray(totalLength)
-
-        // --- IPv4 Header (20 bytes) ---
-        packet[0] = 0x45.toByte() // IPv4, IHL = 5
-        packet[1] = 0x00.toByte() // TOS
-        packet[2] = ((totalLength shr 8) and 0xFF).toByte()
-        packet[3] = (totalLength and 0xFF).toByte()
-        packet[4] = 0x00.toByte() // ID
-        packet[5] = 0x00.toByte()
-        packet[6] = 0x40.toByte() // Don't Fragment
-        packet[7] = 0x00.toByte()
-        packet[8] = 64.toByte()   // TTL
-        packet[9] = 6.toByte()    // Protocol: TCP (6)
-        packet[10] = 0x00.toByte() // Checksum placeholder
-        packet[11] = 0x00.toByte()
-
-        System.arraycopy(srcIp.address, 0, packet, 12, 4)
-        System.arraycopy(dstIp.address, 0, packet, 16, 4)
-
-        // IP Checksum
-        val ipChecksum = computeIpChecksum(packet, 0, ipHeaderLen)
-        packet[10] = ((ipChecksum.toInt() shr 8) and 0xFF).toByte()
-        packet[11] = (ipChecksum.toInt() and 0xFF).toByte()
-
-        // --- TCP Header (20 or 24 bytes) ---
-        val tcpOffset = ipHeaderLen
-        packet[tcpOffset] = ((srcPort shr 8) and 0xFF).toByte()
-        packet[tcpOffset + 1] = (srcPort and 0xFF).toByte()
-        packet[tcpOffset + 2] = ((dstPort shr 8) and 0xFF).toByte()
-        packet[tcpOffset + 3] = (dstPort and 0xFF).toByte()
-
-        // Sequence Number (4 bytes)
-        packet[tcpOffset + 4] = ((seqNum shr 24) and 0xFF).toByte()
-        packet[tcpOffset + 5] = ((seqNum shr 16) and 0xFF).toByte()
-        packet[tcpOffset + 6] = ((seqNum shr 8) and 0xFF).toByte()
-        packet[tcpOffset + 7] = (seqNum and 0xFF).toByte()
-
-        // Acknowledgment Number (4 bytes)
-        packet[tcpOffset + 8] = ((ackNum shr 24) and 0xFF).toByte()
-        packet[tcpOffset + 9] = ((ackNum shr 16) and 0xFF).toByte()
-        packet[tcpOffset + 10] = ((ackNum shr 8) and 0xFF).toByte()
-        packet[tcpOffset + 11] = (ackNum and 0xFF).toByte()
-
-        // Data Offset (5 or 6 words) & Reserved
-        packet[tcpOffset + 12] = ((tcpHeaderLen / 4) shl 4).toByte()
-        // Flags
-        packet[tcpOffset + 13] = flags.toByte()
-
-        // Window Size (65535 bytes max standard window)
-        packet[tcpOffset + 14] = 0xFF.toByte()
-        packet[tcpOffset + 15] = 0xFF.toByte()
-
-        // Checksum placeholder
-        packet[tcpOffset + 16] = 0x00.toByte()
-        packet[tcpOffset + 17] = 0x00.toByte()
-
-        // Urgent Pointer
-        packet[tcpOffset + 18] = 0x00.toByte()
-        packet[tcpOffset + 19] = 0x00.toByte()
-
-        // TCP Options: MSS 1400 (Kind 2, Len 4, Value 1400 [0x05, 0x78]) for SYN-ACK
-        if (isSynAck) {
-            packet[tcpOffset + 20] = 0x02.toByte()
-            packet[tcpOffset + 21] = 0x04.toByte()
-            packet[tcpOffset + 22] = 0x05.toByte()
-            packet[tcpOffset + 23] = 0x78.toByte()
-        }
-
-        // --- Payload ---
-        if (payloadLen > 0) {
-            System.arraycopy(payload, payloadOffset, packet, tcpOffset + tcpHeaderLen, payloadLen)
-        }
-
-        // Compute TCP Checksum with IPv4 Pseudo-Header
-        val tcpLen = tcpHeaderLen + payloadLen
-        val tcpChecksum = computeTcpChecksum(packet, tcpOffset, tcpLen, srcIp.address, dstIp.address)
-        packet[tcpOffset + 16] = ((tcpChecksum.toInt() shr 8) and 0xFF).toByte()
-        packet[tcpOffset + 17] = (tcpChecksum.toInt() and 0xFF).toByte()
-
-        return packet
-    }
-
-    private fun computeIpChecksum(data: ByteArray, offset: Int, length: Int): Short {
-        var sum = 0
-        for (i in offset until offset + length step 2) {
-            val word = if (i + 1 < offset + length) {
-                ((data[i].toInt() and 0xFF) shl 8) or (data[i + 1].toInt() and 0xFF)
-            } else {
-                ((data[i].toInt() and 0xFF) shl 8)
-            }
-            sum += word
-        }
-        while ((sum shr 16) > 0) {
-            sum = (sum and 0xFFFF) + (sum shr 16)
-        }
-        return (sum.inv() and 0xFFFF).toShort()
-    }
-
-    private fun computeTcpChecksum(
-        packet: ByteArray,
-        tcpOffset: Int,
-        tcpLen: Int,
-        srcIp: ByteArray,
-        dstIp: ByteArray
-    ): Short {
-        var sum = 0
-
-        // Pseudo Header
-        for (i in 0 until 4 step 2) {
-            sum += ((srcIp[i].toInt() and 0xFF) shl 8) or (srcIp[i + 1].toInt() and 0xFF)
-            sum += ((dstIp[i].toInt() and 0xFF) shl 8) or (dstIp[i + 1].toInt() and 0xFF)
-        }
-        sum += 6 // Protocol TCP
-        sum += tcpLen
-
-        // TCP Header and Payload
-        for (i in tcpOffset until tcpOffset + tcpLen step 2) {
-            val b1 = packet[i].toInt() and 0xFF
-            val b2 = if (i + 1 < tcpOffset + tcpLen) packet[i + 1].toInt() and 0xFF else 0
-            sum += (b1 shl 8) or b2
-        }
-
-        while ((sum shr 16) > 0) {
-            sum = (sum and 0xFFFF) + (sum shr 16)
-        }
-        return (sum.inv() and 0xFFFF).toShort()
     }
 }

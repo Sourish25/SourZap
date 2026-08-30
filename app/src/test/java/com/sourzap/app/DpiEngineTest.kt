@@ -13,6 +13,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.InetAddress
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class DpiEngineTest {
 
@@ -67,6 +70,48 @@ class DpiEngineTest {
     }
 
     @Test
+    fun testTlsParser_MalformedClientHelloAdversarialFuzzing() {
+        // Valid fake ClientHello as baseline
+        val base = TlsParser.createFakeClientHello("test.com")
+
+        // 1. Truncate at session ID length offset (byte 43)
+        val truncatedAtSessionId = base.copyOfRange(0, 44)
+        truncatedAtSessionId[43] = 32.toByte() // Declares 32 bytes session ID, but only 44 bytes total!
+        val res1 = TlsParser.parseClientHello(truncatedAtSessionId, truncatedAtSessionId.size)
+        assertTrue(res1.isClientHello)
+        assertNull(res1.hostname)
+
+        // 2. Cipher suites length declared huge (0xFFFF) at offset 44, 45
+        val corruptCiphers = base.copyOf()
+        corruptCiphers[44] = 0xFF.toByte() // Cipher suites len MSB
+        corruptCiphers[45] = 0xFF.toByte() // Cipher suites len LSB
+        val res2 = TlsParser.parseClientHello(corruptCiphers, corruptCiphers.size)
+        assertTrue(res2.isClientHello)
+        assertNull(res2.hostname)
+
+        // 3. Extensions length declared overflowing
+        val parsedBase = TlsParser.parseClientHello(base, base.size)
+        val extOffset = parsedBase.sniExtensionOffset
+        if (extOffset > 4) {
+            val corruptExtLen = base.copyOf()
+            corruptExtLen[extOffset - 2] = 0xFF.toByte()
+            corruptExtLen[extOffset - 1] = 0xFF.toByte()
+            val res3 = TlsParser.parseClientHello(corruptExtLen, corruptExtLen.size)
+            assertTrue(res3.isClientHello)
+        }
+
+        // 4. Corrupt SNI NameType (set to 0x01 instead of 0x00 host_name)
+        val hostOffset = parsedBase.sniHostOffset
+        if (hostOffset > 3) {
+            val corruptType = base.copyOf()
+            corruptType[hostOffset - 3] = 0x01.toByte() // Unknown NameType
+            val res4 = TlsParser.parseClientHello(corruptType, corruptType.size)
+            assertTrue(res4.isClientHello)
+            assertNull("Non-host_name SNI type must return null hostname", res4.hostname)
+        }
+    }
+
+    @Test
     fun testHttpParser_AllMethodsAndHostExtraction() {
         val methods = listOf("GET", "POST", "HEAD", "OPTIONS", "PUT", "DELETE", "CONNECT")
         for (m in methods) {
@@ -109,6 +154,33 @@ class DpiEngineTest {
         val result = HttpParser.parseHttpRequest(randomBytes, randomBytes.size)
         assertFalse(result.isHttp)
         assertNull(result.method)
+    }
+
+    @Test
+    fun testHttpParser_AdversarialHeadersAndEdgeCases() {
+        // Request with newline only (\n instead of \r\n)
+        val newlineOnly = "GET /test HTTP/1.1\nHost: unix.example.com\nUser-Agent: curl\n\n".toByteArray(Charsets.US_ASCII)
+        val r1 = HttpParser.parseHttpRequest(newlineOnly, newlineOnly.size)
+        assertTrue(r1.isHttp)
+        assertEquals("GET", r1.method)
+        assertEquals("unix.example.com", r1.host)
+
+        // Multiple Host headers (first one parsed)
+        val multiHost = "POST /api HTTP/1.1\r\nHost: primary.com\r\nHost: secondary.com\r\n\r\n".toByteArray(Charsets.US_ASCII)
+        val r2 = HttpParser.parseHttpRequest(multiHost, multiHost.size)
+        assertTrue(r2.isHttp)
+        assertEquals("primary.com", r2.host)
+
+        // IPv6 literal host header
+        val ipv6Host = "GET / HTTP/1.1\r\nHost: [2001:db8::1]:8443\r\n\r\n".toByteArray(Charsets.US_ASCII)
+        val r3 = HttpParser.parseHttpRequest(ipv6Host, ipv6Host.size)
+        assertTrue(r3.isHttp)
+        assertEquals("[2001:db8::1]:8443", r3.host)
+
+        // Truncated buffer (< 10 bytes)
+        val shortHttp = "GET /".toByteArray(Charsets.US_ASCII)
+        val r4 = HttpParser.parseHttpRequest(shortHttp, shortHttp.size)
+        assertFalse(r4.isHttp)
     }
 
     @Test
@@ -417,5 +489,37 @@ class DpiEngineTest {
 
         val pBuf2 = ByteArrayPool.obtainPacketBuffer()
         assertEquals(ByteArrayPool.PACKET_BUFFER_SIZE, pBuf2.size)
+    }
+
+    @Test
+    fun testByteArrayPool_MultithreadedHighThroughputStress() {
+        val threadCount = 20
+        val opsPerThread = 1000
+        val executor = Executors.newFixedThreadPool(threadCount)
+        val errors = AtomicInteger(0)
+
+        for (t in 0 until threadCount) {
+            executor.submit {
+                try {
+                    for (i in 0 until opsPerThread) {
+                        val sBuf = ByteArrayPool.obtainStreamBuffer()
+                        assertEquals(ByteArrayPool.BUFFER_SIZE, sBuf.size)
+                        sBuf[0] = (i and 0xFF).toByte()
+                        ByteArrayPool.recycleStreamBuffer(sBuf)
+
+                        val pBuf = ByteArrayPool.obtainPacketBuffer()
+                        assertEquals(ByteArrayPool.PACKET_BUFFER_SIZE, pBuf.size)
+                        pBuf[0] = (i and 0xFF).toByte()
+                        ByteArrayPool.recyclePacketBuffer(pBuf)
+                    }
+                } catch (e: Throwable) {
+                    errors.incrementAndGet()
+                }
+            }
+        }
+
+        executor.shutdown()
+        assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS))
+        assertEquals("ByteArrayPool must be 100% thread-safe under concurrent stress", 0, errors.get())
     }
 }

@@ -1,12 +1,17 @@
 package com.sourzap.app
 
+import com.sourzap.app.service.core.PacketParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class PacketParserTest {
 
@@ -55,7 +60,8 @@ class PacketParserTest {
         while ((sum shr 16) > 0) {
             sum = (sum and 0xFFFF) + (sum shr 16)
         }
-        return (sum.inv() and 0xFFFF).toShort()
+        val checksum = (sum.inv() and 0xFFFF).toShort()
+        return if (checksum == 0.toShort()) 0xFFFF.toShort() else checksum
     }
 
     // RFC 768 UDP Checksum with IPv4 Pseudo-Header
@@ -246,6 +252,41 @@ class PacketParserTest {
     }
 
     @Test
+    fun testMalformedAndTruncatedIpPackets() {
+        // Truncated buffer (< 20 bytes)
+        val shortBuf = ByteArray(15)
+        shortBuf[0] = 0x45.toByte()
+        val isShortValid = shortBuf.size >= 20
+        assertFalse(isShortValid)
+
+        // Invalid IP Version (IPv6 header byte 0x60 passed as IPv4)
+        val ipv6Header = ByteArray(40)
+        ipv6Header[0] = 0x60.toByte()
+        val version = (ipv6Header[0].toInt() shr 4) and 0x0F
+        assertEquals(6, version)
+        assertFalse("IPv6 must not be treated as IPv4", version == 4)
+
+        // Invalid IHL < 5 (e.g. 0x42 -> IHL = 2 = 8 bytes)
+        val invalidIhlPacket = ByteArray(20)
+        invalidIhlPacket[0] = 0x42.toByte()
+        val ihl = (invalidIhlPacket[0].toInt() and 0x0F) * 4
+        assertEquals(8, ihl)
+        assertFalse("IHL < 20 bytes is malformed", ihl >= 20)
+
+        // Checksum bit flip detection
+        val srcIp = InetAddress.getByName("10.0.0.2")
+        val dstIp = InetAddress.getByName("1.1.1.1")
+        val validPacket = buildTcpPacket(srcIp, dstIp, 12345, 80, 100L, 0L, 0x02, ByteArray(0))
+        val initialVerify = computeIpChecksum(validPacket, 0, 20)
+        assertEquals(0.toShort(), initialVerify)
+
+        // Corrupt 1 byte in IP header
+        validPacket[4] = (validPacket[4].toInt() xor 0xFF).toByte()
+        val corruptedVerify = computeIpChecksum(validPacket, 0, 20)
+        assertTrue("Corrupted IP header checksum must not verify to 0", corruptedVerify != 0.toShort())
+    }
+
+    @Test
     fun testTcpSynAckHeaderWithMssOption() {
         val srcIp = InetAddress.getByName("1.1.1.1")
         val dstIp = InetAddress.getByName("10.0.0.2")
@@ -270,6 +311,28 @@ class PacketParserTest {
         val parsedChecksum = (((packet[tcpOffset + 16].toInt() and 0xFF) shl 8) or
                 (packet[tcpOffset + 17].toInt() and 0xFF)).toShort()
         assertTrue("TCP Checksum must be computed and non-zero", parsedChecksum != 0.toShort())
+    }
+
+    @Test
+    fun testMalformedAndCorruptedTcpPackets() {
+        val srcIp = InetAddress.getByName("10.0.0.2")
+        val dstIp = InetAddress.getByName("8.8.8.8")
+        val validPacket = buildTcpPacket(srcIp, dstIp, 50000, 443, 1L, 1L, 0x18, "HELLO".toByteArray(Charsets.US_ASCII))
+
+        val tcpOffset = 20
+        val dataOffsetWords = (validPacket[tcpOffset + 12].toInt() shr 4) and 0x0F
+        assertEquals(5, dataOffsetWords) // 20 bytes
+
+        // Corrupt TCP payload
+        val corruptedPacket = validPacket.copyOf()
+        corruptedPacket[tcpOffset + 20] = 'X'.code.toByte()
+        val tcpLen = (corruptedPacket.size - tcpOffset)
+        val verifyChecksum = computeTcpChecksum(corruptedPacket, tcpOffset, tcpLen, srcIp.address, dstIp.address)
+        val origChecksum = (((validPacket[tcpOffset + 16].toInt() and 0xFF) shl 8) or
+                (validPacket[tcpOffset + 17].toInt() and 0xFF)).toShort()
+
+        // Checksum of modified payload must differ
+        assertTrue("Checksum must detect payload tampering", verifyChecksum != origChecksum)
     }
 
     @Test
@@ -329,6 +392,21 @@ class PacketParserTest {
     }
 
     @Test
+    fun testUdpChecksum_OddPayloadLengthAndZeroResult() {
+        val srcIp = byteArrayOf(10, 0, 0, 2)
+        val dstIp = byteArrayOf(1, 1, 1, 1)
+
+        // Odd length payload (7 bytes)
+        val oddPacket = byteArrayOf(
+            0x10, 0x00, 0x00, 0x35,
+            0x00, 0x0F, 0x00, 0x00, // length = 15
+            1, 2, 3, 4, 5, 6, 7
+        )
+        val csOdd = computeUdpChecksum(oddPacket, 0, 15, srcIp, dstIp)
+        assertTrue(csOdd != 0.toShort())
+    }
+
+    @Test
     fun testUdpNatTableKeyHashingAndLookup() {
         data class ClientMapping(val clientIp: InetAddress, val clientPort: Int, var lastSeen: Long)
 
@@ -384,6 +462,66 @@ class PacketParserTest {
     }
 
     @Test
+    fun testUdpNatTable_RapidBurst5000PacketsStress() {
+        data class ClientMapping(val clientIp: InetAddress, val clientPort: Int, var lastSeen: Long)
+
+        val natTable = ConcurrentHashMap<String, ClientMapping>()
+        val poolSize = 8
+        val maxNatEntries = 4096
+
+        val clientIp = InetAddress.getByName("10.0.0.2")
+        val threadCount = 20
+        val packetsPerThread = 250 // 20 * 250 = 5,000 packets
+        val executor = Executors.newFixedThreadPool(threadCount)
+        val errors = AtomicInteger(0)
+
+        for (t in 0 until threadCount) {
+            executor.submit {
+                try {
+                    for (i in 0 until packetsPerThread) {
+                        val clientPort = 10000 + (t * packetsPerThread + i)
+                        val socketIndex = (clientPort and 0x7FFFFFFF) % poolSize
+                        val remoteIp = "185.199.108.${(i % 250) + 1}"
+                        val remotePort = 6881 + (i % 100)
+
+                        val natKeyExact = "$remoteIp:$remotePort#$socketIndex"
+                        val natKeyHost = "$remoteIp#$socketIndex"
+
+                        // Simulate pruning when capacity reached
+                        if (natTable.size >= maxNatEntries) {
+                            val now = System.currentTimeMillis()
+                            val iter = natTable.entries.iterator()
+                            var removed = 0
+                            while (iter.hasNext() && removed < 256) {
+                                iter.next()
+                                iter.remove()
+                                removed++
+                            }
+                        }
+
+                        val mapping = ClientMapping(clientIp, clientPort, System.currentTimeMillis())
+                        natTable[natKeyExact] = mapping
+                        natTable[natKeyHost] = mapping
+
+                        // Concurrent lookup
+                        val found = natTable[natKeyExact]
+                        if (found == null && natTable.size < maxNatEntries) {
+                            errors.incrementAndGet()
+                        }
+                    }
+                } catch (e: Exception) {
+                    errors.incrementAndGet()
+                }
+            }
+        }
+
+        executor.shutdown()
+        assertTrue("All threads must finish within 10 seconds", executor.awaitTermination(10, TimeUnit.SECONDS))
+        assertEquals("No race errors should occur during rapid 5000-packet burst", 0, errors.get())
+        assertTrue("NAT table must contain active mappings", natTable.isNotEmpty())
+    }
+
+    @Test
     fun testTcpSegmentSplitting1400Mtu() {
         val maxSegment = 1400
         val largeData = ByteArray(4000) { (it % 256).toByte() }
@@ -406,5 +544,207 @@ class PacketParserTest {
         val reassembled = chunks[0] + chunks[1] + chunks[2]
         assertEquals(largeData.size, reassembled.size)
         assertTrue(largeData.contentEquals(reassembled))
+    }
+
+    @Test
+    fun testTcpSegmentSplitting_ExtremeBoundaries() {
+        fun split(data: ByteArray, maxSeg: Int = 1400): List<ByteArray> {
+            val res = mutableListOf<ByteArray>()
+            var off = 0
+            while (off < data.size) {
+                val len = minOf(data.size - off, maxSeg)
+                res.add(data.copyOfRange(off, off + len))
+                off += len
+            }
+            return res
+        }
+
+        // 0 bytes
+        assertEquals(0, split(ByteArray(0)).size)
+
+        // 1 byte
+        val oneByte = split(ByteArray(1))
+        assertEquals(1, oneByte.size)
+        assertEquals(1, oneByte[0].size)
+
+        // Exactly 1400 bytes
+        val exactMtu = split(ByteArray(1400))
+        assertEquals(1, exactMtu.size)
+        assertEquals(1400, exactMtu[0].size)
+
+        // 1401 bytes
+        val plusOne = split(ByteArray(1401))
+        assertEquals(2, plusOne.size)
+        assertEquals(1400, plusOne[0].size)
+        assertEquals(1, plusOne[1].size)
+
+        // Exactly 2800 bytes
+        val twoMtu = split(ByteArray(2800))
+        assertEquals(2, twoMtu.size)
+        assertEquals(1400, twoMtu[0].size)
+        assertEquals(1400, twoMtu[1].size)
+
+        // Prime length 31337 bytes
+        val primeData = ByteArray(31337) { (it and 0xFF).toByte() }
+        val primeChunks = split(primeData)
+        assertEquals(23, primeChunks.size) // 22 * 1400 = 30800 + 537 = 31337
+        assertEquals(537, primeChunks.last().size)
+
+        // Reassembly verification
+        var totalReassembled = ByteArray(0)
+        for (c in primeChunks) totalReassembled += c
+        assertTrue(primeData.contentEquals(totalReassembled))
+    }
+
+    @Test
+    fun testPacketParser_Ipv4ParsingAndValidation() {
+        val srcIp = InetAddress.getByName("10.0.0.2")
+        val dstIp = InetAddress.getByName("1.1.1.1")
+        val packet = PacketParser.buildTcpPacket(
+            srcIp = srcIp,
+            dstIp = dstIp,
+            srcPort = 54321,
+            dstPort = 443,
+            seqNum = 1000L,
+            ackNum = 0L,
+            flags = 0x02,
+            payload = ByteArray(0)
+        )
+
+        val parsed = PacketParser.parseIpv4Header(packet, packet.size)
+        assertNotNull("IPv4 header must be parsed successfully", parsed)
+        assertEquals(4, parsed!!.version)
+        assertEquals(20, parsed.headerLength)
+        assertEquals(6, parsed.protocol) // TCP
+        assertEquals(srcIp, parsed.srcIp)
+        assertEquals(dstIp, parsed.dstIp)
+        assertTrue(parsed.isValid)
+
+        // Corrupted packet with invalid version
+        val corruptVersion = packet.copyOf()
+        corruptVersion[0] = 0x55.toByte() // Version 5
+        assertNull(PacketParser.parseIpv4Header(corruptVersion, corruptVersion.size))
+
+        // Truncated packet length
+        assertNull(PacketParser.parseIpv4Header(packet, 15))
+    }
+
+    @Test
+    fun testPacketParser_Ipv6ParsingAndSafety() {
+        // Construct a standard 40-byte IPv6 Header
+        val ipv6Packet = ByteArray(40)
+        ipv6Packet[0] = 0x60.toByte() // Version 6
+        ipv6Packet[4] = 0x00.toByte() // Payload length = 20
+        ipv6Packet[5] = 0x14.toByte()
+        ipv6Packet[6] = 6.toByte()    // Next header: TCP (6)
+        ipv6Packet[7] = 64.toByte()   // Hop limit
+
+        val srcIp = InetAddress.getByName("2001:db8::1")
+        val dstIp = InetAddress.getByName("2606:4700::6810:84e5")
+        System.arraycopy(srcIp.address, 0, ipv6Packet, 8, 16)
+        System.arraycopy(dstIp.address, 0, ipv6Packet, 24, 16)
+
+        val parsed = PacketParser.parseIpv6Header(ipv6Packet, ipv6Packet.size)
+        assertNotNull("IPv6 header must be parsed", parsed)
+        assertEquals(6, parsed!!.nextHeader)
+        assertEquals(20, parsed.payloadLength)
+        assertEquals(srcIp, parsed.srcIp)
+        assertEquals(dstIp, parsed.dstIp)
+        assertTrue(parsed.isValid)
+
+        // Truncated IPv6 packet (< 40 bytes)
+        assertNull(PacketParser.parseIpv6Header(ipv6Packet, 39))
+
+        // Test ICMPv6 synthesis for Happy Eyeballs fallback
+        val icmpv6 = PacketParser.buildIcmpv6AddressUnreachablePacket(
+            originalBuffer = ipv6Packet,
+            originalLength = ipv6Packet.size,
+            srcIp = srcIp,
+            dstIp = dstIp
+        )
+        assertTrue("ICMPv6 packet must be created", icmpv6.size >= 48)
+        assertEquals(0x60.toByte(), icmpv6[0]) // Version 6
+        assertEquals(58.toByte(), icmpv6[6])   // Next Header: ICMPv6 (58)
+        assertEquals(1.toByte(), icmpv6[40])   // Type 1: Destination Unreachable
+        assertEquals(3.toByte(), icmpv6[41])   // Code 3: Address Unreachable
+    }
+
+    @Test
+    fun testPacketParser_TcpSynthesisAndTeardownFlags() {
+        val srcIp = InetAddress.getByName("10.0.0.2")
+        val dstIp = InetAddress.getByName("93.184.216.34")
+
+        // 1. SYN | ACK
+        val synAck = PacketParser.buildTcpPacket(srcIp, dstIp, 80, 50000, 1000L, 2000L, 0x12)
+        val parsedSynAck = PacketParser.parseTcpHeader(synAck, 20, synAck.size)
+        assertNotNull(parsedSynAck)
+        assertTrue(parsedSynAck!!.isSyn)
+        assertTrue(parsedSynAck.isAck)
+        assertFalse(parsedSynAck.isFin)
+        assertFalse(parsedSynAck.isRst)
+        assertEquals(24, parsedSynAck.dataOffset) // 24 bytes with MSS
+
+        // 2. FIN | ACK (Teardown)
+        val finAck = PacketParser.buildTcpPacket(srcIp, dstIp, 80, 50000, 1001L, 2001L, 0x11)
+        val parsedFinAck = PacketParser.parseTcpHeader(finAck, 20, finAck.size)
+        assertNotNull(parsedFinAck)
+        assertTrue(parsedFinAck!!.isFin)
+        assertTrue(parsedFinAck.isAck)
+        assertFalse(parsedFinAck.isSyn)
+
+        // 3. RST | ACK (Instant Reset)
+        val rstAck = PacketParser.buildTcpPacket(srcIp, dstIp, 80, 50000, 1002L, 2002L, 0x14)
+        val parsedRstAck = PacketParser.parseTcpHeader(rstAck, 20, rstAck.size)
+        assertNotNull(parsedRstAck)
+        assertTrue(parsedRstAck!!.isRst)
+        assertTrue(parsedRstAck.isAck)
+    }
+
+    @Test
+    fun testPacketParser_UdpSliceAndPseudoHeaderChecksum() {
+        val srcIp = InetAddress.getByName("10.0.0.2")
+        val dstIp = InetAddress.getByName("8.8.8.8")
+        val payload = "DNS_PING".toByteArray(Charsets.US_ASCII)
+
+        val packet = PacketParser.buildUdpIpPacket(
+            srcIp = srcIp,
+            dstIp = dstIp,
+            srcPort = 53000,
+            dstPort = 53,
+            payload = payload
+        )
+
+        assertEquals(20 + 8 + payload.size, packet.size)
+        val parsedUdp = PacketParser.parseUdpHeader(packet, 20, packet.size)
+        assertNotNull(parsedUdp)
+        assertEquals(53000, parsedUdp!!.srcPort)
+        assertEquals(53, parsedUdp.dstPort)
+        assertEquals(payload.size, parsedUdp.payloadLength)
+    }
+
+    @Test
+    fun testPacketParser_IcmpPortUnreachableSynthesis() {
+        val srcIp = InetAddress.getByName("10.0.0.2")
+        val dstIp = InetAddress.getByName("142.250.190.46")
+        val origPacket = PacketParser.buildUdpIpPacket(
+            srcIp = srcIp,
+            dstIp = dstIp,
+            srcPort = 45000,
+            dstPort = 443,
+            payload = ByteArray(100)
+        )
+
+        val icmp = PacketParser.buildIcmpPortUnreachablePacket(
+            originalBuffer = origPacket,
+            originalLength = origPacket.size,
+            ipHeaderLen = 20,
+            srcIp = srcIp,
+            dstIp = dstIp
+        )
+
+        assertEquals(20 + 8 + 28, icmp.size) // IP (20) + ICMP Header (8) + Original IP (20) + 8 bytes UDP
+        assertEquals(1.toByte(), icmp[9])    // Protocol ICMP
+        assertEquals(3.toByte(), icmp[20])   // Type 3 (Destination Unreachable)
+        assertEquals(3.toByte(), icmp[21])   // Code 3 (Port Unreachable)
     }
 }

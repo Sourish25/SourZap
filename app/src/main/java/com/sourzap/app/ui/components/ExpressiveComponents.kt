@@ -69,6 +69,12 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -127,6 +133,12 @@ fun HeroConnectButton(
 
     val heroShape = RoundedCornerShape(38.dp)
 
+    val accessibilityDescription = if (isConnected) {
+        "Zapret DPI bypass active. Tap to disconnect."
+    } else {
+        "Zapret DPI bypass disconnected. Tap to activate."
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -141,6 +153,11 @@ fun HeroConnectButton(
             .clip(heroShape)
             .border(2.dp, borderColor, heroShape)
             .background(containerColor)
+            .semantics(mergeDescendants = true) {
+                role = Role.Switch
+                contentDescription = accessibilityDescription
+                stateDescription = if (isConnected) "Active" else "Disconnected"
+            }
             .pointerInput(isConnected) {
                 detectTapGestures(
                     onPress = {
@@ -229,7 +246,11 @@ fun ExpressiveChip(
 ) {
     val pillShape = RoundedCornerShape(20.dp)
     Surface(
-        modifier = modifier.clip(pillShape),
+        modifier = modifier
+            .clip(pillShape)
+            .semantics(mergeDescendants = true) {
+                contentDescription = text
+            },
         shape = pillShape,
         color = backgroundColor
     ) {
@@ -308,10 +329,18 @@ fun ExpressiveMetricTile(
         }
     } else Modifier
 
+    val tileDesc = "$title: $value" + (unit?.let { " $it" } ?: "") + (subtitle?.let { " ($it)" } ?: "")
+
     Surface(
         modifier = modifier
             .border(1.dp, borderColor, tileShape)
             .clip(tileShape)
+            .semantics(mergeDescendants = true) {
+                contentDescription = tileDesc
+                if (onClick != null) {
+                    role = Role.Button
+                }
+            }
             .then(clickableModifier),
         shape = tileShape,
         color = backgroundColor
@@ -413,7 +442,10 @@ fun ExpressiveSpeedGauge(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(245.dp),
+            .height(245.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Speed: ${String.format("%.1f", animatedSpeed)} Mbps. Status: $statusText"
+            },
         contentAlignment = Alignment.Center
     ) {
         val sizePx = minOf(maxWidth.value, maxHeight.value).dp
@@ -633,6 +665,7 @@ fun <T> SegmentedPillSwitch(
                 val isSelected = item == selectedItem
                 val bgColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
                 val textColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                val label = itemLabel(item)
 
                 Box(
                     modifier = Modifier
@@ -640,6 +673,11 @@ fun <T> SegmentedPillSwitch(
                         .height(50.dp)
                         .clip(innerShape)
                         .background(bgColor)
+                        .semantics {
+                            role = Role.RadioButton
+                            selected = isSelected
+                            contentDescription = label
+                        }
                         .clickable {
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onItemSelected(item)
@@ -648,7 +686,7 @@ fun <T> SegmentedPillSwitch(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = itemLabel(item),
+                        text = label,
                         fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
                         fontSize = 13.5.sp,
                         color = textColor,
@@ -791,6 +829,12 @@ fun FloatingExpressiveDock(
                 items.forEach { item ->
                     val isSelected = currentRoute == item.route
 
+                    val animatedScale by animateFloatAsState(
+                        targetValue = if (isSelected) 1.04f else 1f,
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+                        label = "DockItemScale"
+                    )
+
                     val pillBg = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
                     val itemColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
 
@@ -798,8 +842,14 @@ fun FloatingExpressiveDock(
                         modifier = Modifier
                             .weight(1f)
                             .height(52.dp)
+                            .scale(animatedScale)
                             .clip(itemShape)
                             .background(pillBg)
+                            .semantics {
+                                role = Role.Tab
+                                selected = isSelected
+                                contentDescription = "${item.label} tab"
+                            }
                             .clickable {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onNavigate(item.route)

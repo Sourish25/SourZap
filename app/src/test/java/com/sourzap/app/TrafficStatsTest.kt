@@ -27,6 +27,10 @@ class TrafficStatsTest {
         // 10 Gbps = 1,250,000,000 bytes/s
         val tenGbps = 1_250_000_000L
         assertEquals("10.00 Gbps", TrafficStats.formatSpeed(tenGbps))
+
+        // Extreme Long.MAX_VALUE speed
+        val maxSpeed = TrafficStats.formatSpeed(Long.MAX_VALUE / 8)
+        assertTrue(maxSpeed.endsWith("Gbps"))
     }
 
     @Test
@@ -58,10 +62,10 @@ class TrafficStatsTest {
     @Test
     fun testFormatSpeed_BpsAndZero() {
         val zeroBytes = 0L
-        assertTrue(TrafficStats.formatSpeed(zeroBytes).contains("bps"))
+        assertEquals(" bps", TrafficStats.formatSpeed(zeroBytes))
 
-        val smallBytes = 50L // 400 bits
-        assertTrue(TrafficStats.formatSpeed(smallBytes).contains("bps"))
+        val smallBytes = 50L // 400 bits < 1000
+        assertEquals(" bps", TrafficStats.formatSpeed(smallBytes))
     }
 
     @Test
@@ -71,6 +75,9 @@ class TrafficStatsTest {
 
         val twoPointFiveGB = 2_684_354_560L
         assertEquals("2.50 GB", TrafficStats.formatBytes(twoPointFiveGB))
+
+        val maxBytes = TrafficStats.formatBytes(Long.MAX_VALUE)
+        assertTrue(maxBytes.endsWith("GB"))
     }
 
     @Test
@@ -80,6 +87,9 @@ class TrafficStatsTest {
 
         val fiftyMB = 52_428_800L
         assertEquals("50.0 MB", TrafficStats.formatBytes(fiftyMB))
+
+        val nearGB = 1_073_741_823L
+        assertEquals("1024.0 MB", TrafficStats.formatBytes(nearGB))
     }
 
     @Test
@@ -89,15 +99,21 @@ class TrafficStatsTest {
 
         val fiveHundredKB = 512_000L
         assertEquals("500 KB", TrafficStats.formatBytes(fiveHundredKB))
+
+        val nearMB = 1_048_575L
+        assertEquals("1024 KB", TrafficStats.formatBytes(nearMB))
     }
 
     @Test
     fun testFormatBytes_B() {
         val zeroB = 0L
-        assertTrue(TrafficStats.formatBytes(zeroB).contains("B"))
+        assertEquals(" B", TrafficStats.formatBytes(zeroB))
 
         val fiveHundredB = 500L
-        assertTrue(TrafficStats.formatBytes(fiveHundredB).contains("B"))
+        assertEquals(" B", TrafficStats.formatBytes(fiveHundredB))
+
+        val nearKB = 1023L
+        assertEquals(" B", TrafficStats.formatBytes(nearKB))
     }
 
     @Test
@@ -138,6 +154,15 @@ class TrafficStatsTest {
         val jitter = diffSum / (pingSamples.size - 1)
         // Diffs: |14.2 - 16.8| = 2.6, |16.8 - 15.0| = 1.8, |15.0 - 18.2| = 3.2. Sum = 7.6. / 3 = 2.533
         assertEquals(2.533f, jitter, 0.01f)
+
+        // Constant ping -> jitter 0
+        val constPings = listOf(20.0f, 20.0f, 20.0f, 20.0f)
+        var constDiff = 0f
+        for (i in 0 until constPings.size - 1) {
+            constDiff += Math.abs(constPings[i] - constPings[i + 1])
+        }
+        val constJitter = constDiff / (constPings.size - 1)
+        assertEquals(0.0f, constJitter, 0.001f)
     }
 
     @Test
@@ -210,5 +235,15 @@ class TrafficStatsTest {
 
         assertEquals("Speed history wave buffer must maintain a max of 20 elements", 20, speedHistory.size)
         assertEquals(9600f, speedHistory.first(), 0.01f)
+
+        // Heavy burst of 10,000 insertions
+        for (i in 1..10000) {
+            if (speedHistory.size >= 20) {
+                speedHistory.removeFirst()
+            }
+            speedHistory.addLast(i.toFloat())
+        }
+        assertEquals(20, speedHistory.size)
+        assertEquals(10000f, speedHistory.last(), 0.001f)
     }
 }

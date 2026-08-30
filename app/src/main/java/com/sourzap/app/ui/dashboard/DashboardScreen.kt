@@ -23,8 +23,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.ArrowDownward
-import androidx.compose.material.icons.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bolt
@@ -553,8 +553,8 @@ fun DashboardScreen(
                         )
                         Spacer(modifier = Modifier.width(3.dp))
                         Icon(
-                            imageVector = Icons.Rounded.ArrowForward,
-                            contentDescription = null,
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                            contentDescription = "Navigate to Traffic Inspector",
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(14.dp)
                         )
@@ -573,7 +573,7 @@ fun DashboardScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (isConnected) "Listening for DPI packets..." else "Activate Zapret to bypass DPI",
+                            text = if (isConnected) "Listening for DPI packets on TUN interface..." else "Activate Zapret to bypass DPI",
                             fontWeight = FontWeight.Medium,
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -610,7 +610,7 @@ fun DashboardScreen(
                                     ) {
                                         Icon(
                                             imageVector = protoIcon,
-                                            contentDescription = null,
+                                            contentDescription = log.protocol,
                                             tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(16.dp)
                                         )

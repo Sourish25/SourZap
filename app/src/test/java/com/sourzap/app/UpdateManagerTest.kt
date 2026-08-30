@@ -71,10 +71,75 @@ class UpdateManagerTest {
     }
 
     @Test
-    fun testExtractCleanVersion_EdgeCases() {
-        assertEquals("1.0", extractCleanVersion("1.0"))
-        assertEquals("1.2.3", extractCleanVersion("...1.2.3..."))
-        assertEquals("4.5.6", extractCleanVersion("build.4.5.6.debug"))
+    fun testExtractCleanVersion_ExtremeAdversarialStrings() {
+        // v1.2.0-beta.2 -> extracts 1.2.0
+        assertEquals("1.2.0", extractCleanVersion("v1.2.0-beta.2"))
+
+        // 1.2.0.1
+        assertEquals("1.2.0.1", extractCleanVersion("1.2.0.1"))
+
+        // 2.0
+        assertEquals("2.0", extractCleanVersion("2.0"))
+
+        // 0.9.99
+        assertEquals("0.9.99", extractCleanVersion("0.9.99"))
+
+        // v1.2.0
+        assertEquals("1.2.0", extractCleanVersion("v1.2.0"))
+
+        // 1.0.0-rc.1
+        assertEquals("1.0.0", extractCleanVersion("1.0.0-rc.1"))
+
+        // v2.0.0-alpha+build.123
+        assertEquals("2.0.0", extractCleanVersion("v2.0.0-alpha+build.123"))
+
+        // 1.0.0.0.1
+        assertEquals("1.0.0.0.1", extractCleanVersion("1.0.0.0.1"))
+
+        // 1000.2000.3000
+        assertEquals("1000.2000.3000", extractCleanVersion("1000.2000.3000"))
+
+        // Blank/Empty/Non-numeric
+        assertEquals("", extractCleanVersion(""))
+        assertEquals("", extractCleanVersion("   "))
+        assertEquals("", extractCleanVersion("v"))
+        assertEquals("", extractCleanVersion("release-final"))
+        assertEquals("999", extractCleanVersion("build-999"))
+    }
+
+    @Test
+    fun testIsVersionNewer_ExtremeAdversarialMatrix() {
+        // v1.2.0-beta.2 vs 1.2.0 -> same base 1.2.0
+        assertFalse(isVersionNewer("v1.2.0-beta.2", "1.2.0"))
+
+        // 1.2.0.1 vs 1.2.0 -> 1.2.0.1 is newer
+        assertTrue(isVersionNewer("1.2.0.1", "1.2.0"))
+        assertFalse(isVersionNewer("1.2.0", "1.2.0.1"))
+
+        // 2.0 vs 1.9.99
+        assertTrue(isVersionNewer("2.0", "1.9.99"))
+
+        // 0.9.99 vs 1.0.0
+        assertFalse(isVersionNewer("0.9.99", "1.0.0"))
+        assertTrue(isVersionNewer("1.0.0", "0.9.99"))
+
+        // v1.2.0 vs 1.2.0 -> identical
+        assertFalse(isVersionNewer("v1.2.0", "1.2.0"))
+
+        // Large version numbers: 1000.0.0 vs 999.999.999
+        assertTrue(isVersionNewer("1000.0.0", "999.999.999"))
+
+        // Deep sub-patch: 1.0.0.0.1 vs 1.0.0.0.0
+        assertTrue(isVersionNewer("1.0.0.0.1", "1.0.0.0.0"))
+
+        // Empty string fallbacks
+        assertFalse(isVersionNewer("", "1.0.0"))
+        assertTrue(isVersionNewer("1.0.0", ""))
+        assertFalse(isVersionNewer("invalid", "invalid"))
+
+        // Multi-zero padding: 2.0.0 vs 2.0.0.0.0.0
+        assertFalse(isVersionNewer("2.0.0", "2.0.0.0.0.0"))
+        assertTrue(isVersionNewer("2.0.0.0.0.1", "2.0.0"))
     }
 
     @Test
@@ -127,16 +192,22 @@ class UpdateManagerTest {
     }
 
     @Test
-    fun testApkIntegrityValidation() {
+    fun testApkIntegrityValidation_AdversarialHeaders() {
         // Valid ZIP/APK magic header (PK\x03\x04 = 0x50, 0x4B, 0x03, 0x04)
         val validZipHeader = byteArrayOf(0x50.toByte(), 0x4B.toByte(), 0x03.toByte(), 0x04.toByte())
         val validSize = 5_000_000L // 5MB
+        val exactSize = 3_000_000L // Exact 3MB threshold
 
         assertTrue("Valid APK header and size must pass validation", validateApkHeader(validZipHeader, validSize))
+        assertTrue("Exact 3,000,000 bytes with valid header must pass", validateApkHeader(validZipHeader, exactSize))
 
         // Too small (< 3MB)
         val smallSize = 2_999_999L
         assertFalse("APK under 3MB threshold must fail validation", validateApkHeader(validZipHeader, smallSize))
+
+        // ZIP Central Directory Header (PK\x01\x02) instead of Local File Header (PK\x03\x04)
+        val centralDirHeader = byteArrayOf(0x50.toByte(), 0x4B.toByte(), 0x01.toByte(), 0x02.toByte())
+        assertFalse("Central directory header must fail validation", validateApkHeader(centralDirHeader, validSize))
 
         // Corrupt magic header (e.g. HTML error page or zeroes)
         val invalidHeader = byteArrayOf(0x3C.toByte(), 0x21.toByte(), 0x44.toByte(), 0x4F.toByte()) // "<!DO" (HTML)

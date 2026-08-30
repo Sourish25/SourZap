@@ -2,10 +2,11 @@ package com.sourzap.app.service.core
 
 import android.net.VpnService
 import com.sourzap.app.data.model.DohProvider
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
@@ -32,8 +33,8 @@ import javax.net.ssl.X509TrustManager
 /**
  * Ultra-Fast High-Performance Asynchronous DNS-over-HTTPS & Protected UDP Resolver.
  * Features an in-memory thread-safe LRU DNS Cache with TTL expiration and in-flight query coalescing (Singleflight).
- * Guarantees 0ms instant DNS resolution for repeat domain lookups during 4K/8K streaming, web browsing,
- * and BitTorrent tracker announces without redundant HTTPS roundtrips.
+ * Resilient multi-provider failover across Cloudflare, Google, Quad9, and AdGuard with redundant bootstrap IPs.
+ * Instant winner resolution with proactive coroutine cancellation to eliminate socket timeout latency barriers.
  */
 object DohResolver {
 
@@ -278,7 +279,7 @@ object DohResolver {
             socket.receive(recvPacket)
             val len = recvPacket.length
             socket.close()
-            if (len >= 12) {
+            if (len >= 12 && isValidDnsResponse(buf, len)) {
                 val res = buf.copyOfRange(0, len)
                 if (queryBytes.size >= 2) {
                     res[0] = queryBytes[0]
@@ -291,8 +292,21 @@ object DohResolver {
     }
 
     /**
+     * Checks if a wire DNS response is valid (Response flag QR set, RCODE == 0 / NOERROR, and length >= 12).
+     */
+    private fun isValidDnsResponse(buffer: ByteArray, length: Int): Boolean {
+        if (length < 12) return false
+        val flagsHigh = buffer[2].toInt() and 0xFF
+        val flagsLow = buffer[3].toInt() and 0xFF
+        val isResponse = (flagsHigh and 0x80) != 0
+        val rcode = flagsLow and 0x0F
+        val anCount = ((buffer[6].toInt() and 0xFF) shl 8) or (buffer[7].toInt() and 0xFF)
+        return isResponse && rcode == 0 && anCount > 0
+    }
+
+    /**
      * Resolves a domain to a list of IP addresses.
-     * Uses in-memory thread-safe LRU caching (0ms hit) with 5-minute TTL and Singleflight deduplication.
+     * Uses in-memory thread-safe LRU caching (0ms hit) with TTL and Singleflight deduplication.
      */
     suspend fun resolve(domain: String, provider: DohProvider = DohProvider.CLOUDFLARE): List<InetAddress> = withContext(Dispatchers.IO) {
         val normalizedDomain = domain.trim().lowercase().removeSuffix(".")
@@ -378,21 +392,46 @@ object DohResolver {
     }
 
     /**
-     * High-speed parallel DNS racer: races fast protected UDP DNS (1.1.1.1, 8.8.8.8, 9.9.9.9)
-     * and encrypted DoH simultaneously. Returns the fastest valid DNS response in <5ms.
+     * High-speed parallel DNS racer: races fast protected UDP DNS and encrypted DoH across
+     * multiple redundant bootstrap IPs and fallback providers simultaneously.
+     * Proactively cancels child coroutines upon receiving the first valid winner to eliminate latency barriers.
      */
     private suspend fun executeParallelDnsQuery(queryBytes: ByteArray, provider: DohProvider): ByteArray? = coroutineScope {
-        val udpServers = listOf("1.1.1.1", "8.8.8.8", "9.9.9.9", "1.0.0.1")
-        val dohEndpoints = listOf(
-            DohEndpoint("https://1.1.1.1/dns-query", "cloudflare-dns.com"),
-            DohEndpoint("https://8.8.8.8/dns-query", "dns.google"),
-            DohEndpoint("https://9.9.9.9/dns-query", "dns.quad9.net")
-        )
+        // Collect endpoints prioritized by user preference, followed by backup providers
+        val primaryIps = listOf(provider.bootstrapIp) + provider.backupIps
+        val primaryHost = provider.hostHeader.ifEmpty { "cloudflare-dns.com" }
+
+        val dohEndpoints = mutableListOf<DohEndpoint>()
+        // 1. Primary provider endpoints
+        primaryIps.forEach { ip ->
+            dohEndpoints.add(DohEndpoint("https://$ip/dns-query", primaryHost))
+        }
+
+        // 2. Fallback provider endpoints
+        val fallbackProviders = DohProvider.values().filter { it != provider }
+        fallbackProviders.forEach { fallback ->
+            val host = fallback.hostHeader.ifEmpty { "dns.google" }
+            dohEndpoints.add(DohEndpoint("https://${fallback.bootstrapIp}/dns-query", host))
+            fallback.backupIps.firstOrNull()?.let { backupIp ->
+                dohEndpoints.add(DohEndpoint("https://$backupIp/dns-query", host))
+            }
+        }
+
+        val udpServers = listOf(
+            provider.bootstrapIp,
+            "1.1.1.1",
+            "8.8.8.8",
+            "9.9.9.9",
+            "94.140.14.14",
+            "1.0.0.1",
+            "8.8.4.4",
+            "149.112.112.112"
+        ).distinct()
 
         val totalTasks = udpServers.size + dohEndpoints.size
         val resultChannel = Channel<ByteArray?>(totalTasks)
 
-        // 1. Fast Protected UDP DNS Queries (<5ms)
+        // 1. Fast Protected UDP DNS Queries
         udpServers.forEach { serverIp ->
             async(Dispatchers.IO) {
                 val res = queryUdpDns(queryBytes, serverIp)
@@ -415,7 +454,7 @@ object DohResolver {
                     httpClient.newCall(request).execute().use { response ->
                         if (response.isSuccessful) {
                             val responseBytes = response.body?.bytes()
-                            if (responseBytes != null && responseBytes.size >= 12) {
+                            if (responseBytes != null && responseBytes.size >= 12 && isValidDnsResponse(responseBytes, responseBytes.size)) {
                                 if (queryBytes.size >= 2) {
                                     responseBytes[0] = queryBytes[0]
                                     responseBytes[1] = queryBytes[1]
@@ -437,13 +476,15 @@ object DohResolver {
             completed++
             if (res != null) {
                 winningBytes = res
+                // Proactively cancel all pending slower racer tasks so coroutineScope returns immediately
+                coroutineContext[Job]?.cancelChildren()
                 break
             }
         }
         winningBytes
     }
 
-    private fun buildDnsQueryWire(domain: String): ByteArray {
+    fun buildDnsQueryWire(domain: String, txId: Int = (Math.random() * 65535).toInt()): ByteArray {
         val parts = domain.split(".")
         var qnameLen = 1
         for (part in parts) {
@@ -455,7 +496,6 @@ object DohResolver {
         var p = 0
 
         // Transaction ID
-        val txId = (Math.random() * 65535).toInt()
         wire[p++] = ((txId shr 8) and 0xFF).toByte()
         wire[p++] = (txId and 0xFF).toByte()
 
@@ -495,7 +535,7 @@ object DohResolver {
         val ttlMs: Long
     )
 
-    private fun parseDnsResponseWireWithTtl(bytes: ByteArray): DnsParseResult {
+    fun parseDnsResponseWireWithTtl(bytes: ByteArray): DnsParseResult {
         val ips = mutableListOf<InetAddress>()
         if (bytes.size < 12) return DnsParseResult(ips, DEFAULT_CACHE_TTL_MS)
 

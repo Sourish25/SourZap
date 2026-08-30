@@ -1,6 +1,11 @@
 package com.sourzap.app
 
 import com.sourzap.app.data.model.DohProvider
+import com.sourzap.app.service.core.DohResolver
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,12 +15,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class DohResolverTest {
 
     // Helper to build DNS query wire packet mirroring DohResolver implementation
-    private fun buildDnsQueryWire(domain: String, txId: Int = 0x1234): ByteArray {
-        val parts = domain.split(".")
+    private fun buildDnsQueryWire(domain: String, txId: Int = 0x1234, qType: Int = 1): ByteArray {
+        val parts = domain.split(".").filter { it.isNotEmpty() }
         var qnameLen = 1
         for (part in parts) {
             qnameLen += 1 + part.length
@@ -49,9 +58,9 @@ class DohResolverTest {
         }
         wire[p++] = 0x00.toByte() // End of QNAME
 
-        // QTYPE: A (0x0001)
-        wire[p++] = 0x00.toByte()
-        wire[p++] = 0x01.toByte()
+        // QTYPE
+        wire[p++] = ((qType shr 8) and 0xFF).toByte()
+        wire[p++] = (qType and 0xFF).toByte()
 
         // QCLASS: IN (0x0001)
         wire[p++] = 0x00.toByte()
@@ -167,6 +176,25 @@ class DohResolverTest {
     }
 
     @Test
+    fun testBuildDnsQueryWire_ExtremeDomains() {
+        // Single letter labels: a.b
+        val shortQuery = buildDnsQueryWire("a.b", txId = 0x1111)
+        assertEquals(12 + 1 + 1 + 1 + 1 + 1 + 4, shortQuery.size)
+
+        // Deep subdomain tree
+        val deepDomain = "a.b.c.d.e.f.g.h.i.j.k.example.org"
+        val deepQuery = buildDnsQueryWire(deepDomain)
+        val deepKey = getQuestionKey(deepQuery)
+        assertNotNull(deepKey)
+
+        // 63-character max DNS label
+        val maxLabel = "a".repeat(63)
+        val maxLabelDomain = "$maxLabel.com"
+        val maxQuery = buildDnsQueryWire(maxLabelDomain)
+        assertEquals(63.toByte(), maxQuery[12])
+    }
+
+    @Test
     fun testQuestionKeyNormalization() {
         val q1 = buildDnsQueryWire("google.com", txId = 0x1111)
         val q2 = buildDnsQueryWire("google.com", txId = 0x2222)
@@ -244,6 +272,218 @@ class DohResolverTest {
             0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
         )
         assertTrue(parseDnsResponseWire(noAnswersHeader).isEmpty())
+    }
+
+    @Test
+    fun testParseDnsResponseWire_CorruptedPointersAndLoops() {
+        // 1. Out-of-bounds pointer 0xC0FF (points past buffer length)
+        val query = buildDnsQueryWire("example.com")
+        val malformedHeader = byteArrayOf(
+            0x12, 0x34, 0x81.toByte(), 0x80.toByte(),
+            0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00
+        )
+        val questionSection = query.copyOfRange(12, query.size)
+        val corruptAnswer = byteArrayOf(
+            0xC0.toByte(), 0xFF.toByte(),
+            0x00, 0x01, 0x00, 0x01,
+            0x00, 0x00, 0x00, 0x3C,
+            0x00, 0x04,
+            1, 2, 3, 4
+        )
+        val wireWithOobPointer = malformedHeader + questionSection + corruptAnswer
+        val ips = parseDnsResponseWire(wireWithOobPointer)
+        assertEquals(1, ips.size)
+        assertEquals("1.2.3.4", ips[0].hostAddress)
+
+        // 2. Declared answer count = 50, but packet truncates after 1 answer
+        val truncatedAnswerHeader = byteArrayOf(
+            0x12, 0x34, 0x81.toByte(), 0x80.toByte(),
+            0x00, 0x01, 0x00, 0x32, 0x00, 0x00, 0x00, 0x00 // anCount = 50
+        )
+        val wireTruncatedAnswers = truncatedAnswerHeader + questionSection + corruptAnswer
+        val parsedFromTruncated = parseDnsResponseWire(wireTruncatedAnswers)
+        assertEquals(1, parsedFromTruncated.size)
+
+        // 3. Answer record with rdLength = 4, but only 2 bytes of payload left in packet
+        val truncatedIpAnswer = byteArrayOf(
+            0xC0.toByte(), 0x0C.toByte(),
+            0x00, 0x01, 0x00, 0x01,
+            0x00, 0x00, 0x00, 0x3C,
+            0x00, 0x04,
+            1, 2 // Only 2 bytes!
+        )
+        val wireWithShortIp = malformedHeader + questionSection + truncatedIpAnswer
+        val ipsShort = parseDnsResponseWire(wireWithShortIp)
+        assertTrue("Truncated IP payload must not be parsed or crash", ipsShort.isEmpty())
+    }
+
+    @Test
+    fun testParseDnsResponseWire_MixedNonARecords() {
+        // DNS response containing CNAME (type 5) + AAAA (type 28) + A (type 1)
+        val query = buildDnsQueryWire("cdn.example.com")
+        val header = byteArrayOf(
+            0x12, 0x34, 0x81.toByte(), 0x80.toByte(),
+            0x00, 0x01, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00 // anCount = 3
+        )
+        val question = query.copyOfRange(12, query.size)
+
+        // Answer 1: CNAME (Type 5, rdLength 10)
+        val cnameAnswer = byteArrayOf(
+            0xC0.toByte(), 0x0C.toByte(),
+            0x00, 0x05, // Type 5 (CNAME)
+            0x00, 0x01,
+            0x00, 0x00, 0x01, 0x00,
+            0x00, 0x06,
+            0x03, 'e'.code.toByte(), 'd'.code.toByte(), 'g'.code.toByte(), 0x00, 0x00
+        )
+
+        // Answer 2: AAAA (Type 28, rdLength 16 - IPv6)
+        val aaaaAnswer = byteArrayOf(
+            0xC0.toByte(), 0x0C.toByte(),
+            0x00, 0x1C.toByte(), // Type 28 (AAAA)
+            0x00, 0x01,
+            0x00, 0x00, 0x01, 0x00,
+            0x00, 0x10, // rdLength 16
+            0x20, 0x01, 0x0d, 0xb8.toByte(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+        )
+
+        // Answer 3: A (Type 1, rdLength 4 - IPv4 93.184.216.34)
+        val aAnswer = byteArrayOf(
+            0xC0.toByte(), 0x0C.toByte(),
+            0x00, 0x01, // Type 1 (A)
+            0x00, 0x01,
+            0x00, 0x00, 0x01, 0x00,
+            0x00, 0x04,
+            93.toByte(), 184.toByte(), 216.toByte(), 34.toByte()
+        )
+
+        val wire = header + question + cnameAnswer + aaaaAnswer + aAnswer
+        val ips = parseDnsResponseWire(wire)
+
+        assertEquals("Must extract only the IPv4 A record", 1, ips.size)
+        assertEquals("93.184.216.34", ips[0].hostAddress)
+    }
+
+    @Test
+    fun testDnsLruCache_HighConcurrencyStress50Coroutines() = runBlocking {
+        val cache = DohResolver.DnsLruCache<String, String>(maxCapacity = 100, defaultTtlMs = 5000L)
+        val threadCount = 50
+        val opsPerThread = 500
+
+        val errorCount = AtomicInteger(0)
+
+        val jobs = (1..threadCount).map { threadId ->
+            async(Dispatchers.IO) {
+                try {
+                    for (i in 0 until opsPerThread) {
+                        val key = "domain-${(threadId * 100 + i) % 150}.com"
+                        val ip = "10.0.${threadId % 250}.${i % 250}"
+
+                        when (i % 5) {
+                            0 -> cache.put(key, ip, 5000L)
+                            1 -> cache.get(key)
+                            2 -> cache.remove(key)
+                            3 -> cache.pruneExpired()
+                            4 -> cache.size()
+                        }
+                    }
+                } catch (e: Exception) {
+                    errorCount.incrementAndGet()
+                }
+            }
+        }
+
+        jobs.awaitAll()
+
+        assertEquals("No concurrency race exceptions should occur under 50 coroutines stress", 0, errorCount.get())
+        assertTrue("Cache size must never exceed max capacity (100)", cache.size() <= 100)
+    }
+
+    @Test
+    fun testDnsLruCache_LruEvictionAndOrderIntegrity() {
+        val cache = DohResolver.DnsLruCache<String, Int>(maxCapacity = 4, defaultTtlMs = 60_000L)
+
+        cache.put("k1", 1)
+        cache.put("k2", 2)
+        cache.put("k3", 3)
+        cache.put("k4", 4)
+        assertEquals(4, cache.size())
+
+        // Access k1, k2 -> k3 becomes the least recently used
+        assertEquals(1, cache.get("k1"))
+        assertEquals(2, cache.get("k2"))
+
+        // Add k5 -> k3 must be evicted!
+        cache.put("k5", 5)
+        assertEquals(4, cache.size())
+        assertNull("k3 should have been evicted as LRU", cache.get("k3"))
+        assertNotNull("k1 was accessed recently, must stay", cache.get("k1"))
+        assertNotNull("k2 was accessed recently, must stay", cache.get("k2"))
+        assertNotNull("k4 must stay", cache.get("k4"))
+        assertNotNull("k5 must exist", cache.get("k5"))
+
+        // Clear cache
+        cache.clear()
+        assertEquals(0, cache.size())
+        assertNull(cache.get("k1"))
+    }
+
+    @Test
+    fun testDnsLruCache_TtlExpirationAndPruning() {
+        val cache = DohResolver.DnsLruCache<String, String>(maxCapacity = 10, defaultTtlMs = 50L)
+
+        cache.put("fast.expire", "1.2.3.4", 50L) // 50ms TTL
+        cache.put("slow.expire", "5.6.7.8", 10_000L) // 10s TTL
+
+        assertEquals("1.2.3.4", cache.get("fast.expire"))
+        assertEquals("5.6.7.8", cache.get("slow.expire"))
+
+        Thread.sleep(80)
+
+        // fast.expire is expired on get
+        assertNull("Expired entry must return null on get", cache.get("fast.expire"))
+        assertNotNull("Non-expired entry must still be valid", cache.get("slow.expire"))
+
+        cache.put("another.expired", "9.9.9.9", 10L)
+        Thread.sleep(30)
+        cache.pruneExpired()
+        assertNull(cache.get("another.expired"))
+    }
+
+    @Test
+    fun testWireQuestionKey_AdversarialByteArrays() {
+        // Query shorter than 12 bytes
+        val short1 = ByteArray(11)
+        assertNull(DohResolver.WireQuestionKey.fromQuery(short1))
+
+        val empty = ByteArray(0)
+        assertNull(DohResolver.WireQuestionKey.fromQuery(empty))
+
+        // Valid queries with different TxIDs
+        val q1 = buildDnsQueryWire("test.local", txId = 0xAAAA, qType = 1)
+        val q2 = buildDnsQueryWire("test.local", txId = 0xBBBB, qType = 1)
+        val k1 = DohResolver.WireQuestionKey.fromQuery(q1)
+        val k2 = DohResolver.WireQuestionKey.fromQuery(q2)
+
+        assertNotNull(k1)
+        assertNotNull(k2)
+        assertEquals(k1, k2)
+        assertEquals(k1.hashCode(), k2.hashCode())
+
+        // Different QTYPE (A vs AAAA)
+        val q3 = buildDnsQueryWire("test.local", txId = 0xAAAA, qType = 28)
+        val k3 = DohResolver.WireQuestionKey.fromQuery(q3)
+        assertNotNull(k3)
+        assertFalse("Different QTYPE must not produce equal question key", k1 == k3)
+
+        // HashMap storage stress with 1,000 keys
+        val map = ConcurrentHashMap<DohResolver.WireQuestionKey, String>()
+        for (i in 0 until 1000) {
+            val q = buildDnsQueryWire("sub-$i.example.com", txId = i)
+            val k = DohResolver.WireQuestionKey.fromQuery(q)!!
+            map[k] = "ip-$i"
+        }
+        assertEquals(1000, map.size)
     }
 
     @Test

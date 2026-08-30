@@ -5,10 +5,10 @@ import com.sourzap.app.SourZapApp
 import com.sourzap.app.data.model.ConnectionLog
 import com.sourzap.app.service.TrafficMonitor
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.asCoroutineDispatcher
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress
@@ -80,7 +80,7 @@ class LocalDpiProxyServer(
             val clientIn = clientSocket.getInputStream()
             val clientOut = clientSocket.getOutputStream()
 
-            // Read the initial request line/headers using chunked buffer (eliminates 800+ JNI context switches)
+            // Read the initial request line/headers using chunked buffer
             val headerBuffer = ByteArray(8192)
             var totalRead = 0
             val tempBuf = ByteArray(1024)
@@ -112,26 +112,35 @@ class LocalDpiProxyServer(
             val firstLine = headerStr.lineSequence().firstOrNull() ?: ""
 
             if (firstLine.startsWith("CONNECT ", ignoreCase = true)) {
-                // --- HTTPS & Messaging CONNECT Tunneling (WhatsApp, Chrome, YouTube, Discord) ---
+                // --- HTTPS & Messaging CONNECT Tunneling ---
                 val parts = firstLine.split(" ")
                 if (parts.size < 2) return
 
                 val target = parts[1]
-                val targetHost = target.substringBefore(":")
-                val targetPort = target.substringAfter(":", "443").toIntOrNull() ?: 443
+                val targetHost: String
+                val targetPort: Int
+
+                if (target.startsWith("[")) {
+                    // IPv6 Literal Host format: [2001:db8::1]:443
+                    targetHost = target.substringAfter("[").substringBefore("]")
+                    targetPort = target.substringAfter("]:", "443").toIntOrNull() ?: 443
+                } else {
+                    targetHost = target.substringBefore(":")
+                    targetPort = target.substringAfter(":", "443").toIntOrNull() ?: 443
+                }
 
                 // Resolve targetHost with DoH to prevent ISP DNS blocking & timeouts
                 val targetIps = DohResolver.resolve(targetHost)
-                val targetIp = targetIps.firstOrNull() ?: java.net.InetAddress.getByName(targetHost)
+                val targetIp = targetIps.firstOrNull() ?: InetAddress.getByName(targetHost)
 
                 // Connect to remote upstream with protected socket
                 val upstream = Socket().apply {
-                    receiveBufferSize = 2097152 // 2 MB Turbo Video Buffer for 4K/8K Media
+                    receiveBufferSize = 2097152 // 2 MB Turbo Video Buffer
                     sendBufferSize = 1048576    // 1 MB Send Buffer
                     tcpNoDelay = true
                     keepAlive = true
-                    soTimeout = 0               // Persistent keepalive
-                    trafficClass = 0x08         // IPTOS_THROUGHPUT
+                    soTimeout = 0
+                    trafficClass = 0x08
                     setPerformancePreferences(0, 1, 2)
                 }
                 upstreamSocket = upstream
@@ -155,7 +164,6 @@ class LocalDpiProxyServer(
                     val sniResult = TlsParser.parseClientHello(initialBuffer, initialLen)
 
                     if (sniResult.isClientHello) {
-                        // Standard TLS Handshake -> Apply Zapret DPI desync
                         var appliedTechnique = "DIRECT"
                         val logDomain = sniResult.hostname ?: targetHost
 
@@ -193,19 +201,30 @@ class LocalDpiProxyServer(
                         )
                     }
 
-                    // Suspend and pump remaining stream bidirectionally until stream closes
+                    // Suspend and pump remaining stream bidirectionally until streams close
                     pumpBidirectional(clientIn, clientOut, upstreamIn, upstreamOut, clientSocket, upstream)
                 }
             } else {
                 // --- Plain HTTP Request ---
                 val hostLine = headerStr.lineSequence().firstOrNull { it.startsWith("Host:", ignoreCase = true) }
                 val rawHost = hostLine?.substringAfter(":")?.trim() ?: ""
-                val targetHost = if (rawHost.contains(":")) rawHost.substringBefore(":") else rawHost
-                val targetPort = if (rawHost.contains(":")) rawHost.substringAfter(":").toIntOrNull() ?: 80 else 80
+
+                val targetHost: String
+                val targetPort: Int
+                if (rawHost.startsWith("[")) {
+                    targetHost = rawHost.substringAfter("[").substringBefore("]")
+                    targetPort = rawHost.substringAfter("]:", "80").toIntOrNull() ?: 80
+                } else if (rawHost.contains(":")) {
+                    targetHost = rawHost.substringBefore(":")
+                    targetPort = rawHost.substringAfter(":").toIntOrNull() ?: 80
+                } else {
+                    targetHost = rawHost
+                    targetPort = 80
+                }
 
                 if (targetHost.isNotEmpty()) {
                     val targetIps = DohResolver.resolve(targetHost)
-                    val targetIp = targetIps.firstOrNull() ?: java.net.InetAddress.getByName(targetHost)
+                    val targetIp = targetIps.firstOrNull() ?: InetAddress.getByName(targetHost)
 
                     val upstream = Socket().apply {
                         receiveBufferSize = 1048576
@@ -285,7 +304,10 @@ class LocalDpiProxyServer(
         clientSocket: Socket,
         upstreamSocket: Socket
     ) {
-        val clientJob = scope.launch(proxyDispatcher) {
+        var clientJob: Job? = null
+        var upstreamJob: Job? = null
+
+        clientJob = scope.launch(proxyDispatcher) {
             val buf = ByteArrayPool.obtainStreamBuffer()
             try {
                 var len = clientIn.read(buf)
@@ -300,11 +322,10 @@ class LocalDpiProxyServer(
             } finally {
                 ByteArrayPool.recycleStreamBuffer(buf)
                 try { upstreamSocket.shutdownOutput() } catch (_: Exception) {}
-                try { upstreamSocket.close() } catch (_: Exception) {}
             }
         }
 
-        val upstreamJob = scope.launch(proxyDispatcher) {
+        upstreamJob = scope.launch(proxyDispatcher) {
             val buf = ByteArrayPool.obtainStreamBuffer()
             try {
                 var len = upstreamIn.read(buf)
@@ -319,7 +340,6 @@ class LocalDpiProxyServer(
             } finally {
                 ByteArrayPool.recycleStreamBuffer(buf)
                 try { clientSocket.shutdownOutput() } catch (_: Exception) {}
-                try { clientSocket.close() } catch (_: Exception) {}
             }
         }
 

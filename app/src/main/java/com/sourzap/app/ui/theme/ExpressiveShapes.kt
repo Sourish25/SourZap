@@ -53,7 +53,7 @@ class ScallopedShape(
                 val cx = centerX + midRadius * cos(midAngle)
                 val cy = centerY + midRadius * sin(midAngle)
 
-                path.quadraticBezierTo(cx, cy, x, y)
+                path.quadraticTo(cx, cy, x, y)
             }
         }
         path.close()
