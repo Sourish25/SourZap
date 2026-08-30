@@ -62,8 +62,7 @@ class SourZapVpnService : VpnService() {
         isRunning = true
         TrafficMonitor.startMonitoring()
 
-        val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
-        startForeground(NOTIFICATION_ID, buildNotification("SourZap: ${strategy.name}", "⚡ Smart DPI Bypass Engine Active"))
+        startForeground(NOTIFICATION_ID, buildNotification("SourZap", "Smart DPI Bypass Engine Active"))
 
         // Initialize DohResolver with protected socket factory
         DohResolver.init(this)
@@ -426,9 +425,8 @@ class SourZapVpnService : VpnService() {
             while (isActive && isRunning) {
                 delay(2000)
                 val stats = TrafficMonitor.stats.value
-                val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
                 val notification = buildNotification(
-                    title = "SourZap: ${strategy.name}",
+                    title = "SourZap Active",
                     content = "${stats.formattedDownloadSpeed()} DL • ${stats.formattedUploadSpeed()} UL"
                 )
                 val manager = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager

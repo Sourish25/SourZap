@@ -90,7 +90,7 @@ fun SpeedTestScreen(
                 Spacer(modifier = Modifier.width(8.dp))
 
                 ExpressiveChip(
-                    text = currentStrategy.name,
+                    text = "DIAGNOSTIC",
                     backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
                     textColor = MaterialTheme.colorScheme.onSecondaryContainer
                 )
@@ -117,12 +117,8 @@ fun SpeedTestScreen(
 
                     if (isRunning) {
                         Spacer(modifier = Modifier.height(14.dp))
-                        LinearProgressIndicator(
-                            progress = { state.progress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
+                        com.sourzap.app.ui.components.ExpressiveWavyProgressIndicator(
+                            progress = state.progress,
                             color = MaterialTheme.colorScheme.primary,
                             trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                         )

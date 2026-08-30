@@ -22,7 +22,7 @@ class TunUdpRelay(
     private val vpnOutput: FileOutputStream,
     private val scope: CoroutineScope
 ) {
-    private val POOL_SIZE = 4
+    private val POOL_SIZE = 8
     private val sockets = ArrayList<DatagramSocket>(POOL_SIZE)
     private val isRunning = AtomicBoolean(true)
 

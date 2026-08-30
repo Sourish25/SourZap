@@ -420,24 +420,24 @@ fun SettingsScreen(
                     // Update States
                     when (val state = updateState) {
                         is UpdateState.Checking -> {
-                            Row(
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                    .padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.5.dp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
                                 Text(
                                     text = "Checking GitHub for latest release...",
                                     fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.onSurface
+                                )
+                                com.sourzap.app.ui.components.ExpressiveWavyProgressIndicator(
+                                    progress = null,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                                 )
                             }
                         }
@@ -451,7 +451,7 @@ fun SettingsScreen(
                                     .padding(14.dp)
                             ) {
                                 Text(
-                                    text = "✨ You are on the latest version of SourZap!",
+                                    text = "You are on the latest version of SourZap.",
                                     fontWeight = FontWeight.Medium,
                                     fontSize = 13.sp,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -474,7 +474,7 @@ fun SettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "🚀 New Version: ${state.release.tagName}",
+                                        text = "New Version: v${state.release.versionName}",
                                         fontWeight = FontWeight.Black,
                                         fontSize = 16.sp,
                                         color = MaterialTheme.colorScheme.onSurface
@@ -530,7 +530,7 @@ fun SettingsScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(
-                                        text = "Downloading update...",
+                                        text = "Downloading update package...",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp,
                                         color = MaterialTheme.colorScheme.onSurface
@@ -543,12 +543,8 @@ fun SettingsScreen(
                                     )
                                 }
 
-                                LinearProgressIndicator(
-                                    progress = { state.progress },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(10.dp)
-                                        .clip(RoundedCornerShape(5.dp)),
+                                com.sourzap.app.ui.components.ExpressiveWavyProgressIndicator(
+                                    progress = state.progress,
                                     color = MaterialTheme.colorScheme.primary,
                                     trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                                 )
@@ -573,7 +569,7 @@ fun SettingsScreen(
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Text(
-                                    text = "🎉 Update package downloaded & verified!",
+                                    text = "Update package downloaded & verified.",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -604,7 +600,7 @@ fun SettingsScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "⚠️ ${state.message}",
+                                    text = state.message,
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onErrorContainer,
                                     modifier = Modifier.weight(1f)

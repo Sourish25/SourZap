@@ -13,63 +13,19 @@ import kotlinx.coroutines.flow.update
 class StrategyRepository(private val context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("sourzap_strategies", Context.MODE_PRIVATE)
 
-    private val _currentStrategy = MutableStateFlow(loadCurrentStrategy())
+    private val _currentStrategy = MutableStateFlow(BypassStrategy.AUTO_PILOT)
     val currentStrategy: StateFlow<BypassStrategy> = _currentStrategy.asStateFlow()
 
-    private val _customStrategy = MutableStateFlow(loadCustomStrategy())
+    private val _customStrategy = MutableStateFlow(BypassStrategy.AUTO_PILOT)
     val customStrategy: StateFlow<BypassStrategy> = _customStrategy.asStateFlow()
 
     fun selectStrategy(strategy: BypassStrategy) {
-        prefs.edit().putString("selected_strategy_id", strategy.id).apply()
         _currentStrategy.value = strategy
     }
 
     fun updateCustomStrategy(strategy: BypassStrategy) {
-        val custom = strategy.copy(id = "custom_user", isCustom = true, tag = "CUSTOM")
-        prefs.edit()
-            .putString("custom_name", custom.name)
-            .putInt("custom_split_offset", custom.tlsSplitOffset)
-            .putBoolean("custom_multisplit", custom.useMultisplit)
-            .putString("custom_fake_sni", custom.fakeSni)
-            .putInt("custom_fake_ttl", custom.fakeTtl)
-            .putBoolean("custom_disorder", custom.useDisorder)
-            .putBoolean("custom_oob", custom.useOob)
-            .putBoolean("custom_http_mod", custom.httpHostMod)
-            .putBoolean("custom_block_quic", custom.blockQuic)
-            .putString("custom_doh", custom.dohProvider.name)
-            .apply()
-        _customStrategy.value = custom
-        if (_currentStrategy.value.isCustom) {
-            _currentStrategy.value = custom
-        }
-    }
-
-    private fun loadCurrentStrategy(): BypassStrategy {
-        val id = prefs.getString("selected_strategy_id", BypassStrategy.AUTO_PILOT.id)
-        if (id == "custom_user") return loadCustomStrategy()
-        return BypassStrategy.DEFAULT_PRESETS.firstOrNull { it.id == id } ?: BypassStrategy.AUTO_PILOT
-    }
-
-    private fun loadCustomStrategy(): BypassStrategy {
-        return BypassStrategy(
-            id = "custom_user",
-            name = prefs.getString("custom_name", "My Custom Preset") ?: "My Custom Preset",
-            description = "Tailored DPI evasion parameters configured by you",
-            tag = "CUSTOM",
-            iconEmoji = "⚙️",
-            tlsSplitOffset = prefs.getInt("custom_split_offset", -1),
-            useMultisplit = prefs.getBoolean("custom_multisplit", true),
-            fakeSni = prefs.getString("custom_fake_sni", "www.google.com") ?: "www.google.com",
-            fakeTtl = prefs.getInt("custom_fake_ttl", 3),
-            useDisorder = prefs.getBoolean("custom_disorder", true),
-            useOob = prefs.getBoolean("custom_oob", false),
-            httpHostMod = prefs.getBoolean("custom_http_mod", true),
-            blockQuic = prefs.getBoolean("custom_block_quic", true),
-            dohProvider = try {
-                DohProvider.valueOf(prefs.getString("custom_doh", DohProvider.CLOUDFLARE.name) ?: DohProvider.CLOUDFLARE.name)
-            } catch (_: Exception) { DohProvider.CLOUDFLARE },
-            isCustom = true
-        )
+        _customStrategy.value = strategy
+        _currentStrategy.value = strategy
     }
 }
 

@@ -28,7 +28,6 @@ import com.sourzap.app.ui.components.FloatingExpressiveDock
 import com.sourzap.app.ui.dashboard.DashboardScreen
 import com.sourzap.app.ui.settings.SettingsScreen
 import com.sourzap.app.ui.speedtest.SpeedTestScreen
-import com.sourzap.app.ui.strategies.StrategiesScreen
 import com.sourzap.app.ui.theme.SourZapTheme
 import com.sourzap.app.ui.traffic.TrafficScreen
 
@@ -83,15 +82,11 @@ fun MainAppScreen() {
             composable("dashboard") {
                 DashboardScreen(
                     onNavigateToSpeedTest = { navController.navigate("speedtest") },
-                    onNavigateToStrategies = { navController.navigate("strategies") },
                     onNavigateToTraffic = { navController.navigate("traffic") }
                 )
             }
             composable("speedtest") {
                 SpeedTestScreen()
-            }
-            composable("strategies") {
-                StrategiesScreen()
             }
             composable("traffic") {
                 TrafficScreen()

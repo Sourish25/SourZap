@@ -58,7 +58,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun DashboardScreen(
     onNavigateToSpeedTest: () -> Unit,
-    onNavigateToStrategies: () -> Unit,
     onNavigateToTraffic: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -145,22 +144,31 @@ fun DashboardScreen(
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "🚀 Update Available: ${release.tagName}",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 15.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Update Available: v${release.versionName}",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 15.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Tap Update to install latest improvements",
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
 
                             if (!isDownloadingUpdate) {
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -193,17 +201,36 @@ fun DashboardScreen(
                         }
 
                         if (isDownloadingUpdate) {
-                            Text(
-                                text = "Downloading update... ${(downloadProgress * 100).toInt()}%",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Downloading package...",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Text(
+                                        text = "${(downloadProgress * 100).toInt()}%",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                                com.sourzap.app.ui.components.ExpressiveWavyProgressIndicator(
+                                    progress = downloadProgress,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                                )
+                            }
                         }
                     }
                 }
             }
         }
+
         // Human Material You Top Bar
         item {
             Row(
@@ -245,12 +272,10 @@ fun DashboardScreen(
             )
         }
 
-        // Active Strategy Large Tile
+        // Universal Engine Status Card
         item {
             ExpressiveCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onNavigateToStrategies() },
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(28.dp),
                 backgroundColor = MaterialTheme.colorScheme.surfaceContainer,
                 borderColor = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
@@ -267,45 +292,29 @@ fun DashboardScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "BYPASS STRATEGY",
+                            text = "SMART ENGINE STATUS",
                             fontWeight = FontWeight.Black,
                             fontSize = 12.sp,
                             letterSpacing = 0.8.sp,
                             color = MaterialTheme.colorScheme.primary
                         )
 
-                        Text(
-                            text = "Tap to change",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = currentStrategy.name,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 20.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
                         ExpressiveChip(
-                            text = currentStrategy.tag,
-                            backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
-                            textColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            text = "AUTO TUNED",
+                            backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                            textColor = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
 
                     Text(
-                        text = currentStrategy.description,
+                        text = "Universal DPI Evasion",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 20.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Text(
+                        text = "Real-time TLS Record Header Split2, Host header desynchronization, instant QUIC ICMP reject, and zero-latency Layer-3 BitTorrent passthrough.",
                         fontWeight = FontWeight.Normal,
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant

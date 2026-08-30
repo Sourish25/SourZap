@@ -2,9 +2,15 @@ package com.sourzap.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,6 +50,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -457,6 +464,93 @@ fun <T> SegmentedPillSwitch(
 /**
  * Thick, Floating Navigation Dock (66dp height) Tailored for Smartphone Thumbs
  */
+/**
+ * Material You Expressive Wavy Progress Indicator.
+ * Renders an organic, undulating sine-wave progress bar with animated phase shifting.
+ */
+@Composable
+fun ExpressiveWavyProgressIndicator(
+    progress: Float? = null,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+    trackColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    strokeWidth: Dp = 4.dp,
+    waveAmplitude: Dp = 3.dp,
+    wavePeriod: Dp = 22.dp
+) {
+    val density = LocalDensity.current
+    val strokePx = with(density) { strokeWidth.toPx() }
+    val ampPx = with(density) { waveAmplitude.toPx() }
+    val periodPx = with(density) { wavePeriod.toPx() }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "WavyProgressTransition")
+    val animatedPhase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 6.2831855f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200, easing = LinearEasing)
+        ),
+        label = "WavyPhase"
+    )
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(waveAmplitude * 2 + strokeWidth + 4.dp)
+    ) {
+        val w = size.width
+        val h = size.height
+        val centerY = h * 0.5f
+
+        val isDeterminate = (progress != null)
+        val clampedProgress = if (progress != null) progress.coerceIn(0f, 1f) else 1f
+        val activeWidth = if (isDeterminate) w * clampedProgress else w
+
+        // 1. Background Track
+        if (isDeterminate && activeWidth < w) {
+            drawLine(
+                color = trackColor,
+                start = Offset(activeWidth, centerY),
+                end = Offset(w, centerY),
+                strokeWidth = strokePx,
+                cap = StrokeCap.Round
+            )
+        }
+
+        // 2. Active Animated Sine Wave Path
+        if (activeWidth > 0f) {
+            val wavePath = Path()
+            val totalSteps = (activeWidth / 3f).toInt().coerceAtLeast(1)
+
+            for (i in 0..totalSteps) {
+                val currentX = (i.toFloat() * 3f).coerceAtMost(activeWidth)
+                val phaseRatio = if (periodPx > 0.01f) (currentX / periodPx).toDouble() else 0.0
+                val rad = (phaseRatio * 2.0 * Math.PI) - animatedPhase.toDouble()
+                val waveOffset = (ampPx.toDouble() * Math.sin(rad)).toFloat()
+                val currentY = centerY + waveOffset
+
+                if (i == 0) {
+                    wavePath.moveTo(currentX, currentY)
+                } else {
+                    wavePath.lineTo(currentX, currentY)
+                }
+            }
+
+            drawPath(
+                path = wavePath,
+                color = color,
+                style = Stroke(
+                    width = strokePx,
+                    cap = StrokeCap.Round
+                )
+            )
+        }
+    }
+}
+
+/**
+ * Thick, Floating Navigation Dock Tailored for Smartphone Thumbs (4 ergonomic tabs)
+ */
 @Composable
 fun FloatingExpressiveDock(
     currentRoute: String,
@@ -470,7 +564,6 @@ fun FloatingExpressiveDock(
     val items = listOf(
         DockItem("dashboard", "Home"),
         DockItem("speedtest", "Speed"),
-        DockItem("strategies", "Modes"),
         DockItem("traffic", "Traffic"),
         DockItem("settings", "Settings")
     )
@@ -493,7 +586,7 @@ fun FloatingExpressiveDock(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -513,14 +606,14 @@ fun FloatingExpressiveDock(
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onNavigate(item.route)
                             }
-                            .padding(horizontal = 4.dp),
+                            .padding(horizontal = 6.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = item.label,
                             fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
-                            fontSize = 12.sp,
-                            letterSpacing = (-0.2).sp,
+                            fontSize = 13.sp,
+                            letterSpacing = (-0.1).sp,
                             color = itemColor,
                             textAlign = TextAlign.Center,
                             maxLines = 1,

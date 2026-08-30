@@ -14,13 +14,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-enum class AppThemePreset(val id: String, val displayName: String, val iconEmoji: String) {
-    DYNAMIC("DYNAMIC", "System Dynamic (Monet)", "✨"),
-    ELECTRIC_INDIGO("ELECTRIC_INDIGO", "Electric Indigo", "💜"),
-    CYBER_MINT("CYBER_MINT", "Cyber Mint", "🌿"),
-    BERRY_EXPRESSIVE("BERRY_EXPRESSIVE", "Berry Expressive", "🫐"),
-    SUNSET_TERRACOTTA("SUNSET_TERRACOTTA", "Sunset Amber", "🌅"),
-    OCEANIC_CYAN("OCEANIC_CYAN", "Oceanic Slate", "🌊")
+enum class AppThemePreset(val id: String, val displayName: String, val previewColor: Long) {
+    DYNAMIC("DYNAMIC", "System Dynamic (Monet)", 0xFF6750A4),
+    ELECTRIC_INDIGO("ELECTRIC_INDIGO", "Electric Indigo", 0xFF6366F1),
+    CYBER_MINT("CYBER_MINT", "Cyber Mint", 0xFF00E676),
+    BERRY_EXPRESSIVE("BERRY_EXPRESSIVE", "Berry Expressive", 0xFFE040FB),
+    SUNSET_TERRACOTTA("SUNSET_TERRACOTTA", "Sunset Amber", 0xFFFF9100),
+    OCEANIC_CYAN("OCEANIC_CYAN", "Oceanic Slate", 0xFF00E5FF)
 }
 
 @Composable

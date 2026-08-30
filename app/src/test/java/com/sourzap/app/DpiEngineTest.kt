@@ -43,7 +43,7 @@ class DpiEngineTest {
     @Test
     fun testPresetStrategiesIntegrity() {
         val presets = BypassStrategy.DEFAULT_PRESETS
-        assertEquals(4, presets.size)
+        assertEquals(1, presets.size)
 
         val auto = BypassStrategy.AUTO_PILOT
         assertEquals("auto_pilot", auto.id)
