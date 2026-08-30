@@ -11,12 +11,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.net.InetAddress
@@ -44,35 +45,43 @@ sealed class UpdateState {
 
 class UpdateManager(private val context: Context) {
 
-    // Custom DoH DNS for OkHttp: resolves GitHub APIs & CDN assets directly without ISP DNS poisoning
+    // Direct static IP fallbacks for GitHub and all release CDN endpoints
+    private val githubStaticIps = mapOf(
+        "api.github.com" to listOf("20.207.73.85"),
+        "github.com" to listOf("20.207.73.82"),
+        "uploads.github.com" to listOf("20.207.73.81"),
+        "objects.githubusercontent.com" to listOf("185.199.108.133", "185.199.109.133", "185.199.110.133", "185.199.111.133"),
+        "release-assets.githubusercontent.com" to listOf("185.199.108.133", "185.199.109.133", "185.199.110.133", "185.199.111.133"),
+        "github-releases.githubusercontent.com" to listOf("185.199.108.154", "185.199.109.154", "185.199.110.154", "185.199.111.154"),
+        "raw.githubusercontent.com" to listOf("185.199.108.133", "185.199.109.133", "185.199.110.133", "185.199.111.133")
+    )
+
     private val dohDns = object : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
-            return try {
-                val resolved = runBlocking(Dispatchers.IO) {
-                    DohResolver.resolve(hostname)
-                }
-                if (resolved.isNotEmpty()) resolved else Dns.SYSTEM.lookup(hostname)
-            } catch (_: Exception) {
-                try {
-                    Dns.SYSTEM.lookup(hostname)
-                } catch (_: Exception) {
-                    when (hostname) {
-                        "api.github.com" -> listOf(InetAddress.getByName("20.207.73.85"))
-                        "github.com" -> listOf(InetAddress.getByName("20.207.73.82"))
-                        "uploads.github.com" -> listOf(InetAddress.getByName("20.207.73.81"))
-                        else -> emptyList()
-                    }
+            // 1. Try system DNS first
+            try {
+                val sys = Dns.SYSTEM.lookup(hostname)
+                if (sys.isNotEmpty()) return sys
+            } catch (_: Exception) {}
+
+            // 2. Direct static IP fallback to bypass ISP DNS blocks / poisoning
+            val staticList = githubStaticIps[hostname]
+            if (staticList != null) {
+                return staticList.mapNotNull {
+                    try { InetAddress.getByName(it) } catch (_: Exception) { null }
                 }
             }
+
+            return emptyList()
         }
     }
 
     private val httpClient = OkHttpClient.Builder()
         .dns(dohDns)
-        .protocols(listOf(okhttp3.Protocol.HTTP_1_1)) // HTTP/1.1 prevents CDN HTTP/2 stream resets & unexpected end of stream
+        .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
         .followRedirects(true)
         .followSslRedirects(true)
-        .connectTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
@@ -126,14 +135,14 @@ class UpdateManager(private val context: Context) {
                 return@flow
             }
 
-            val latestVersionNormalized = tagName.removePrefix("v").trim()
-            val currentVersionNormalized = currentVersion.removePrefix("v").trim()
+            val latestCleanVersion = extractCleanVersion(tagName)
+            val currentCleanVersion = extractCleanVersion(currentVersion)
 
-            val isNewer = isVersionNewer(latestVersionNormalized, currentVersionNormalized)
+            val isNewer = isVersionNewer(latestCleanVersion, currentCleanVersion)
 
             val releaseInfo = AppReleaseInfo(
                 tagName = tagName,
-                versionName = latestVersionNormalized,
+                versionName = latestCleanVersion,
                 releaseNotes = releaseNotes,
                 apkDownloadUrl = apkUrl,
                 apkSizeBytes = apkSize,
@@ -152,7 +161,8 @@ class UpdateManager(private val context: Context) {
     }.flowOn(Dispatchers.IO)
 
     fun downloadAndPrepareApk(downloadUrl: String): Flow<UpdateState> = flow {
-        val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
+        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+        val updatesDir = File(baseDir, "updates").apply { mkdirs() }
         val targetApk = File(updatesDir, "SourZap-update.apk")
         if (targetApk.exists()) targetApk.delete()
 
@@ -178,6 +188,7 @@ class UpdateManager(private val context: Context) {
                 httpClient.newCall(reqBuilder.build()).execute().use { response ->
                     if (!response.isSuccessful && response.code != 206) {
                         if (response.code == 416 && totalLength > 0 && bytesDownloaded >= totalLength) {
+                            targetApk.setReadable(true, false)
                             emit(UpdateState.ReadyToInstall(targetApk))
                             return@flow
                         }
@@ -193,7 +204,7 @@ class UpdateManager(private val context: Context) {
                     val append = (bytesDownloaded > 0 && response.code == 206)
                     val outputStream = FileOutputStream(targetApk, append)
                     val inputStream: InputStream = body.byteStream()
-                    val buffer = ByteArray(32768)
+                    val buffer = ByteArray(65536)
 
                     try {
                         var read = inputStream.read(buffer)
@@ -215,8 +226,14 @@ class UpdateManager(private val context: Context) {
                     }
 
                     if (totalLength <= 0 || bytesDownloaded >= totalLength) {
-                        emit(UpdateState.ReadyToInstall(targetApk))
-                        return@flow
+                        // Verify APK integrity (ZIP magic header: 0x50, 0x4B, 0x03, 0x04)
+                        if (validateApkIntegrity(targetApk)) {
+                            targetApk.setReadable(true, false)
+                            emit(UpdateState.ReadyToInstall(targetApk))
+                            return@flow
+                        } else {
+                            throw Exception("Corrupt APK package downloaded")
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -228,7 +245,8 @@ class UpdateManager(private val context: Context) {
             }
         }
 
-        if (targetApk.exists() && targetApk.length() > 5_000_000L) {
+        if (validateApkIntegrity(targetApk)) {
+            targetApk.setReadable(true, false)
             emit(UpdateState.ReadyToInstall(targetApk))
         } else {
             emit(UpdateState.Error("Download could not be completed"))
@@ -237,6 +255,8 @@ class UpdateManager(private val context: Context) {
 
     fun installApk(apkFile: File) {
         if (!apkFile.exists()) return
+
+        apkFile.setReadable(true, false)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (!context.packageManager.canRequestPackageInstalls()) {
@@ -249,25 +269,52 @@ class UpdateManager(private val context: Context) {
             }
         }
 
-        val apkUri: Uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.provider",
-            apkFile
-        )
+        try {
+            val apkUri: Uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                apkFile
+            )
 
-        val installIntent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(apkUri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
 
-        context.startActivity(installIntent)
+            context.startActivity(installIntent)
+        } catch (_: Exception) {}
     }
 
-    private fun isVersionNewer(latest: String, current: String): Boolean {
+    private fun validateApkIntegrity(file: File): Boolean {
+        if (!file.exists() || file.length() < 3_000_000L) return false
         try {
-            val latestParts = latest.split(".").map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
-            val currentParts = current.split(".").map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
+            FileInputStream(file).use { input ->
+                val magic = ByteArray(4)
+                val read = input.read(magic)
+                if (read == 4) {
+                    // Standard ZIP/APK Magic Header PK\x03\x04 (0x50, 0x4B, 0x03, 0x04)
+                    return magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte() &&
+                            magic[2] == 0x03.toByte() && magic[3] == 0x04.toByte()
+                }
+            }
+        } catch (_: Exception) {}
+        return false
+    }
+
+    fun extractCleanVersion(raw: String): String {
+        val match = Regex("""\d+(\.\d+)+""").find(raw)
+        return match?.value ?: raw.filter { it.isDigit() || it == '.' }.trim('.')
+    }
+
+    fun isVersionNewer(latest: String, current: String): Boolean {
+        try {
+            val latestClean = extractCleanVersion(latest)
+            val currentClean = extractCleanVersion(current)
+
+            val latestParts = latestClean.split(".").map { it.toIntOrNull() ?: 0 }
+            val currentParts = currentClean.split(".").map { it.toIntOrNull() ?: 0 }
 
             val maxLen = maxOf(latestParts.size, currentParts.size)
             for (i in 0 until maxLen) {

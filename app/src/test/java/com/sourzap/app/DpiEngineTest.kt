@@ -67,9 +67,16 @@ class DpiEngineTest {
 
     @Test
     fun testVersionComparisonLogic() {
+        fun extractCleanVersion(raw: String): String {
+            val match = Regex("""\d+(\.\d+)+""").find(raw)
+            return match?.value ?: raw.filter { it.isDigit() || it == '.' }.trim('.')
+        }
+
         fun isNewer(latest: String, current: String): Boolean {
-            val latestParts = latest.split(".").map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
-            val currentParts = current.split(".").map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
+            val latestClean = extractCleanVersion(latest)
+            val currentClean = extractCleanVersion(current)
+            val latestParts = latestClean.split(".").map { it.toIntOrNull() ?: 0 }
+            val currentParts = currentClean.split(".").map { it.toIntOrNull() ?: 0 }
             val maxLen = maxOf(latestParts.size, currentParts.size)
             for (i in 0 until maxLen) {
                 val l = latestParts.getOrElse(i) { 0 }
@@ -80,10 +87,17 @@ class DpiEngineTest {
             return false
         }
 
-        assertTrue(isNewer("1.0.4", "1.0.3"))
+        assertEquals("1.0.8", extractCleanVersion("v1.0.8"))
+        assertEquals("1.0.8", extractCleanVersion("SourZap v1.0.8-release"))
+        assertEquals("1.0.8.2", extractCleanVersion("1.0.8.2"))
+        assertEquals("1.0.8", extractCleanVersion("1.0.8"))
+
+        assertTrue(isNewer("v1.0.4", "1.0.3"))
         assertTrue(isNewer("1.1.0", "1.0.9"))
-        assertTrue(isNewer("2.0.0", "1.9.9"))
-        assertTrue(!isNewer("1.0.8", "1.0.8"))
+        assertTrue(isNewer("2.0.0", "v1.9.9"))
+        assertTrue(isNewer("SourZap v1.0.9", "1.0.8"))
+        assertTrue(!isNewer("v1.0.8", "1.0.8"))
+        assertTrue(!isNewer("1.0.8", "v1.0.8"))
         assertTrue(!isNewer("1.0.7", "1.0.8"))
         assertTrue(!isNewer("1.0.4", "1.0.4"))
         assertTrue(!isNewer("1.0.3", "1.0.4"))
