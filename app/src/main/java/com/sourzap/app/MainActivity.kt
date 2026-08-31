@@ -29,6 +29,7 @@ import com.sourzap.app.ui.dashboard.DashboardScreen
 import com.sourzap.app.ui.settings.SettingsScreen
 import com.sourzap.app.ui.speedtest.SpeedTestScreen
 import com.sourzap.app.ui.theme.SourZapTheme
+import com.sourzap.app.ui.torrent.TorrentScreen
 import com.sourzap.app.ui.traffic.TrafficScreen
 
 class MainActivity : ComponentActivity() {
@@ -82,6 +83,9 @@ fun MainAppScreen() {
                     onNavigateToSpeedTest = { navController.navigate("speedtest") },
                     onNavigateToTraffic = { navController.navigate("traffic") }
                 )
+            }
+            composable("torrents") {
+                TorrentScreen()
             }
             composable("speedtest") {
                 SpeedTestScreen()

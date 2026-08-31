@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Settings
@@ -891,6 +892,7 @@ fun FloatingExpressiveDock(
 
     val items = listOf(
         DockItem("dashboard", "Home", Icons.Rounded.Home),
+        DockItem("torrents", "Torrents", Icons.Rounded.Download),
         DockItem("speedtest", "Speed", Icons.Rounded.Speed),
         DockItem("traffic", "Traffic", Icons.Rounded.StackedLineChart),
         DockItem("settings", "Settings", Icons.Rounded.Settings)

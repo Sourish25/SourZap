@@ -12,8 +12,8 @@ android {
         applicationId = "com.sourzap.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 25
-        versionName = "2.5.0"
+        versionCode = 26
+        versionName = "2.6.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -72,6 +72,13 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            useLegacyPackaging = false
+            pickFirsts += listOf(
+                "**/libjlibtorrent.so",
+                "lib/**/libjlibtorrent.so"
+            )
+        }
     }
 }
 
@@ -94,8 +101,16 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
 
+    // BitTorrent Engine Core + Native ABIs
+    implementation(libs.libtorrent4j)
+    implementation(libs.libtorrent4j.android.arm64)
+    implementation(libs.libtorrent4j.android.arm)
+    implementation(libs.libtorrent4j.android.x8664)
+    implementation(libs.libtorrent4j.android.x86)
+
     testImplementation(libs.junit)
     testImplementation(libs.json)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

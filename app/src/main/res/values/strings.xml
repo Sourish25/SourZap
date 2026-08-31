@@ -1,8 +1,11 @@
-﻿<resources>
+<resources>
     <string name="app_name">SourZap</string>
     <string name="vpn_channel_id">sourzap_vpn_channel</string>
     <string name="vpn_channel_name">SourZap VPN Service</string>
     <string name="vpn_channel_desc">Active status and traffic monitoring for SourZap DPI bypass</string>
     <string name="vpn_notification_title">SourZap Active</string>
     <string name="vpn_notification_connected">DPI Bypass Enabled • Tap to configure</string>
+    <string name="torrent_channel_id">sourzap_torrent_channel</string>
+    <string name="torrent_channel_name">SourZap Torrent Downloader</string>
+    <string name="torrent_channel_desc">Active torrent download status, progress, and speed controls</string>
 </resources>

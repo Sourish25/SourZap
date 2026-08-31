@@ -1,0 +1,1170 @@
+package com.sourzap.app.ui.torrent
+
+import android.content.ClipboardManager
+import android.content.Context
+import android.net.Uri
+import android.os.Environment
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Hub
+import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sourzap.app.SourZapApp
+import com.sourzap.app.torrent.model.Priority
+import com.sourzap.app.torrent.model.TorrentFileItem
+import com.sourzap.app.torrent.model.TorrentFilter
+import com.sourzap.app.torrent.model.TorrentItem
+import com.sourzap.app.torrent.model.TorrentSessionStats
+import com.sourzap.app.torrent.model.TorrentSource
+import com.sourzap.app.torrent.model.TorrentState
+import com.sourzap.app.torrent.service.TorrentDownloadService
+import com.sourzap.app.ui.components.AdaptiveContentContainer
+import com.sourzap.app.ui.components.ExpressiveCard
+import com.sourzap.app.ui.components.ExpressiveChip
+import com.sourzap.app.ui.components.ExpressiveWavyProgressIndicator
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+
+@Composable
+fun TorrentScreen() {
+    val app = SourZapApp.instance
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val torrentManager = app.torrentEngineManager
+
+    LaunchedEffect(Unit) {
+        if (!torrentManager.isSessionRunning()) {
+            torrentManager.startSession(context)
+        }
+    }
+
+    val torrents by torrentManager.observeTorrents().collectAsStateWithLifecycle()
+    val stats by torrentManager.observeStats().collectAsStateWithLifecycle()
+
+    var selectedFilter by remember { mutableStateOf(TorrentFilter.ALL) }
+    var searchQuery by remember { mutableStateOf("") }
+    var showAddDialog by remember { mutableStateOf(false) }
+
+    var torrentToDelete by remember { mutableStateOf<TorrentItem?>(null) }
+    var deleteWithFiles by remember { mutableStateOf(false) }
+    var inspectingTorrent by remember { mutableStateOf<TorrentItem?>(null) }
+
+    val filteredTorrents = remember(torrents, selectedFilter, searchQuery) {
+        torrents.filter { item ->
+            val matchesFilter = selectedFilter.matches(item)
+            val matchesQuery = searchQuery.isBlank() ||
+                    item.name.contains(searchQuery, ignoreCase = true) ||
+                    item.id.contains(searchQuery, ignoreCase = true)
+            matchesFilter && matchesQuery
+        }
+    }
+
+    AdaptiveContentContainer {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+        ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 120.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                item {
+                    TorrentHeader(
+                        stats = stats,
+                        onPauseAll = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            torrentManager.pauseAll()
+                        },
+                        onResumeAll = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            torrentManager.resumeAll()
+                            TorrentDownloadService.start(context)
+                        }
+                    )
+                }
+
+                item {
+                    TorrentSessionStatsBanner(stats = stats)
+                }
+
+                item {
+                    TorrentFilterBar(
+                        searchQuery = searchQuery,
+                        onSearchChange = { searchQuery = it },
+                        selectedFilter = selectedFilter,
+                        onFilterSelected = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            selectedFilter = it
+                        }
+                    )
+                }
+
+                if (filteredTorrents.isEmpty()) {
+                    item {
+                        TorrentEmptyState(
+                            hasAnyTorrents = torrents.isNotEmpty(),
+                            onAddTorrentClick = { showAddDialog = true }
+                        )
+                    }
+                } else {
+                    items(filteredTorrents, key = { it.id }) { item ->
+                        TorrentItemCard(
+                            item = item,
+                            onTogglePause = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                if (item.state == TorrentState.PAUSED) {
+                                    torrentManager.resumeTorrent(item.id)
+                                    TorrentDownloadService.start(context)
+                                } else {
+                                    torrentManager.pauseTorrent(item.id)
+                                }
+                            },
+                            onInspectFiles = {
+                                inspectingTorrent = item
+                            },
+                            onRecheck = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                torrentManager.recheckTorrent(item.id)
+                            },
+                            onDelete = {
+                                torrentToDelete = item
+                                deleteWithFiles = false
+                            },
+                            onCopyMagnet = {
+                                val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                val uri = "magnet:?xt=urn:btih:${item.id}&dn=${Uri.encode(item.name)}"
+                                clip?.setPrimaryClip(android.content.ClipData.newPlainText("Magnet URI", uri))
+                                Toast.makeText(context, "Magnet URI copied to clipboard", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                }
+            }
+
+            FloatingActionButton(
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    showAddDialog = true
+                },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 20.dp, bottom = 90.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = "Add Torrent", modifier = Modifier.size(24.dp))
+                    Text(
+                        text = "Add Torrent",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        AddTorrentDialog(
+            onDismiss = { showAddDialog = false },
+            onAddMagnet = { magnetUri, customName, saveDir ->
+                scope.launch {
+                    try {
+                        val source = TorrentSource.Magnet(magnetUri, customName)
+                        torrentManager.addTorrent(source, saveDir)
+                        TorrentDownloadService.start(context)
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Torrent added successfully", Toast.LENGTH_SHORT).show()
+                            showAddDialog = false
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Error adding torrent: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            },
+            onAddFile = { fileBytes, fileName, saveDir ->
+                scope.launch {
+                    try {
+                        val source = TorrentSource.FileContent(fileBytes, fileName)
+                        torrentManager.addTorrent(source, saveDir)
+                        TorrentDownloadService.start(context)
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Torrent file added successfully", Toast.LENGTH_SHORT).show()
+                            showAddDialog = false
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Error loading .torrent: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    if (torrentToDelete != null) {
+        val item = torrentToDelete!!
+        AlertDialog(
+            onDismissRequest = { torrentToDelete = null },
+            title = {
+                Text(
+                    text = "Delete Torrent?",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Are you sure you want to remove \"${item.name}\" from your downloads list?",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { deleteWithFiles = !deleteWithFiles },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = deleteWithFiles,
+                            onCheckedChange = { deleteWithFiles = it }
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Also delete downloaded files from storage",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        torrentManager.removeTorrent(item.id, deleteWithFiles)
+                        torrentToDelete = null
+                        Toast.makeText(context, "Torrent deleted", Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { torrentToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    if (inspectingTorrent != null) {
+        val item = inspectingTorrent!!
+        TorrentFilesDialog(
+            item = item,
+            onDismiss = { inspectingTorrent = null },
+            onSetPriority = { fileIndex, priority ->
+                torrentManager.setFilePriority(item.id, fileIndex, priority)
+            }
+        )
+    }
+}
+
+@Composable
+private fun TorrentHeader(
+    stats: TorrentSessionStats,
+    onPauseAll: () -> Unit,
+    onResumeAll: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "Torrent Downloader",
+                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Black),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(top = 2.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.Shield,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                text = "Pure TCP • RC4 Encryption",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.Hub,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                text = "Port-443 Trackers",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                    }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                IconButton(
+                    onClick = onPauseAll,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                ) {
+                    Icon(
+                        Icons.Rounded.Pause,
+                        contentDescription = "Pause All",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = onResumeAll,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                ) {
+                    Icon(
+                        Icons.Rounded.PlayArrow,
+                        contentDescription = "Resume All",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TorrentSessionStatsBanner(stats: TorrentSessionStats) {
+    ExpressiveCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Rounded.ArrowDownward,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Download",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = stats.formattedDownloadSpeed,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.tertiaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Rounded.ArrowUpward,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Upload",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = stats.formattedUploadSpeed,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatPill(label = "Active", value = "${stats.activeTorrents}")
+                StatPill(label = "Seeding", value = "${stats.seedingTorrents}")
+                StatPill(label = "Paused", value = "${stats.pausedTorrents}")
+                StatPill(label = "DHT Nodes", value = "${stats.dhtNodes}")
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatPill(label: String, value: String) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = "$label:",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = value,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+@Composable
+private fun TorrentFilterBar(
+    searchQuery: String,
+    onSearchChange: (String) -> Unit,
+    selectedFilter: TorrentFilter,
+    onFilterSelected: (TorrentFilter) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = onSearchChange,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Search active downloads or hash...", fontSize = 13.5.sp) },
+            leadingIcon = {
+                Icon(
+                    Icons.Rounded.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { onSearchChange("") }) {
+                        Icon(Icons.Rounded.Close, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                    }
+                }
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(18.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest
+            )
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TorrentFilter.values().forEach { filter ->
+                val isSelected = filter == selectedFilter
+                val bg = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest
+                val textCol = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                val border = if (isSelected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = bg,
+                    border = border,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(18.dp))
+                        .clickable { onFilterSelected(filter) }
+                ) {
+                    Text(
+                        text = filter.name.lowercase().replaceFirstChar { it.uppercase() },
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        fontSize = 12.5.sp,
+                        color = textCol,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TorrentItemCard(
+    item: TorrentItem,
+    onTogglePause: () -> Unit,
+    onInspectFiles: () -> Unit,
+    onRecheck: () -> Unit,
+    onDelete: () -> Unit,
+    onCopyMagnet: () -> Unit
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    ExpressiveCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        backgroundColor = MaterialTheme.colorScheme.surfaceContainerLowest
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = item.name,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Row(
+                        modifier = Modifier.padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        TorrentStateBadge(state = item.state)
+                        Text(
+                            text = "${item.formattedDownloadedSize} of ${item.formattedTotalSize}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onTogglePause,
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (item.state == TorrentState.PAUSED) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                            contentDescription = if (item.state == TorrentState.PAUSED) "Resume" else "Pause",
+                            tint = if (item.state == TorrentState.PAUSED) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Box {
+                        IconButton(
+                            onClick = { menuExpanded = true },
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.MoreVert,
+                                contentDescription = "More actions",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("View & Select Files") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onInspectFiles()
+                                },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Rounded.InsertDriveFile, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Force Recheck") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onRecheck()
+                                },
+                                leadingIcon = { Icon(Icons.Rounded.Refresh, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Copy Magnet Link") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onCopyMagnet()
+                                },
+                                leadingIcon = { Icon(Icons.Rounded.ContentCopy, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Delete Torrent", color = MaterialTheme.colorScheme.error) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onDelete()
+                                },
+                                leadingIcon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (item.state == TorrentState.DOWNLOADING) {
+                ExpressiveWavyProgressIndicator(
+                    progress = item.progress,
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp),
+                    shape = RoundedCornerShape(3.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(item.progress.coerceIn(0f, 1f))
+                            .background(
+                                if (item.state == TorrentState.FINISHED || item.state == TorrentState.SEEDING) {
+                                    MaterialTheme.colorScheme.tertiary
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                }
+                            )
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (item.downloadSpeed > 0) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Icon(Icons.Rounded.ArrowDownward, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(13.dp))
+                            Text(text = item.formattedDownloadSpeed, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    if (item.uploadSpeed > 0) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Icon(Icons.Rounded.ArrowUpward, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(13.dp))
+                            Text(text = item.formattedUploadSpeed, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary)
+                        }
+                    }
+                    Text(
+                        text = "Seeds: ${item.numSeeds}/${item.totalSeeds} • Peers: ${item.numPeers}/${item.totalPeers}",
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Text(
+                    text = if (item.etaSeconds > 0) "ETA: ${item.formattedEta}" else item.formattedProgress,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TorrentStateBadge(state: TorrentState) {
+    val (bgColor, textColor, label) = when (state) {
+        TorrentState.DOWNLOADING -> Triple(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.primary, "Downloading")
+        TorrentState.SEEDING -> Triple(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.tertiary, "Seeding")
+        TorrentState.PAUSED -> Triple(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.colorScheme.onSurfaceVariant, "Paused")
+        TorrentState.FINISHED -> Triple(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.secondary, "Finished")
+        TorrentState.CHECKING -> Triple(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.colorScheme.primary, "Checking")
+        TorrentState.METADATA -> Triple(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.primary, "Fetching Info")
+        TorrentState.ALLOCATING -> Triple(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.colorScheme.onSurfaceVariant, "Allocating")
+        TorrentState.ERROR -> Triple(MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.error, "Error")
+    }
+
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = bgColor
+    ) {
+        Text(
+            text = label,
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.Bold,
+            color = textColor,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        )
+    }
+}
+
+@Composable
+private fun TorrentEmptyState(
+    hasAnyTorrents: Boolean,
+    onAddTorrentClick: () -> Unit
+) {
+    ExpressiveCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 24.dp),
+        shape = RoundedCornerShape(28.dp),
+        backgroundColor = MaterialTheme.colorScheme.surfaceContainerLowest
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Rounded.CloudDownload,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+
+            Text(
+                text = if (hasAnyTorrents) "No Matching Torrents" else "No Active Torrents",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Text(
+                text = if (hasAnyTorrents) "No downloads match the current filter or search criteria."
+                else "Add magnet links or .torrent files to download through restricted firewalls with pure TCP & forced RC4 encryption.",
+                fontSize = 13.5.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                lineHeight = 19.sp
+            )
+
+            if (!hasAnyTorrents) {
+                Button(
+                    onClick = onAddTorrentClick,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Add Magnet or .torrent", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddTorrentDialog(
+    onDismiss: () -> Unit,
+    onAddMagnet: (uri: String, displayName: String?, saveDir: File) -> Unit,
+    onAddFile: (bytes: ByteArray, fileName: String, saveDir: File) -> Unit
+) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    var magnetInput by remember { mutableStateOf("") }
+    var customNameInput by remember { mutableStateOf("") }
+
+    val defaultSaveDir = remember {
+        val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        File(base, "SourZap").apply { if (!exists()) mkdirs() }
+    }
+    var selectedSaveDir by remember { mutableStateOf(defaultSaveDir) }
+
+    LaunchedEffect(Unit) {
+        val clipText = clipboard.getText()?.text?.trim()
+        if (!clipText.isNullOrBlank() && clipText.startsWith("magnet:?")) {
+            magnetInput = clipText
+        }
+    }
+
+    val filePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bytes = inputStream?.readBytes()
+                inputStream?.close()
+                if (bytes != null && bytes.isNotEmpty()) {
+                    val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "download.torrent"
+                    onAddFile(bytes, fileName, selectedSaveDir)
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Failed to read .torrent file", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Add Torrent Download",
+                fontWeight = FontWeight.Black,
+                fontSize = 19.sp
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                OutlinedTextField(
+                    value = magnetInput,
+                    onValueChange = { magnetInput = it },
+                    label = { Text("Magnet Link (magnet:?...)") },
+                    placeholder = { Text("Paste magnet link here") },
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        IconButton(onClick = {
+                            val clipText = clipboard.getText()?.text?.trim()
+                            if (!clipText.isNullOrBlank()) magnetInput = clipText
+                        }) {
+                            Icon(Icons.Rounded.ContentPaste, contentDescription = "Paste")
+                        }
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    maxLines = 3
+                )
+
+                OutlinedTextField(
+                    value = customNameInput,
+                    onValueChange = { customNameInput = it },
+                    label = { Text("Custom Name (Optional)") },
+                    placeholder = { Text("e.g. Linux ISO") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp)
+                )
+
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { filePicker.launch("*/*") }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Column {
+                            Text("Open .torrent File", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+                            Text("Pick from device storage", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                ) {
+                    Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = "Saving to: Downloads/SourZap/",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (magnetInput.isNotBlank()) {
+                        onAddMagnet(magnetInput.trim(), customNameInput.trim().ifEmpty { null }, selectedSaveDir)
+                    } else {
+                        Toast.makeText(context, "Please enter a magnet link or pick a .torrent file", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                enabled = magnetInput.isNotBlank(),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text("Start Download", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        shape = RoundedCornerShape(26.dp)
+    )
+}
+
+@Composable
+private fun TorrentFilesDialog(
+    item: TorrentItem,
+    onDismiss: () -> Unit,
+    onSetPriority: (fileIndex: Int, priority: Priority) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Torrent Files (${item.files.size})",
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
+            )
+        },
+        text = {
+            if (item.files.isEmpty()) {
+                Text(
+                    text = "Metadata is currently being fetched from swarm peers. Files will appear here once metadata completes.",
+                    fontSize = 13.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(320.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(item.files, key = { it.index }) { file ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = file.fileName,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${TorrentItem.formatFileSize(file.downloadedBytes)} / ${TorrentItem.formatFileSize(file.size)} • ${String.format(java.util.Locale.US, "%.0f%%", file.progress * 100f)}",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Checkbox(
+                                    checked = !file.isSkipped,
+                                    onCheckedChange = { checked ->
+                                        val priority = if (checked) Priority.NORMAL else Priority.IGNORE
+                                        onSetPriority(file.index, priority)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss, shape = RoundedCornerShape(14.dp)) {
+                Text("Close")
+            }
+        },
+        shape = RoundedCornerShape(24.dp)
+    )
+}

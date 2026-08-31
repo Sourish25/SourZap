@@ -23,6 +23,9 @@ class SourZapApp : Application() {
     lateinit var updateManager: UpdateManager
         private set
 
+    lateinit var torrentEngineManager: com.sourzap.app.torrent.core.TorrentEngineManager
+        private set
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -31,13 +34,14 @@ class SourZapApp : Application() {
         settingsRepository = SettingsRepository(this)
         speedTestEngine = SpeedTestEngine(settingsRepository, strategyRepository)
         updateManager = UpdateManager(this)
+        torrentEngineManager = com.sourzap.app.torrent.core.TorrentEngineManager.create()
 
         createNotificationChannels()
     }
 
     private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
+            val vpnChannel = NotificationChannel(
                 getString(R.string.vpn_channel_id),
                 getString(R.string.vpn_channel_name),
                 NotificationManager.IMPORTANCE_LOW
@@ -45,8 +49,19 @@ class SourZapApp : Application() {
                 description = getString(R.string.vpn_channel_desc)
                 setShowBadge(false)
             }
+
+            val torrentChannel = NotificationChannel(
+                getString(R.string.torrent_channel_id),
+                getString(R.string.torrent_channel_name),
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = getString(R.string.torrent_channel_desc)
+                setShowBadge(false)
+            }
+
             val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(channel)
+            manager?.createNotificationChannel(vpnChannel)
+            manager?.createNotificationChannel(torrentChannel)
         }
     }
 
