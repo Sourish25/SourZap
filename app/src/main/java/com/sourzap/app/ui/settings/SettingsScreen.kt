@@ -78,6 +78,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -254,7 +255,7 @@ fun SettingsScreen(
                             SettingsCategoryTile(
                                 icon = Icons.Rounded.Dns,
                                 title = "DNS & Security",
-                                subtitle = "${currentStrategy.dohProvider.displayName} • 0ms LRU Cache",
+                                subtitle = "${currentStrategy.dohProvider.displayName} • Encrypted DNS",
                                 iconContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
                                 iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
                                 onClick = {
@@ -269,7 +270,7 @@ fun SettingsScreen(
                             SettingsCategoryTile(
                                 icon = Icons.Rounded.SystemUpdate,
                                 title = "Updates & Releases",
-                                subtitle = "SourZap v$currentAppVersion • Check GitHub Releases",
+                                subtitle = "SourZap v$currentAppVersion • Check for updates",
                                 iconContainerColor = MaterialTheme.colorScheme.primaryContainer,
                                 iconTint = MaterialTheme.colorScheme.primary,
                                 onClick = {
@@ -284,7 +285,7 @@ fun SettingsScreen(
                             SettingsCategoryTile(
                                 icon = Icons.Rounded.Info,
                                 title = "About & Diagnostics",
-                                subtitle = "Rootless Architecture, MIT License & GitHub",
+                                subtitle = "App info, license & source code",
                                 iconContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                                 iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 onClick = {
@@ -299,8 +300,8 @@ fun SettingsScreen(
                         // Sub-Page Header with Back Button
                         item {
                             SettingsSubPageHeader(
-                                title = "Appearance & Themes",
-                                subtitle = "11 Material 3 color palettes and display modes",
+                                title = "Themes & Display",
+                                subtitle = "Color palettes, accent styles, and display modes",
                                 onBackClick = { currentPage = SettingsPage.MAIN }
                             )
                         }
@@ -317,13 +318,13 @@ fun SettingsScreen(
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     Text(
-                                        text = "Theme Display Mode",
+                                        text = "Theme Mode",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 15.5.sp,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "Choose light, dark, or follow your system theme automatically",
+                                        text = "Choose light, dark, or follow system default mode",
                                         fontWeight = FontWeight.Normal,
                                         fontSize = 12.5.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -357,13 +358,13 @@ fun SettingsScreen(
                                     verticalArrangement = Arrangement.spacedBy(14.dp)
                                 ) {
                                     Text(
-                                        text = "Material 3 Color Palettes",
+                                        text = "Color Palettes",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 15.5.sp,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "Select a color harmony tailored with Google Material You HCT tones",
+                                        text = "Choose a color palette or multi-tone theme",
                                         fontWeight = FontWeight.Normal,
                                         fontSize = 12.5.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1130,7 +1131,7 @@ fun SettingsScreen(
                                 }
 
                                 Text(
-                                    text = "A rootless implementation of Zapret DPI circumvention for Android, built with Google Material You Expressive design architecture.",
+                                    text = "A rootless DPI circumvention utility for Android with customizable themes and granular traffic controls.",
                                     fontWeight = FontWeight.Normal,
                                     fontSize = 13.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1353,7 +1354,7 @@ fun SettingsScreen(
 }
 
 /**
- * Material 3 Color Palette Swatch Card
+ * Color Palette Swatch Card with Dual-Tone Gradient Dot
  */
 @Composable
 private fun ThemeSwatchCard(
@@ -1362,6 +1363,18 @@ private fun ThemeSwatchCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+
+    val (primaryColor, secondaryColor) = remember(preset, isDark) {
+        if (preset == AppThemePreset.DYNAMIC && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            val scheme = if (isDark) androidx.compose.material3.dynamicDarkColorScheme(context) else androidx.compose.material3.dynamicLightColorScheme(context)
+            Pair(scheme.primary, scheme.secondary)
+        } else {
+            Pair(Color(preset.primaryColor), Color(preset.secondaryColor))
+        }
+    }
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -1386,13 +1399,18 @@ private fun ThemeSwatchCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
             ) {
+                // Dual-Tone Gradient Preview Dot
                 Box(
                     modifier = Modifier
                         .size(28.dp)
                         .clip(CircleShape)
-                        .background(Color(preset.previewColor))
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(primaryColor, secondaryColor)
+                            )
+                        )
                 )
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = preset.displayName,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,

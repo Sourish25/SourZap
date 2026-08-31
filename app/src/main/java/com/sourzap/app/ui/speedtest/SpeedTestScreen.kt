@@ -354,7 +354,7 @@ fun SpeedTestScreen(
                 // Section Title: Diagnostic Telemetry Metrics
                 item {
                     Text(
-                        text = "DIAGNOSTIC METRICS GRID",
+                        text = "METRICS",
                         fontWeight = FontWeight.Black,
                         fontSize = 12.sp,
                         letterSpacing = 0.8.sp,

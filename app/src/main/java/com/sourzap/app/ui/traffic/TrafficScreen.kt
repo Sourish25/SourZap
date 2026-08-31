@@ -198,7 +198,7 @@ fun TrafficScreen(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "Real-Time DPI Packet Telemetry",
+                                text = "Live traffic & connection streams",
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 13.5.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -473,7 +473,7 @@ fun TrafficScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "INTERCEPTED STREAMS",
+                        text = "CONNECTIONS",
                         fontWeight = FontWeight.Black,
                         fontSize = 12.sp,
                         letterSpacing = 0.8.sp,
@@ -488,19 +488,11 @@ fun TrafficScreen(
                     )
                 }
 
-                // Expressive Real-Time Live Search Bar
+                // Search Bar
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = {
-                        Text(
-                            text = "Search by domain, protocol, technique, or port...",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    },
+                    placeholder = { Text("Filter by domain, IP, protocol...") },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Rounded.Search,
@@ -524,7 +516,7 @@ fun TrafficScreen(
                             }
                         }
                     },
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(18.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                         unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -535,21 +527,17 @@ fun TrafficScreen(
                     singleLine = true
                 )
 
-                // Smooth Animated Material 3 Expressive Filter Tabs
+                // Filter Tabs with safe bounds and zero clipping
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(vertical = 2.dp)
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     TrafficFilterTab.values().forEach { tab ->
                         val isSelected = selectedTab == tab
-                        val animatedScale by animateFloatAsState(
-                            targetValue = if (isSelected) 1.03f else 1f,
-                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
-                            label = "TabScale"
-                        )
                         val bg = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest
                         val textCol = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                         val border = if (isSelected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
@@ -559,7 +547,6 @@ fun TrafficScreen(
                             color = bg,
                             border = border,
                             modifier = Modifier
-                                .scale(animatedScale)
                                 .clip(RoundedCornerShape(18.dp))
                                 .semantics {
                                     role = Role.Tab
@@ -584,7 +571,7 @@ fun TrafficScreen(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = tab.displayName,
-                                    fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                     fontSize = 12.5.sp,
                                     color = textCol,
                                     maxLines = 1
