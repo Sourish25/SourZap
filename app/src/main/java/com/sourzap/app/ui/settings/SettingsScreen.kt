@@ -834,12 +834,29 @@ fun SettingsScreen(
                                                 .padding(16.dp),
                                             verticalArrangement = Arrangement.spacedBy(10.dp)
                                         ) {
-                                            Text(
-                                                text = "New Update Available: v${state.release.versionName}",
-                                                fontWeight = FontWeight.Black,
-                                                fontSize = 16.sp,
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Text(
+                                                    text = "New Update Available",
+                                                    fontWeight = FontWeight.Black,
+                                                    fontSize = 16.sp,
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                )
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                                ) {
+                                                    Text(
+                                                        text = "v${state.release.versionName}",
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        fontSize = 12.sp,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
                                             Text(
                                                 text = state.release.releaseNotes,
                                                 fontSize = 12.5.sp,

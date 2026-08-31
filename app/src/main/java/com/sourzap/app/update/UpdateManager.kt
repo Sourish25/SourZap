@@ -168,6 +168,16 @@ class UpdateManager(private val context: Context) {
                         publishedAt = publishedAt
                     )
 
+                    if (!isNewer) {
+                        try {
+                            val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+                            val updatesDir = File(baseDir, "updates")
+                            if (updatesDir.exists()) {
+                                updatesDir.listFiles()?.forEach { it.delete() }
+                            }
+                        } catch (_: Exception) {}
+                    }
+
                     _updateState.value = if (isNewer) UpdateState.Available(releaseInfo) else UpdateState.UpToDate(releaseInfo)
                 } catch (e: Exception) {
                     _updateState.value = UpdateState.Error(e.message ?: "Failed to check for updates")

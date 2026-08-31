@@ -204,25 +204,46 @@ fun DashboardScreen(
 
                                     Spacer(modifier = Modifier.width(10.dp))
 
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = if (release != null) "Update Available: v${release.versionName}" else "SourZap Update",
-                                            fontWeight = FontWeight.Black,
-                                            fontSize = 15.sp,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = "Update Available",
+                                                fontWeight = FontWeight.Black,
+                                                fontSize = 14.5.sp,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                            if (release != null) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                                ) {
+                                                    Text(
+                                                        text = "v${release.versionName}",
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        fontSize = 11.5.sp,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
                                         Text(
                                             text = when (state) {
                                                 is UpdateState.Downloading -> "Downloading package in background..."
-                                                is UpdateState.ReadyToInstall -> "Package ready to install"
+                                                is UpdateState.ReadyToInstall -> "Package verified and ready to install"
                                                 else -> "Tap Update to install latest improvements"
                                             },
                                             fontWeight = FontWeight.Medium,
                                             fontSize = 12.sp,
                                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                                            maxLines = 1,
+                                            lineHeight = 15.sp,
+                                            maxLines = 2,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                     }
@@ -235,6 +256,7 @@ fun DashboardScreen(
                                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                                     updateManager.startDownload(state.release.apkDownloadUrl)
                                                 },
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                                                 shape = RoundedCornerShape(16.dp),
                                                 colors = ButtonDefaults.buttonColors(
                                                     containerColor = MaterialTheme.colorScheme.primary,
@@ -259,6 +281,7 @@ fun DashboardScreen(
                                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                                     updateManager.installApk(state.apkFile)
                                                 },
+                                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                                                 shape = RoundedCornerShape(16.dp),
                                                 colors = ButtonDefaults.buttonColors(
                                                     containerColor = MaterialTheme.colorScheme.primary,
