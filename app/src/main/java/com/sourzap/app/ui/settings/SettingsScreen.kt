@@ -3,7 +3,15 @@ package com.sourzap.app.ui.settings
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,9 +32,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.AltRoute
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Android
 import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Code
@@ -42,7 +53,6 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.SystemUpdate
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -68,6 +78,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -81,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sourzap.app.SourZapApp
 import com.sourzap.app.data.model.AppInfo
+import com.sourzap.app.data.model.DohProvider
 import com.sourzap.app.data.repository.AppListHelper
 import com.sourzap.app.ui.components.ExpressiveCard
 import com.sourzap.app.ui.components.ExpressiveChip
@@ -89,6 +102,18 @@ import com.sourzap.app.ui.components.SegmentedPillSwitch
 import com.sourzap.app.ui.theme.AppThemePreset
 import com.sourzap.app.update.UpdateState
 import kotlinx.coroutines.launch
+
+/**
+ * Settings Navigation Hierarchy
+ */
+enum class SettingsPage {
+    MAIN,
+    APPEARANCE,
+    NETWORK,
+    DNS,
+    UPDATES,
+    ABOUT
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,6 +132,7 @@ fun SettingsScreen(
     val disallowedPackages by settingsRepo.disallowedPackages.collectAsState()
     val currentStrategy by strategyRepo.currentStrategy.collectAsState()
 
+    var currentPage by remember { mutableStateOf(SettingsPage.MAIN) }
     var showAppSheet by remember { mutableStateOf(false) }
     var installedApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     var appSearchQuery by remember { mutableStateOf("") }
@@ -118,703 +144,598 @@ fun SettingsScreen(
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
     val currentAppVersion = com.sourzap.app.BuildConfig.VERSION_NAME
 
+    // Handle system back navigation to return to main settings menu
+    BackHandler(enabled = currentPage != SettingsPage.MAIN) {
+        currentPage = SettingsPage.MAIN
+    }
+
     LaunchedEffect(showAppSheet) {
         if (showAppSheet && installedApps.isEmpty()) {
             installedApps = AppListHelper.getInstalledLaunchableApps(context, disallowedPackages)
         }
     }
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
-            .statusBarsPadding()
-            .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 108.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Header
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Settings",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 32.sp,
-                        letterSpacing = (-1).sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Theme, Preferences & Routing",
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+    val currentThemeObj = AppThemePreset.values().firstOrNull { it.id == themePreset } ?: AppThemePreset.DYNAMIC
 
-                Spacer(modifier = Modifier.width(8.dp))
-
-                ExpressiveChip(
-                    text = "PREFS",
-                    icon = Icons.Rounded.Tune,
-                    backgroundColor = MaterialTheme.colorScheme.primaryContainer,
-                    textColor = MaterialTheme.colorScheme.onPrimaryContainer
+    AnimatedContent(
+        targetState = currentPage,
+        transitionSpec = {
+            if (targetState != SettingsPage.MAIN) {
+                (slideInHorizontally { width -> width } + fadeIn()).togetherWith(
+                    slideOutHorizontally { width -> -width } + fadeOut()
+                )
+            } else {
+                (slideInHorizontally { width -> -width } + fadeIn()).togetherWith(
+                    slideOutHorizontally { width -> width } + fadeOut()
                 )
             }
-        }
-
-        // Section 1: Theme & Appearance
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Rounded.Palette,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "MATERIAL YOU THEME SYSTEM",
-                    fontWeight = FontWeight.Black,
-                    fontSize = 12.sp,
-                    letterSpacing = 0.8.sp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-
-        item {
-            ExpressiveCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
-                backgroundColor = MaterialTheme.colorScheme.surfaceContainer
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // Color Palette Chooser
-                    Column {
-                        Text(
-                            text = "Color Palette",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Dynamic Monet extracts colors directly from your wallpaper",
-                            fontWeight = FontWeight.Normal,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        val presets = AppThemePreset.values().toList()
-                        val currentActivePreset = presets.firstOrNull { it.id == themePreset } ?: AppThemePreset.DYNAMIC
-
-                        // Row 1: Dynamic Monet & Indigo
-                        SegmentedPillSwitch(
-                            items = listOf(AppThemePreset.DYNAMIC, AppThemePreset.ELECTRIC_INDIGO),
-                            selectedItem = currentActivePreset,
-                            itemLabel = {
-                                if (it == AppThemePreset.DYNAMIC) "Dynamic Monet" else "Electric Indigo"
-                            },
-                            onItemSelected = { settingsRepo.setThemePreset(it.id) }
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Row 2: Fresh Mint & Berry Vivid
-                        SegmentedPillSwitch(
-                            items = listOf(AppThemePreset.CYBER_MINT, AppThemePreset.BERRY_EXPRESSIVE),
-                            selectedItem = currentActivePreset,
-                            itemLabel = {
-                                if (it == AppThemePreset.CYBER_MINT) "Fresh Mint" else "Berry Vivid"
-                            },
-                            onItemSelected = { settingsRepo.setThemePreset(it.id) }
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Row 3: Sunset Glow & Oceanic Cyan
-                        SegmentedPillSwitch(
-                            items = listOf(AppThemePreset.SUNSET_TERRACOTTA, AppThemePreset.OCEANIC_CYAN),
-                            selectedItem = currentActivePreset,
-                            itemLabel = {
-                                if (it == AppThemePreset.SUNSET_TERRACOTTA) "Sunset Glow" else "Oceanic Cyan"
-                            },
-                            onItemSelected = { settingsRepo.setThemePreset(it.id) }
-                        )
+        },
+        label = "SettingsNavTransition"
+    ) { targetPage ->
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(top = 16.dp, bottom = 108.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            when (targetPage) {
+                SettingsPage.MAIN -> {
+                    // Main Settings Header
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Settings",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 32.sp,
+                                    letterSpacing = (-1).sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Preferences & System Configuration",
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
                     }
 
-                    // Dark / Light / System Mode Chooser
-                    Column {
-                        Text(
-                            text = "Theme Mode",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Choose light, dark, or follow system default theme",
-                            fontWeight = FontWeight.Normal,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        SegmentedPillSwitch(
-                            items = listOf("SYSTEM", "DARK", "LIGHT"),
-                            selectedItem = darkModePref,
-                            itemLabel = {
-                                when (it) {
-                                    "SYSTEM" -> "System Default"
+                    // Category 1: Appearance & Themes
+                    item {
+                        SettingsCategoryTile(
+                            icon = Icons.Rounded.Palette,
+                            title = "Appearance & Themes",
+                            subtitle = "${currentThemeObj.displayName} • ${
+                                when (darkModePref) {
                                     "DARK" -> "Dark Mode"
-                                    else -> "Light Mode"
+                                    "LIGHT" -> "Light Mode"
+                                    else -> "System Default"
                                 }
-                            },
-                            onItemSelected = { settingsRepo.setDarkModePref(it) }
-                        )
-                    }
-                }
-            }
-        }
-
-        // Section 2: Network & Routing
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.AltRoute,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "NETWORK & ROUTING",
-                    fontWeight = FontWeight.Black,
-                    fontSize = 12.sp,
-                    letterSpacing = 0.8.sp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-
-        item {
-            ExpressiveCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
-                backgroundColor = MaterialTheme.colorScheme.surfaceContainer
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // Split Tunneling App Bypass Button Tile
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .semantics {
-                                role = Role.Button
-                                contentDescription = "App Bypass Split Tunneling. ${if (disallowedPackages.isEmpty()) "All apps go through VPN" else "${disallowedPackages.size} apps bypassed"}."
-                            }
-                            .clickable {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                showAppSheet = true
-                            }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Apps,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "App Bypass (Split Tunneling)",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.5.sp,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = if (disallowedPackages.isEmpty()) "All apps go through DPI circumvention" else "${disallowedPackages.size} app(s) bypass the VPN",
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 12.5.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        ExpressiveChip(
-                            text = if (disallowedPackages.isEmpty()) "CONFIGURE" else "${disallowedPackages.size} BYPASSED",
-                            backgroundColor = MaterialTheme.colorScheme.primaryContainer,
-                            textColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-
-                    // Bypass Local LAN Tile
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                settingsRepo.setBypassLan(!bypassLan)
-                            }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Lan,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Bypass Local LAN",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.5.sp,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "Direct connectivity for Chromecast, printers & home LAN",
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 12.5.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(10.dp))
-
-                        Switch(
-                            checked = bypassLan,
-                            onCheckedChange = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                settingsRepo.setBypassLan(it)
-                            }
-                        )
-                    }
-
-                    // Auto-Connect on Boot Tile
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                settingsRepo.setAutoConnect(!autoConnect)
-                            }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.PowerSettingsNew,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.tertiary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Auto-Connect on Boot",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.5.sp,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "Automatically activates DPI desync upon device restart",
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 12.5.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(10.dp))
-
-                        Switch(
-                            checked = autoConnect,
-                            onCheckedChange = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                settingsRepo.setAutoConnect(it)
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        // Section 3: DPI Evasion & DNS Engine
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Rounded.Security,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "DPI EVASION & DNS ENGINE",
-                    fontWeight = FontWeight.Black,
-                    fontSize = 12.sp,
-                    letterSpacing = 0.8.sp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-
-        item {
-            ExpressiveCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
-                backgroundColor = MaterialTheme.colorScheme.surfaceContainer
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "DoH DNS Security",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.5.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Encrypted DNS-over-HTTPS bypasses ISP DNS poisoning",
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 12.5.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        ExpressiveChip(
-                            text = currentStrategy.dohProvider.displayName,
-                            icon = Icons.Rounded.Dns,
-                            backgroundColor = MaterialTheme.colorScheme.primaryContainer,
-                            textColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "TLS Desync Mode",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.5.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Split2 TLS record header splitting & SNI desynchronization",
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 12.5.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        ExpressiveChip(
-                            text = "SPLIT2 ACTIVE",
-                            icon = Icons.Rounded.Shield,
-                            backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            textColor = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-        }
-
-        // Section 4: System & Diagnostics
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Rounded.Devices,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "SYSTEM & DIAGNOSTICS",
-                    fontWeight = FontWeight.Black,
-                    fontSize = 12.sp,
-                    letterSpacing = 0.8.sp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-
-        item {
-            ExpressiveCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
-                backgroundColor = MaterialTheme.colorScheme.surfaceContainer
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Engine Architecture",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Rootless Userspace TUN (${Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"})",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Android OS Version",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
-                            fontWeight = FontWeight.Normal,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Interface & MTU",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "tun0 • 1500 MTU • Dual-Stack IPv4/IPv6",
-                            fontWeight = FontWeight.Normal,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-
-        // Section 5: In-App Updates & Releases
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Rounded.SystemUpdate,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "IN-APP UPDATES & RELEASES",
-                    fontWeight = FontWeight.Black,
-                    fontSize = 12.sp,
-                    letterSpacing = 0.8.sp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-
-        item {
-            ExpressiveCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
-                backgroundColor = MaterialTheme.colorScheme.surfaceContainer
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "SourZap v$currentAppVersion",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 18.sp,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "Automatic GitHub Release Updater",
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        Button(
+                            }",
+                            iconContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
                             onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                scope.launch {
-                                    updateManager.checkForUpdates(currentAppVersion).collect {
-                                        updateState = it
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                currentPage = SettingsPage.APPEARANCE
+                            }
+                        )
+                    }
+
+                    // Category 2: Network & Routing
+                    item {
+                        SettingsCategoryTile(
+                            icon = Icons.AutoMirrored.Rounded.AltRoute,
+                            title = "Network & Routing",
+                            subtitle = if (disallowedPackages.isEmpty()) "All apps tunnelled • LAN Bypass ${if (bypassLan) "On" else "Off"}" else "${disallowedPackages.size} apps bypassed • LAN Bypass ${if (bypassLan) "On" else "Off"}",
+                            iconContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            onClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                currentPage = SettingsPage.NETWORK
+                            }
+                        )
+                    }
+
+                    // Category 3: DNS & Security
+                    item {
+                        SettingsCategoryTile(
+                            icon = Icons.Rounded.Dns,
+                            title = "DNS & Security",
+                            subtitle = "${currentStrategy.dohProvider.displayName} • 0ms LRU Cache",
+                            iconContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
+                            onClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                currentPage = SettingsPage.DNS
+                            }
+                        )
+                    }
+
+                    // Category 4: Updates & Releases
+                    item {
+                        SettingsCategoryTile(
+                            icon = Icons.Rounded.SystemUpdate,
+                            title = "Updates & Releases",
+                            subtitle = "SourZap v$currentAppVersion • Check GitHub Releases",
+                            iconContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            iconTint = MaterialTheme.colorScheme.primary,
+                            onClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                currentPage = SettingsPage.UPDATES
+                            }
+                        )
+                    }
+
+                    // Category 5: About & Diagnostics
+                    item {
+                        SettingsCategoryTile(
+                            icon = Icons.Rounded.Info,
+                            title = "About & Diagnostics",
+                            subtitle = "Rootless Architecture, MIT License & GitHub",
+                            iconContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            onClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                currentPage = SettingsPage.ABOUT
+                            }
+                        )
+                    }
+                }
+
+                SettingsPage.APPEARANCE -> {
+                    // Sub-Page Header with Back Button
+                    item {
+                        SettingsSubPageHeader(
+                            title = "Appearance & Themes",
+                            subtitle = "11 Material 3 color palettes and display modes",
+                            onBackClick = { currentPage = SettingsPage.MAIN }
+                        )
+                    }
+
+                    // Theme Mode Selector Card
+                    item {
+                        ExpressiveCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            backgroundColor = MaterialTheme.colorScheme.surfaceContainer
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(18.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Text(
+                                    text = "Theme Display Mode",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Choose light, dark, or follow your system theme automatically",
+                                    fontWeight = FontWeight.Normal,
+                                    fontSize = 12.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                SegmentedPillSwitch(
+                                    items = listOf("SYSTEM", "DARK", "LIGHT"),
+                                    selectedItem = darkModePref,
+                                    itemLabel = {
+                                        when (it) {
+                                            "SYSTEM" -> "System Default"
+                                            "DARK" -> "Dark Mode"
+                                            else -> "Light Mode"
+                                        }
+                                    },
+                                    onItemSelected = { settingsRepo.setDarkModePref(it) }
+                                )
+                            }
+                        }
+                    }
+
+                    // Color Palettes Grid Card
+                    item {
+                        ExpressiveCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(28.dp),
+                            backgroundColor = MaterialTheme.colorScheme.surfaceContainer
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(18.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Text(
+                                    text = "Material 3 Color Palettes",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Select a color harmony tailored with Google Material You HCT tones",
+                                    fontWeight = FontWeight.Normal,
+                                    fontSize = 12.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                val allPresets = AppThemePreset.values().toList()
+                                allPresets.forEach { preset ->
+                                    val isSelected = preset.id == themePreset
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(18.dp))
+                                            .border(
+                                                width = if (isSelected) 2.dp else 1.dp,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                                                shape = RoundedCornerShape(18.dp)
+                                            )
+                                            .clickable {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                settingsRepo.setThemePreset(preset.id)
+                                            },
+                                        shape = RoundedCornerShape(18.dp),
+                                        color = if (isSelected) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerHigh
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(28.dp)
+                                                        .clip(CircleShape)
+                                                        .background(Color(preset.previewColor))
+                                                )
+                                                Spacer(modifier = Modifier.width(12.dp))
+                                                Text(
+                                                    text = preset.displayName,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    fontSize = 14.5.sp,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+
+                                            if (isSelected) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(24.dp)
+                                                        .clip(CircleShape)
+                                                        .background(MaterialTheme.colorScheme.primary),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Check,
+                                                        contentDescription = "Selected",
+                                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
-                            },
-                            shape = RoundedCornerShape(20.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+                            }
+                        }
+                    }
+                }
+
+                SettingsPage.NETWORK -> {
+                    // Sub-Page Header with Back Button
+                    item {
+                        SettingsSubPageHeader(
+                            title = "Network & Routing",
+                            subtitle = "Split Tunneling, LAN routing, and auto-start",
+                            onBackClick = { currentPage = SettingsPage.MAIN }
+                        )
+                    }
+
+                    item {
+                        ExpressiveCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(28.dp),
+                            backgroundColor = MaterialTheme.colorScheme.surfaceContainer
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Refresh,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
+                            Column(
+                                modifier = Modifier.padding(20.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                // Split Tunneling Button Tile
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .semantics {
+                                            role = Role.Button
+                                            contentDescription = "App Bypass Split Tunneling. ${if (disallowedPackages.isEmpty()) "All apps go through VPN" else "${disallowedPackages.size} apps bypassed"}."
+                                        }
+                                        .clickable {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            showAppSheet = true
+                                        }
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Apps,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "App Bypass (Split Tunneling)",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.5.sp,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = if (disallowedPackages.isEmpty()) "All apps go through DPI circumvention" else "${disallowedPackages.size} apps connect directly",
+                                            fontWeight = FontWeight.Normal,
+                                            fontSize = 12.5.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    ExpressiveChip(
+                                        text = "CONFIGURE",
+                                        backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                                        textColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+
+                                // Bypass Local LAN Switch Tile
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Lan,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Bypass Local LAN",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.5.sp,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "Direct connectivity for Chromecast, printers & home LAN",
+                                            fontWeight = FontWeight.Normal,
+                                            fontSize = 12.5.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    Switch(
+                                        checked = bypassLan,
+                                        onCheckedChange = {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            settingsRepo.setBypassLan(it)
+                                        }
+                                    )
+                                }
+
+                                // Auto-Connect on Boot Switch Tile
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.PowerSettingsNew,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.tertiary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Auto-Connect on Boot",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.5.sp,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "Automatically activates DPI desync upon device restart",
+                                            fontWeight = FontWeight.Normal,
+                                            fontSize = 12.5.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    Switch(
+                                        checked = autoConnect,
+                                        onCheckedChange = {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            settingsRepo.setAutoConnectOnBoot(it)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SettingsPage.DNS -> {
+                    // Sub-Page Header with Back Button
+                    item {
+                        SettingsSubPageHeader(
+                            title = "DNS & Security",
+                            subtitle = "Encrypted DNS-over-HTTPS & Evasion Config",
+                            onBackClick = { currentPage = SettingsPage.MAIN }
+                        )
+                    }
+
+                    item {
+                        ExpressiveCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(28.dp),
+                            backgroundColor = MaterialTheme.colorScheme.surfaceContainer
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(20.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Text(
+                                    text = "DNS-over-HTTPS (DoH) Provider",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Check Now", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                                Text(
+                                    text = "Encrypted DNS queries bypass ISP DNS poisoning and censorship with 0ms in-memory LRU caching.",
+                                    fontWeight = FontWeight.Normal,
+                                    fontSize = 12.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                val dohProviders = listOf(
+                                    DohProvider.CLOUDFLARE,
+                                    DohProvider.GOOGLE,
+                                    DohProvider.QUAD9,
+                                    DohProvider.ADGUARD
+                                )
+
+                                dohProviders.forEach { provider ->
+                                    val isSelected = currentStrategy.dohProvider == provider
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(18.dp))
+                                            .border(
+                                                width = if (isSelected) 2.dp else 1.dp,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                                                shape = RoundedCornerShape(18.dp)
+                                            )
+                                            .clickable {
+                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                strategyRepo.setDohProvider(provider)
+                                            },
+                                        shape = RoundedCornerShape(18.dp),
+                                        color = if (isSelected) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerHigh
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Dns,
+                                                    contentDescription = null,
+                                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(12.dp))
+                                                Text(
+                                                    text = provider.displayName,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    fontSize = 14.5.sp,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+
+                                            if (isSelected) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(24.dp)
+                                                        .clip(CircleShape)
+                                                        .background(MaterialTheme.colorScheme.primary),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Check,
+                                                        contentDescription = "Selected",
+                                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
 
-                    // Update States with Expressive Wavy Progress
-                    when (val state = updateState) {
-                        is UpdateState.Checking -> {
+                    // TLS Desynchronization Details Card
+                    item {
+                        ExpressiveCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            backgroundColor = MaterialTheme.colorScheme.surfaceContainer
+                        ) {
                             Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                    .padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Text(
-                                    text = "Checking GitHub for latest release...",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                ExpressiveWavyProgressIndicator(
-                                    progress = null,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                                )
-                            }
-                        }
-
-                        is UpdateState.UpToDate -> {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                    .padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.CheckCircle,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = "You are on the latest version of SourZap.",
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-
-                        is UpdateState.Available -> {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))
-                                    .padding(16.dp),
+                                modifier = Modifier.padding(18.dp),
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Row(
@@ -823,247 +744,451 @@ fun SettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "New Version: v${state.release.versionName}",
-                                        fontWeight = FontWeight.Black,
-                                        fontSize = 16.sp,
+                                        text = "TLS Desync Architecture",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
-
-                                    val sizeMb = String.format(java.util.Locale.US, "%.1f MB", state.release.apkSizeBytes / (1024f * 1024f))
                                     ExpressiveChip(
-                                        text = sizeMb,
-                                        icon = Icons.Rounded.Download,
-                                        backgroundColor = MaterialTheme.colorScheme.primary,
-                                        textColor = MaterialTheme.colorScheme.onPrimary
+                                        text = "SPLIT2 ACTIVE",
+                                        icon = Icons.Rounded.Shield,
+                                        backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                                        textColor = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 }
-
                                 Text(
-                                    text = state.release.releaseNotes,
+                                    text = "Segments TLS ClientHello packets at the 2-byte SNI record header boundary to foil middlebox packet inspection without server-side disruption.",
                                     fontWeight = FontWeight.Normal,
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 4
+                                    fontSize = 12.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-
-                                Button(
-                                    onClick = {
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        scope.launch {
-                                            updateManager.downloadAndPrepareApk(state.release.apkDownloadUrl).collect {
-                                                updateState = it
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                                    shape = RoundedCornerShape(18.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary,
-                                        contentColor = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Download,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Download & Install Update", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                }
                             }
                         }
+                    }
+                }
 
-                        is UpdateState.Downloading -> {
+                SettingsPage.UPDATES -> {
+                    // Sub-Page Header with Back Button
+                    item {
+                        SettingsSubPageHeader(
+                            title = "Updates & Releases",
+                            subtitle = "GitHub Release Check & In-App Installer",
+                            onBackClick = { currentPage = SettingsPage.MAIN }
+                        )
+                    }
+
+                    item {
+                        ExpressiveCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(28.dp),
+                            backgroundColor = MaterialTheme.colorScheme.surfaceContainer
+                        ) {
                             Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(18.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                    .padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                modifier = Modifier.padding(20.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Current Installed Version",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "SourZap v$currentAppVersion",
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 13.sp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            scope.launch {
+                                                updateManager.checkForUpdates(currentAppVersion).collect { state ->
+                                                    updateState = state
+                                                }
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Refresh,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Check Now", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                }
+
+                                when (val state = updateState) {
+                                    is UpdateState.Checking -> {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            Text(
+                                                text = "Checking GitHub repository for updates...",
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+
+                                    is UpdateState.Available -> {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(20.dp))
+                                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                                .padding(16.dp),
+                                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Text(
+                                                text = "New Update Available: v${state.release.versionName}",
+                                                fontWeight = FontWeight.Black,
+                                                fontSize = 16.sp,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                            Text(
+                                                text = state.release.releaseNotes,
+                                                fontSize = 12.5.sp,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
+                                                maxLines = 4,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+
+                                            Button(
+                                                onClick = {
+                                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    scope.launch {
+                                                        updateManager.downloadAndPrepareApk(state.release.apkDownloadUrl).collect { dlState ->
+                                                            updateState = dlState
+                                                        }
+                                                    }
+                                                },
+                                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                                shape = RoundedCornerShape(16.dp),
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = MaterialTheme.colorScheme.primary,
+                                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                                )
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Download,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Download & Install Update", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+                                            }
+                                        }
+                                    }
+
+                                    is UpdateState.UpToDate -> {
+                                        Surface(
+                                            shape = RoundedCornerShape(16.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(14.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.CheckCircle,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(10.dp))
+                                                Text(
+                                                    text = "You are running the latest version of SourZap.",
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    is UpdateState.Downloading -> {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(20.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                                .padding(16.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(
+                                                    text = "Downloading APK package...",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    text = "${(state.progress * 100).toInt()}%",
+                                                    fontWeight = FontWeight.Black,
+                                                    fontSize = 13.sp,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+
+                                            ExpressiveWavyProgressIndicator(
+                                                progress = state.progress,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                trackColor = MaterialTheme.colorScheme.surfaceContainer
+                                            )
+                                        }
+                                    }
+
+                                    is UpdateState.ReadyToInstall -> {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(20.dp))
+                                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                                .padding(16.dp),
+                                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Text(
+                                                text = "Package ready for installation",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+
+                                            Button(
+                                                onClick = {
+                                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    updateManager.installApk(state.apkFile)
+                                                },
+                                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                                shape = RoundedCornerShape(16.dp),
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = MaterialTheme.colorScheme.primary,
+                                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                                )
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.CheckCircle,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Install Update", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+                                            }
+                                        }
+                                    }
+
+                                    is UpdateState.Error -> {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .background(MaterialTheme.colorScheme.errorContainer)
+                                                .padding(14.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.WarningAmber,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = state.message,
+                                                fontSize = 12.5.sp,
+                                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+
+                                    else -> {}
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SettingsPage.ABOUT -> {
+                    // Sub-Page Header with Back Button
+                    item {
+                        SettingsSubPageHeader(
+                            title = "About & Diagnostics",
+                            subtitle = "Architecture & Open Source Information",
+                            onBackClick = { currentPage = SettingsPage.MAIN }
+                        )
+                    }
+
+                    // System Architecture Diagnostics Card
+                    item {
+                        ExpressiveCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(28.dp),
+                            backgroundColor = MaterialTheme.colorScheme.surfaceContainer
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(20.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Text(
+                                    text = "System Diagnostics",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "Downloading update package...",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
+                                        text = "Engine Architecture",
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 13.5.sp,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "${(state.progress * 100).toInt()}%",
-                                        fontWeight = FontWeight.Black,
+                                        text = "Rootless TUN (${Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"})",
+                                        fontWeight = FontWeight.SemiBold,
                                         fontSize = 13.sp,
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                 }
 
-                                ExpressiveWavyProgressIndicator(
-                                    progress = state.progress,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                                )
-
-                                val dlMb = String.format(java.util.Locale.US, "%.1f", state.downloadedBytes / (1024f * 1024f))
-                                val totMb = String.format(java.util.Locale.US, "%.1f", state.totalBytes / (1024f * 1024f))
-                                Text(
-                                    text = "$dlMb MB / $totMb MB",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        is UpdateState.ReadyToInstall -> {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(18.dp))
-                                    .background(MaterialTheme.colorScheme.primaryContainer)
-                                    .padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Text(
-                                    text = "Update package downloaded & verified.",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-
-                                Button(
-                                    onClick = {
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        updateManager.installApk(state.apkFile)
-                                    },
-                                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                                    shape = RoundedCornerShape(18.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary,
-                                        contentColor = MaterialTheme.colorScheme.onPrimary
-                                    )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.CheckCircle,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
+                                    Text(
+                                        text = "Android OS",
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 13.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Install Update Now", fontWeight = FontWeight.Black, fontSize = 14.sp)
+                                    Text(
+                                        text = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+                                        fontWeight = FontWeight.Normal,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Virtual Interface",
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 13.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "tun0 • 1500 MTU • Dual-Stack",
+                                        fontWeight = FontWeight.Normal,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
                         }
-
-                        is UpdateState.Error -> {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(MaterialTheme.colorScheme.errorContainer)
-                                    .padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.WarningAmber,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = state.message,
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-
-                        else -> {}
-                    }
-                }
-            }
-        }
-
-        // Section 6: About & Open Source
-        item {
-            ExpressiveCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "SourZap v$currentAppVersion",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 18.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        ExpressiveChip(
-                            text = "OPEN SOURCE",
-                            icon = Icons.Rounded.Code,
-                            backgroundColor = MaterialTheme.colorScheme.primaryContainer,
-                            textColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
                     }
 
-                    Text(
-                        text = "A rootless implementation of Zapret DPI circumvention for Android, built with Google Material You Expressive design architecture.",
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .semantics {
-                                role = Role.Button
-                                contentDescription = "Open SourZap GitHub repository in browser"
-                            }
-                            .clickable {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Sourish25/SourZap"))
-                                context.startActivity(intent)
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
+                    // Open Source Repository Card
+                    item {
+                        ExpressiveCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(28.dp),
+                            backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
                         ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
-                                contentDescription = "Open GitHub repository in browser",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "github.com/Sourish25/SourZap",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.5.sp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            Column(
+                                modifier = Modifier.padding(20.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "SourZap v$currentAppVersion",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 18.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    ExpressiveChip(
+                                        text = "MIT LICENSE",
+                                        icon = Icons.Rounded.Code,
+                                        backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                                        textColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+
+                                Text(
+                                    text = "A rootless implementation of Zapret DPI circumvention for Android, built with Google Material You Expressive design architecture.",
+                                    fontWeight = FontWeight.Normal,
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .clickable {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Sourish25/SourZap"))
+                                            context.startActivity(intent)
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                                            contentDescription = "Open GitHub repository in browser",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "github.com/Sourish25/SourZap",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.5.sp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1242,6 +1367,141 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Clean, Ergonomic Category Tile for Main Settings Menu
+ */
+@Composable
+private fun SettingsCategoryTile(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    iconContainerColor: Color,
+    iconTint: Color,
+    onClick: () -> Unit
+) {
+    val haptics = LocalHapticFeedback.current
+    ExpressiveCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            },
+        shape = RoundedCornerShape(22.dp),
+        backgroundColor = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(iconContainerColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 12.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = "Navigate to $title",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Sub-Page Header with Back Arrow Button
+ */
+@Composable
+private fun SettingsSubPageHeader(
+    title: String,
+    subtitle: String,
+    onBackClick: () -> Unit
+) {
+    val haptics = LocalHapticFeedback.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(
+            onClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onBackClick()
+            },
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = "Back to Settings",
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontWeight = FontWeight.Black,
+                fontSize = 24.sp,
+                letterSpacing = (-0.5).sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = subtitle,
+                fontWeight = FontWeight.Medium,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

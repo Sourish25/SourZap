@@ -311,15 +311,6 @@ fun DashboardScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                ExpressiveChip(
-                    text = if (isConnected) "RUNNING" else "OFF",
-                    icon = if (isConnected) Icons.Rounded.Shield else Icons.Rounded.FlashOn,
-                    backgroundColor = if (isConnected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                    textColor = if (isConnected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
 
@@ -329,67 +320,6 @@ fun DashboardScreen(
                 isConnected = isConnected,
                 onToggle = { toggleVpn() }
             )
-        }
-
-        // Universal Engine Status Card
-        item {
-            ExpressiveCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
-                backgroundColor = MaterialTheme.colorScheme.surfaceContainer,
-                borderColor = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.AutoAwesome,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "SMART ENGINE STATUS",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 12.sp,
-                                letterSpacing = 0.8.sp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-
-                        ExpressiveChip(
-                            text = "AUTO TUNED",
-                            icon = Icons.Rounded.Bolt,
-                            backgroundColor = MaterialTheme.colorScheme.primaryContainer,
-                            textColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-
-                    Text(
-                        text = "Universal DPI Evasion",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 20.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-
-                    Text(
-                        text = "Real-time TLS Record Header Split2, Host header desynchronization, instant QUIC ICMP reject, and zero-latency Layer-3 BitTorrent passthrough.",
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
         }
 
         // Real-Time Throughput Large Tile

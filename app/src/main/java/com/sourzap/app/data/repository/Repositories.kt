@@ -27,6 +27,12 @@ class StrategyRepository(private val context: Context) {
         _customStrategy.value = strategy
         _currentStrategy.value = strategy
     }
+
+    fun setDohProvider(provider: DohProvider) {
+        val updated = _currentStrategy.value.copy(dohProvider = provider)
+        _currentStrategy.value = updated
+        _customStrategy.value = updated
+    }
 }
 
 class SettingsRepository(private val context: Context) {
@@ -68,6 +74,10 @@ class SettingsRepository(private val context: Context) {
     fun setAutoConnect(enabled: Boolean) {
         prefs.edit().putBoolean("auto_connect", enabled).apply()
         _autoConnectOnBoot.value = enabled
+    }
+
+    fun setAutoConnectOnBoot(enabled: Boolean) {
+        setAutoConnect(enabled)
     }
 
     fun toggleAppBypass(packageName: String) {

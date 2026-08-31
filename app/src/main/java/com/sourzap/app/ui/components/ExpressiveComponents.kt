@@ -456,7 +456,7 @@ fun ExpressiveSpeedGauge(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(255.dp)
+            .height(240.dp)
             .semantics(mergeDescendants = true) {
                 contentDescription = "Speed: ${String.format(java.util.Locale.US, "%.1f", animatedSpeed)} Mbps. Status: $statusText"
             },
@@ -465,12 +465,12 @@ fun ExpressiveSpeedGauge(
         val sizePx = minOf(maxWidth.value, maxHeight.value).dp
 
         Canvas(
-            modifier = Modifier.size(sizePx * 0.90f)
+            modifier = Modifier.size(sizePx)
         ) {
-            val strokeWidth = 20.dp.toPx()
-            val diameter = size.minDimension - strokeWidth - 12.dp.toPx()
+            val strokeWidth = 16.dp.toPx()
+            val diameter = size.minDimension - strokeWidth * 2 - 8.dp.toPx()
             val radius = diameter / 2f
-            val center = Offset(size.width / 2f, size.height / 2f + 14.dp.toPx())
+            val center = Offset(size.width / 2f, size.height / 2f + 18.dp.toPx())
 
             val startAngle = 145f
             val sweepTotal = 250f
@@ -493,15 +493,15 @@ fun ExpressiveSpeedGauge(
                 val tickAngleDeg = startAngle + t * tickStepAngle
                 val tickAngleRad = tickAngleDeg * (PI / 180f)
                 val isMajor = (t % 2 == 0)
-                val innerR = if (isMajor) radius - 16.dp.toPx() else radius - 12.dp.toPx()
-                val outerR = radius - 22.dp.toPx()
+                val innerR = if (isMajor) radius - 14.dp.toPx() else radius - 10.dp.toPx()
+                val outerR = radius - 18.dp.toPx()
                 val p1 = Offset(center.x + innerR * cos(tickAngleRad).toFloat(), center.y + innerR * sin(tickAngleRad).toFloat())
                 val p2 = Offset(center.x + outerR * cos(tickAngleRad).toFloat(), center.y + outerR * sin(tickAngleRad).toFloat())
                 drawLine(
-                    color = if (isMajor) onSurfaceVariantColor.copy(alpha = 0.6f) else onSurfaceVariantColor.copy(alpha = 0.25f),
+                    color = if (isMajor) onSurfaceVariantColor.copy(alpha = 0.55f) else onSurfaceVariantColor.copy(alpha = 0.2f),
                     start = p1,
                     end = p2,
-                    strokeWidth = if (isMajor) 2.5.dp.toPx() else 1.5.dp.toPx(),
+                    strokeWidth = if (isMajor) 2.dp.toPx() else 1.2.dp.toPx(),
                     cap = StrokeCap.Round
                 )
             }
@@ -526,7 +526,7 @@ fun ExpressiveSpeedGauge(
                     topLeft = Offset(center.x - radius, center.y - radius),
                     size = Size(diameter, diameter),
                     style = Stroke(width = strokeWidth + 6.dp.toPx(), cap = StrokeCap.Round),
-                    alpha = 0.28f * pulseAlpha
+                    alpha = 0.25f * pulseAlpha
                 )
             }
 
@@ -551,19 +551,19 @@ fun ExpressiveSpeedGauge(
             // Outer Pulsing Glow
             drawCircle(
                 color = primaryColor.copy(alpha = 0.3f * pulseAlpha),
-                radius = 14.dp.toPx(),
+                radius = 12.dp.toPx(),
                 center = needleTip
             )
 
             // Core Needle Cap
             drawCircle(
                 color = onSurfaceColor,
-                radius = 9.dp.toPx(),
+                radius = 7.5.dp.toPx(),
                 center = needleTip
             )
             drawCircle(
                 color = primaryColor,
-                radius = 5.5.dp.toPx(),
+                radius = 4.5.dp.toPx(),
                 center = needleTip
             )
         }
@@ -572,7 +572,7 @@ fun ExpressiveSpeedGauge(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(top = 22.dp)
+            modifier = Modifier.padding(top = 16.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -582,44 +582,44 @@ fun ExpressiveSpeedGauge(
                     imageVector = Icons.Rounded.Speed,
                     contentDescription = null,
                     tint = primaryColor,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(16.dp)
                 )
-                Spacer(modifier = Modifier.width(5.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = "Mbps",
                     fontWeight = FontWeight.Black,
-                    fontSize = 16.sp,
+                    fontSize = 13.sp,
                     color = primaryColor
                 )
             }
 
             Text(
                 text = String.format(java.util.Locale.US, "%.1f", animatedSpeed),
-                style = NumberDisplayLarge.copy(fontSize = 54.sp),
+                style = NumberDisplayLarge.copy(fontSize = 46.sp),
                 color = onSurfaceColor
             )
 
             Spacer(modifier = Modifier.height(2.dp))
 
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(14.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(7.dp)
+                            .size(6.dp)
                             .clip(CircleShape)
                             .background(if (animatedSpeed > 0.5f) primaryColor else onSurfaceVariantColor)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(5.dp))
                     Text(
                         text = statusText,
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 12.sp,
+                        fontSize = 11.5.sp,
                         color = onSurfaceVariantColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis

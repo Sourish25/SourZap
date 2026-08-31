@@ -15,12 +15,17 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 enum class AppThemePreset(val id: String, val displayName: String, val previewColor: Long) {
-    DYNAMIC("DYNAMIC", "System Dynamic (Monet)", 0xFF6750A4),
+    DYNAMIC("DYNAMIC", "Dynamic Monet", 0xFF6750A4),
     ELECTRIC_INDIGO("ELECTRIC_INDIGO", "Electric Indigo", 0xFF6366F1),
     CYBER_MINT("CYBER_MINT", "Cyber Mint", 0xFF00E676),
-    BERRY_EXPRESSIVE("BERRY_EXPRESSIVE", "Berry Expressive", 0xFFE040FB),
+    BERRY_EXPRESSIVE("BERRY_EXPRESSIVE", "Berry Vivid", 0xFFE040FB),
     SUNSET_TERRACOTTA("SUNSET_TERRACOTTA", "Sunset Amber", 0xFFFF9100),
-    OCEANIC_CYAN("OCEANIC_CYAN", "Oceanic Slate", 0xFF00E5FF)
+    OCEANIC_CYAN("OCEANIC_CYAN", "Oceanic Slate", 0xFF00E5FF),
+    AMOLED_BLACK("AMOLED_BLACK", "AMOLED Black", 0xFF000000),
+    NORDIC_FROST("NORDIC_FROST", "Nordic Frost", 0xFF88C0D0),
+    FOREST_EMERALD("FOREST_EMERALD", "Forest Emerald", 0xFF2E7D32),
+    CRIMSON_VELVET("CRIMSON_VELVET", "Crimson Velvet", 0xFFD32F2F),
+    SOLAR_GOLD("SOLAR_GOLD", "Solar Gold", 0xFFFFB300)
 }
 
 @Composable
@@ -47,6 +52,21 @@ fun SourZapTheme(
         }
         themePreset == AppThemePreset.OCEANIC_CYAN.id -> {
             if (darkTheme) OceanicDarkColorScheme else OceanicLightColorScheme
+        }
+        themePreset == AppThemePreset.AMOLED_BLACK.id -> {
+            if (darkTheme) AmoledDarkColorScheme else AmoledLightColorScheme
+        }
+        themePreset == AppThemePreset.NORDIC_FROST.id -> {
+            if (darkTheme) NordicFrostDarkColorScheme else NordicFrostLightColorScheme
+        }
+        themePreset == AppThemePreset.FOREST_EMERALD.id -> {
+            if (darkTheme) ForestEmeraldDarkColorScheme else ForestEmeraldLightColorScheme
+        }
+        themePreset == AppThemePreset.CRIMSON_VELVET.id -> {
+            if (darkTheme) CrimsonVelvetDarkColorScheme else CrimsonVelvetLightColorScheme
+        }
+        themePreset == AppThemePreset.SOLAR_GOLD.id -> {
+            if (darkTheme) SolarGoldDarkColorScheme else SolarGoldLightColorScheme
         }
         else -> {
             // Default Electric Indigo

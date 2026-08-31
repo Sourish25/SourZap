@@ -104,15 +104,6 @@ fun SpeedTestScreen(
         label = "AnimUL"
     )
 
-    // Stability grade computation based on ping and jitter
-    val stabilityRating = when {
-        state.currentJitterMs > 0 && state.currentJitterMs < 3.5f -> "A+ (Optimal)"
-        state.currentJitterMs >= 3.5f && state.currentJitterMs < 8f -> "A (Stable)"
-        state.currentJitterMs >= 8f && state.currentJitterMs < 18f -> "B (Good)"
-        state.currentJitterMs >= 18f -> "C (Variable)"
-        else -> "--"
-    }
-
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -146,15 +137,6 @@ fun SpeedTestScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                ExpressiveChip(
-                    text = if (isRunning) "BENCHMARKING" else "DIAGNOSTIC",
-                    icon = if (isRunning) Icons.Rounded.Speed else Icons.Rounded.NetworkCheck,
-                    backgroundColor = if (isRunning) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
-                    textColor = if (isRunning) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
-                )
             }
         }
 
@@ -296,31 +278,6 @@ fun SpeedTestScreen(
         }
 
         // Diagnostic Metrics: Row 3 (Bufferbloat/Stability & Active Strategy)
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                ExpressiveMetricTile(
-                    title = "BUFFERBLOAT / STABILITY",
-                    value = stabilityRating,
-                    icon = Icons.Rounded.Shield,
-                    iconTint = MaterialTheme.colorScheme.tertiary,
-                    subtitle = "Connection Health Rating",
-                    modifier = Modifier.weight(1f)
-                )
-
-                ExpressiveMetricTile(
-                    title = "ACTIVE BYPASS",
-                    value = currentStrategy.name,
-                    icon = Icons.Rounded.VpnLock,
-                    iconTint = MaterialTheme.colorScheme.primary,
-                    subtitle = "Zapret DPI Engine",
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
         // Benchmark History Section
         item {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -380,7 +337,7 @@ fun SpeedTestScreen(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = test.strategyName,
+                                            text = "Speed Benchmark",
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 15.sp,
                                             color = MaterialTheme.colorScheme.onSurface,
