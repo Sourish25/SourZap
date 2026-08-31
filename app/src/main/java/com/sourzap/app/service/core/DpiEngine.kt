@@ -12,6 +12,30 @@ import java.net.Socket
  */
 object DpiEngine {
 
+    val BT_PROTOCOL_BYTES = byteArrayOf(
+        0x13.toByte(),
+        'B'.code.toByte(), 'i'.code.toByte(), 't'.code.toByte(), 'T'.code.toByte(),
+        'o'.code.toByte(), 'r'.code.toByte(), 'r'.code.toByte(), 'e'.code.toByte(),
+        'n'.code.toByte(), 't'.code.toByte(), ' '.code.toByte(), 'p'.code.toByte(),
+        'r'.code.toByte(), 'o'.code.toByte(), 't'.code.toByte(), 'o'.code.toByte(),
+        'c'.code.toByte(), 'o'.code.toByte(), 'l'.code.toByte()
+    )
+    const val MIN_BT_HANDSHAKE_LEN = 68
+    const val BT_PREFIX_LEN = 20
+
+    /**
+     * Validates if the payload starts with the 20-byte BitTorrent handshake prefix (\x13BitTorrent protocol).
+     */
+    fun isBitTorrentHandshake(payload: ByteArray, length: Int): Boolean {
+        val safeLen = minOf(payload.size, length)
+        if (safeLen < BT_PREFIX_LEN) return false
+        if (payload[0] != 0x13.toByte()) return false
+        for (i in 1 until BT_PREFIX_LEN) {
+            if (payload[i] != BT_PROTOCOL_BYTES[i]) return false
+        }
+        return true
+    }
+
     fun desyncAndSend(
         socket: Socket,
         outputStream: OutputStream,
@@ -23,14 +47,9 @@ object DpiEngine {
         try {
             socket.tcpNoDelay = true
 
-            // 1. BitTorrent TCP Peer Wire Protocol Detection (\x13BitTorrent protocol)
-            if (length >= 20 && payload[0] == 0x13.toByte() &&
-                payload[1] == 'B'.code.toByte() && payload[2] == 'i'.code.toByte() &&
-                payload[3] == 't'.code.toByte() && payload[4] == 'T'.code.toByte()
-            ) {
-                outputStream.write(payload, 0, length)
-                outputStream.flush()
-                onTechniqueApplied("BITTORRENT_PASSTHROUGH")
+            // 1. BitTorrent TCP Peer Wire Protocol Detection & Desync (\x13BitTorrent protocol)
+            if (isBitTorrentHandshake(payload, length)) {
+                applyBitTorrentDesync(outputStream, payload, length, strategy, onTechniqueApplied)
                 return
             }
 
@@ -67,6 +86,28 @@ object DpiEngine {
             outputStream.flush()
             onTechniqueApplied("DIRECT_FALLBACK")
         }
+    }
+
+    private fun applyBitTorrentDesync(
+        outputStream: OutputStream,
+        payload: ByteArray,
+        length: Int,
+        strategy: BypassStrategy,
+        onTechniqueApplied: (String) -> Unit
+    ) {
+        val safeLen = minOf(payload.size, length)
+        val splitPos = if (strategy.tlsSplitOffset == 1) 1 else 2.coerceAtMost(safeLen - 1)
+
+        val c1 = payload.copyOfRange(0, splitPos)
+        val c2 = payload.copyOfRange(splitPos, safeLen)
+
+        outputStream.write(c1)
+        outputStream.flush()
+
+        outputStream.write(c2)
+        outputStream.flush()
+
+        onTechniqueApplied("BT_SPLIT($splitPos)")
     }
 
     private fun applyTlsDesync(

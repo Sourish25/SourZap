@@ -6,12 +6,19 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
-import com.sourzap.app.service.core.DohResolver
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -44,6 +51,14 @@ sealed class UpdateState {
 }
 
 class UpdateManager(private val context: Context) {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
+    val updateState: StateFlow<UpdateState> = _updateState.asStateFlow()
+
+    private var activeDownloadJob: Job? = null
+    private var activeCheckJob: Job? = null
+    private val updateLock = Any()
 
     // Direct static IP fallbacks for GitHub and all release CDN endpoints
     private val githubStaticIps = mapOf(
@@ -87,175 +102,216 @@ class UpdateManager(private val context: Context) {
         .retryOnConnectionFailure(true)
         .build()
 
-    fun checkForUpdates(currentVersion: String): Flow<UpdateState> = flow {
-        emit(UpdateState.Checking)
-        try {
-            val request = Request.Builder()
-                .url("https://api.github.com/repos/Sourish25/SourZap/releases/latest")
-                .header("User-Agent", "SourZap-Android-App")
-                .header("Accept", "application/vnd.github+json")
-                .build()
+    fun checkForUpdates(currentVersion: String) {
+        synchronized(updateLock) {
+            if (_updateState.value is UpdateState.Downloading || _updateState.value is UpdateState.Checking) {
+                return
+            }
+            _updateState.value = UpdateState.Checking
+            activeCheckJob?.cancel()
+            activeCheckJob = scope.launch {
+                try {
+                    val request = Request.Builder()
+                        .url("https://api.github.com/repos/Sourish25/SourZap/releases/latest")
+                        .header("User-Agent", "SourZap-Android-App")
+                        .header("Accept", "application/vnd.github+json")
+                        .build()
 
-            var responseBody: String? = null
+                    var responseBody: String? = null
+                    httpClient.newCall(request).execute().use { res ->
+                        if (res.isSuccessful) {
+                            responseBody = res.body?.string()
+                        }
+                    }
 
-            httpClient.newCall(request).execute().use { res ->
-                if (res.isSuccessful) {
-                    responseBody = res.body?.string()
+                    if (responseBody == null) {
+                        _updateState.value = UpdateState.Error("Unable to reach GitHub update server")
+                        return@launch
+                    }
+
+                    val json = JSONObject(responseBody!!)
+                    val tagName = json.optString("tag_name", "v1.0.0")
+                    val releaseNotes = json.optString("body", "Bug fixes and performance improvements.")
+                    val publishedAt = json.optString("published_at", "")
+
+                    var apkUrl = ""
+                    var apkSize = 0L
+                    val assets = json.optJSONArray("assets")
+                    if (assets != null) {
+                        for (i in 0 until assets.length()) {
+                            val asset = assets.getJSONObject(i)
+                            val name = asset.optString("name", "")
+                            if (name.endsWith(".apk", ignoreCase = true)) {
+                                apkUrl = asset.optString("browser_download_url", "")
+                                apkSize = asset.optLong("size", 0L)
+                                break
+                            }
+                        }
+                    }
+
+                    if (apkUrl.isEmpty()) {
+                        _updateState.value = UpdateState.UpToDate(null)
+                        return@launch
+                    }
+
+                    val latestCleanVersion = extractCleanVersion(tagName)
+                    val currentCleanVersion = extractCleanVersion(currentVersion)
+                    val isNewer = isVersionNewer(latestCleanVersion, currentCleanVersion)
+
+                    val releaseInfo = AppReleaseInfo(
+                        tagName = tagName,
+                        versionName = latestCleanVersion,
+                        releaseNotes = releaseNotes,
+                        apkDownloadUrl = apkUrl,
+                        apkSizeBytes = apkSize,
+                        isUpdateAvailable = isNewer,
+                        publishedAt = publishedAt
+                    )
+
+                    _updateState.value = if (isNewer) UpdateState.Available(releaseInfo) else UpdateState.UpToDate(releaseInfo)
+                } catch (e: Exception) {
+                    _updateState.value = UpdateState.Error(e.message ?: "Failed to check for updates")
                 }
             }
+        }
+    }
 
-            if (responseBody == null) {
-                emit(UpdateState.Error("Unable to reach GitHub update server"))
-                return@flow
+    fun startDownload(downloadUrl: String) {
+        synchronized(updateLock) {
+            if (_updateState.value is UpdateState.Downloading) {
+                return // Already downloading
             }
+            _updateState.value = UpdateState.Downloading(0.01f, 0L, 1L)
+            activeDownloadJob?.cancel()
+            activeDownloadJob = scope.launch {
+                val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+                val updatesDir = File(baseDir, "updates").apply { mkdirs() }
+                val tempApk = File(updatesDir, "SourZap-update.apk.part")
+                val targetApk = File(updatesDir, "SourZap-update.apk")
 
-            val json = JSONObject(responseBody!!)
-            val tagName = json.optString("tag_name", "v1.0.0")
-            val releaseNotes = json.optString("body", "Bug fixes and performance improvements.")
-            val publishedAt = json.optString("published_at", "")
+                if (tempApk.exists()) tempApk.delete()
+                if (targetApk.exists()) targetApk.delete()
 
-            var apkUrl = ""
-            var apkSize = 0L
+                var bytesDownloaded = 0L
+                var totalLength = -1L
+                var attempts = 0
+                val maxAttempts = 3
 
-            val assets = json.optJSONArray("assets")
-            if (assets != null) {
-                for (i in 0 until assets.length()) {
-                    val asset = assets.getJSONObject(i)
-                    val name = asset.optString("name", "")
-                    if (name.endsWith(".apk", ignoreCase = true)) {
-                        apkUrl = asset.optString("browser_download_url", "")
-                        apkSize = asset.optLong("size", 0L)
-                        break
+                while (attempts < maxAttempts && isActive) {
+                    attempts++
+                    try {
+                        val reqBuilder = Request.Builder()
+                            .url(downloadUrl)
+                            .header("User-Agent", "SourZap-Android-App")
+                            .header("Accept", "application/octet-stream")
+
+                        if (bytesDownloaded > 0) {
+                            reqBuilder.header("Range", "bytes=$bytesDownloaded-")
+                        }
+
+                        httpClient.newCall(reqBuilder.build()).execute().use { response ->
+                            if (!response.isSuccessful && response.code != 206) {
+                                if (response.code == 416 && totalLength > 0 && bytesDownloaded >= totalLength) {
+                                    if (tempApk.renameTo(targetApk) && validateApkIntegrity(targetApk)) {
+                                        targetApk.setReadable(true, false)
+                                        _updateState.value = UpdateState.ReadyToInstall(targetApk)
+                                        return@launch
+                                    }
+                                }
+                                throw Exception("HTTP ${response.code}: ${response.message}")
+                            }
+
+                            val body = response.body ?: throw Exception("Empty response body")
+                            val contentLen = body.contentLength()
+                            if (totalLength <= 0) {
+                                totalLength = if (contentLen > 0) (if (response.code == 206) bytesDownloaded + contentLen else contentLen) else -1L
+                            }
+
+                            val append = (bytesDownloaded > 0 && response.code == 206)
+                            val outputStream = FileOutputStream(tempApk, append)
+                            val inputStream: InputStream = body.byteStream()
+                            val buffer = ByteArray(65536)
+
+                            try {
+                                var read = inputStream.read(buffer)
+                                while (read != -1 && isActive) {
+                                    outputStream.write(buffer, 0, read)
+                                    bytesDownloaded += read
+
+                                    val progress = if (totalLength > 0) {
+                                        (bytesDownloaded.toFloat() / totalLength.toFloat()).coerceIn(0f, 1f)
+                                    } else 0.5f
+
+                                    _updateState.value = UpdateState.Downloading(progress, bytesDownloaded, totalLength)
+                                    read = inputStream.read(buffer)
+                                }
+                                outputStream.flush()
+                            } finally {
+                                try { outputStream.close() } catch (_: Exception) {}
+                                try { inputStream.close() } catch (_: Exception) {}
+                            }
+
+                            if (!isActive) return@launch
+
+                            if (totalLength <= 0 || bytesDownloaded >= totalLength) {
+                                if (tempApk.renameTo(targetApk) && validateApkIntegrity(targetApk)) {
+                                    targetApk.setReadable(true, false)
+                                    _updateState.value = UpdateState.ReadyToInstall(targetApk)
+                                    return@launch
+                                } else {
+                                    throw Exception("Corrupt APK package downloaded")
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        if (!isActive) return@launch
+                        if (attempts >= maxAttempts) {
+                            _updateState.value = UpdateState.Error("Download interrupted: ${e.localizedMessage}")
+                            return@launch
+                        }
+                        delay(800)
                     }
                 }
+
+                if (targetApk.exists() && validateApkIntegrity(targetApk)) {
+                    targetApk.setReadable(true, false)
+                    _updateState.value = UpdateState.ReadyToInstall(targetApk)
+                } else {
+                    _updateState.value = UpdateState.Error("Download could not be completed")
+                }
             }
-
-            if (apkUrl.isEmpty()) {
-                emit(UpdateState.UpToDate(null))
-                return@flow
-            }
-
-            val latestCleanVersion = extractCleanVersion(tagName)
-            val currentCleanVersion = extractCleanVersion(currentVersion)
-
-            val isNewer = isVersionNewer(latestCleanVersion, currentCleanVersion)
-
-            val releaseInfo = AppReleaseInfo(
-                tagName = tagName,
-                versionName = latestCleanVersion,
-                releaseNotes = releaseNotes,
-                apkDownloadUrl = apkUrl,
-                apkSizeBytes = apkSize,
-                isUpdateAvailable = isNewer,
-                publishedAt = publishedAt
-            )
-
-            if (isNewer) {
-                emit(UpdateState.Available(releaseInfo))
-            } else {
-                emit(UpdateState.UpToDate(releaseInfo))
-            }
-        } catch (e: Exception) {
-            emit(UpdateState.Error(e.message ?: "Failed to check for updates"))
         }
+    }
+
+    fun downloadAndInstallUpdate(downloadUrl: String) {
+        startDownload(downloadUrl)
+    }
+
+    fun cancelDownload() {
+        synchronized(updateLock) {
+            activeDownloadJob?.cancel()
+            activeDownloadJob = null
+            _updateState.value = UpdateState.Idle
+        }
+    }
+
+    fun cancelUpdate() {
+        cancelDownload()
+    }
+
+    // Cold flow adapters for backwards compatibility or tests
+    fun checkForUpdatesFlow(currentVersion: String): Flow<UpdateState> = flow {
+        checkForUpdates(currentVersion)
+        _updateState.collect { emit(it) }
     }.flowOn(Dispatchers.IO)
 
     fun downloadAndPrepareApk(downloadUrl: String): Flow<UpdateState> = flow {
-        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
-        val updatesDir = File(baseDir, "updates").apply { mkdirs() }
-        val targetApk = File(updatesDir, "SourZap-update.apk")
-        if (targetApk.exists()) targetApk.delete()
-
-        emit(UpdateState.Downloading(0.01f, 0L, 1L))
-
-        var bytesDownloaded = 0L
-        var totalLength = -1L
-        var attempts = 0
-        val maxAttempts = 3
-
-        while (attempts < maxAttempts) {
-            attempts++
-            try {
-                val reqBuilder = Request.Builder()
-                    .url(downloadUrl)
-                    .header("User-Agent", "SourZap-Android-App")
-                    .header("Accept", "application/octet-stream")
-
-                if (bytesDownloaded > 0) {
-                    reqBuilder.header("Range", "bytes=$bytesDownloaded-")
-                }
-
-                httpClient.newCall(reqBuilder.build()).execute().use { response ->
-                    if (!response.isSuccessful && response.code != 206) {
-                        if (response.code == 416 && totalLength > 0 && bytesDownloaded >= totalLength) {
-                            targetApk.setReadable(true, false)
-                            emit(UpdateState.ReadyToInstall(targetApk))
-                            return@flow
-                        }
-                        throw Exception("HTTP ${response.code}: ${response.message}")
-                    }
-
-                    val body = response.body ?: throw Exception("Empty response body")
-                    val contentLen = body.contentLength()
-                    if (totalLength <= 0) {
-                        totalLength = if (contentLen > 0) contentLen else -1L
-                    }
-
-                    val append = (bytesDownloaded > 0 && response.code == 206)
-                    val outputStream = FileOutputStream(targetApk, append)
-                    val inputStream: InputStream = body.byteStream()
-                    val buffer = ByteArray(65536)
-
-                    try {
-                        var read = inputStream.read(buffer)
-                        while (read != -1) {
-                            outputStream.write(buffer, 0, read)
-                            bytesDownloaded += read
-
-                            val progress = if (totalLength > 0) {
-                                (bytesDownloaded.toFloat() / totalLength.toFloat()).coerceIn(0f, 1f)
-                            } else 0.5f
-
-                            emit(UpdateState.Downloading(progress, bytesDownloaded, totalLength))
-                            read = inputStream.read(buffer)
-                        }
-                        outputStream.flush()
-                    } finally {
-                        try { outputStream.close() } catch (_: Exception) {}
-                        try { inputStream.close() } catch (_: Exception) {}
-                    }
-
-                    if (totalLength <= 0 || bytesDownloaded >= totalLength) {
-                        // Verify APK integrity (ZIP magic header: 0x50, 0x4B, 0x03, 0x04)
-                        if (validateApkIntegrity(targetApk)) {
-                            targetApk.setReadable(true, false)
-                            emit(UpdateState.ReadyToInstall(targetApk))
-                            return@flow
-                        } else {
-                            throw Exception("Corrupt APK package downloaded")
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                if (attempts >= maxAttempts) {
-                    emit(UpdateState.Error("Download interrupted: ${e.localizedMessage}"))
-                    return@flow
-                }
-                kotlinx.coroutines.delay(800)
-            }
-        }
-
-        if (validateApkIntegrity(targetApk)) {
-            targetApk.setReadable(true, false)
-            emit(UpdateState.ReadyToInstall(targetApk))
-        } else {
-            emit(UpdateState.Error("Download could not be completed"))
-        }
+        startDownload(downloadUrl)
+        _updateState.collect { emit(it) }
     }.flowOn(Dispatchers.IO)
 
     fun installApk(apkFile: File) {
         if (!apkFile.exists()) return
-
         apkFile.setReadable(true, false)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -282,12 +338,11 @@ class UpdateManager(private val context: Context) {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
-
             context.startActivity(installIntent)
         } catch (_: Exception) {}
     }
 
-    private fun validateApkIntegrity(file: File): Boolean {
+    fun validateApkIntegrity(file: File): Boolean {
         if (!file.exists() || file.length() < 3_000_000L) return false
         try {
             FileInputStream(file).use { input ->

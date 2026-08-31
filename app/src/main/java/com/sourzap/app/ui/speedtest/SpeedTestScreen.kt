@@ -43,7 +43,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -77,16 +78,28 @@ fun SpeedTestScreen(
     val settingsRepo = app.settingsRepository
     val strategyRepo = app.strategyRepository
 
-    val state by speedEngine.state.collectAsState()
-    val history by settingsRepo.speedTestHistory.collectAsState()
-    val currentStrategy by strategyRepo.currentStrategy.collectAsState()
+    val state by speedEngine.state.collectAsStateWithLifecycle()
+    val history by settingsRepo.speedTestHistory.collectAsStateWithLifecycle()
+    val currentStrategy by strategyRepo.currentStrategy.collectAsStateWithLifecycle()
 
     val configuration = LocalConfiguration.current
     val isTablet = configuration.screenWidthDp >= 600
 
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
-    val isRunning = state.phase != SpeedTestPhase.IDLE && state.phase != SpeedTestPhase.COMPLETED && state.phase != SpeedTestPhase.FAILED
+    val isRunning = state.phase != SpeedTestPhase.IDLE && state.phase != SpeedTestPhase.COMPLETED && state.phase != SpeedTestPhase.FAILED && state.phase != SpeedTestPhase.CANCELLED
+
+    DisposableEffect(Unit) {
+        onDispose {
+            if (speedEngine.state.value.phase != SpeedTestPhase.IDLE &&
+                speedEngine.state.value.phase != SpeedTestPhase.COMPLETED &&
+                speedEngine.state.value.phase != SpeedTestPhase.FAILED &&
+                speedEngine.state.value.phase != SpeedTestPhase.CANCELLED
+            ) {
+                speedEngine.cancelTest()
+            }
+        }
+    }
 
     // Spring-animated diagnostic metric values
     val animatedPing by animateFloatAsState(

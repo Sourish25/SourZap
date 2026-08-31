@@ -850,4 +850,152 @@ class PacketParserTest {
         assertEquals(3.toByte(), adminProhib[20])
         assertEquals(13.toByte(), adminProhib[21]) // Code 13: Admin Prohibited
     }
+
+    @Test
+    fun testPacketParser_ZeroExceptionOnMalformedAndFuzzedInputs() {
+        val emptyBuf = ByteArray(0)
+        assertNull(PacketParser.parseIpHeader(emptyBuf, 0))
+        assertNull(PacketParser.parseIpv4Header(emptyBuf, 0))
+        assertNull(PacketParser.parseIpv6Header(emptyBuf, 0))
+        assertNull(PacketParser.parseTcpHeader(emptyBuf, 0, 0))
+        assertNull(PacketParser.parseUdpHeader(emptyBuf, 0, 0))
+
+        // Negative offsets and lengths
+        val dummy = ByteArray(64) { 0x45 }
+        assertNull(PacketParser.parseIpv4Header(dummy, -5))
+        assertNull(PacketParser.parseIpv6Header(dummy, -10))
+        assertNull(PacketParser.parseTcpHeader(dummy, -1, 40))
+        assertNull(PacketParser.parseTcpHeader(dummy, 20, -5))
+        assertNull(PacketParser.parseTcpHeader(dummy, 100, 20))
+        assertNull(PacketParser.parseUdpHeader(dummy, -1, 28))
+        assertNull(PacketParser.parseUdpHeader(dummy, 20, -5))
+        assertNull(PacketParser.parseUdpHeader(dummy, 100, 28))
+
+        // Truncated IPv4 and IPv6 buffers
+        for (len in 1..19) {
+            val truncated = ByteArray(len) { 0x45 }
+            assertNull(PacketParser.parseIpv4Header(truncated, len))
+        }
+        for (len in 1..39) {
+            val truncated = ByteArray(len) { 0x60 }
+            assertNull(PacketParser.parseIpv6Header(truncated, len))
+        }
+
+        // Malformed IHL (<20 or >60)
+        val badIhlLow = ByteArray(20)
+        badIhlLow[0] = 0x44.toByte() // IHL = 4 -> 16 bytes (<20)
+        assertNull(PacketParser.parseIpv4Header(badIhlLow, 20))
+
+        val badIhlHigh = ByteArray(20)
+        badIhlHigh[0] = 0x4F.toByte() // IHL = 15 -> 60 bytes, but buffer only 20
+        assertNull(PacketParser.parseIpv4Header(badIhlHigh, 20))
+
+        // Malformed TCP data offset (<20 or >60)
+        val badTcpOffset = ByteArray(40)
+        badTcpOffset[12] = 0x40.toByte() // Data offset = 4 -> 16 bytes (<20)
+        assertNull(PacketParser.parseTcpHeader(badTcpOffset, 0, 40))
+
+        // Malformed UDP length (<8)
+        val badUdpLen = ByteArray(28)
+        badUdpLen[24] = 0x00.toByte()
+        badUdpLen[25] = 0x04.toByte() // UDP len = 4 (<8)
+        assertNull(PacketParser.parseUdpHeader(badUdpLen, 20, 28))
+    }
+
+    @Test
+    fun testPacketParser_ChecksumDualStackAndZeroExceptions() {
+        val dummy = ByteArray(32) { (it + 1).toByte() }
+        val ipv4_1 = byteArrayOf(10, 0, 0, 2)
+        val ipv4_2 = byteArrayOf(8, 8, 8, 8)
+        val ipv6_1 = ByteArray(16) { 1 }
+        val ipv6_2 = ByteArray(16) { 2 }
+        val empty = ByteArray(0)
+
+        // Zero exceptions on out of bounds
+        assertEquals(0.toShort(), PacketParser.computeIpChecksum(dummy, -1, 10))
+        assertEquals(0.toShort(), PacketParser.computeIpChecksum(dummy, 0, -5))
+        assertEquals(0.toShort(), PacketParser.computeIpChecksum(empty, 0, 0))
+
+        assertEquals(0.toShort(), PacketParser.computeTcpChecksum(dummy, -1, 10, ipv4_1, ipv4_2))
+        assertEquals(0.toShort(), PacketParser.computeTcpChecksum(dummy, 0, 10, empty, ipv4_2))
+        assertEquals(0.toShort(), PacketParser.computeTcpChecksum(dummy, 0, 10, byteArrayOf(1, 2), ipv4_2))
+
+        assertEquals(0.toShort(), PacketParser.computeUdpChecksum(dummy, -1, 10, ipv4_1, ipv4_2))
+        assertEquals(0.toShort(), PacketParser.computeUdpChecksum(dummy, 0, 10, empty, ipv4_2))
+
+        assertEquals(0.toShort(), PacketParser.computeIcmpv6Checksum(dummy, -1, 10, ipv6_1, ipv6_2))
+        assertEquals(0.toShort(), PacketParser.computeIcmpv6Checksum(dummy, 0, 10, ipv4_1, ipv4_2)) // IPv4 addresses passed to ICMPv6
+
+        // Dual-stack IPv6 TCP and UDP checksums
+        val tcpCsIpv6 = PacketParser.computeTcpChecksum(dummy, 0, 20, ipv6_1, ipv6_2)
+        assertTrue("IPv6 TCP checksum must be computed", tcpCsIpv6 != 0.toShort())
+
+        val udpCsIpv6 = PacketParser.computeUdpChecksum(dummy, 0, 8, ipv6_1, ipv6_2)
+        assertTrue("IPv6 UDP checksum must be computed", udpCsIpv6 != 0.toShort())
+    }
+
+    @Test
+    fun testPacketParser_BuildersZeroExceptionAndRFCCompliance() {
+        val src4 = InetAddress.getByName("192.168.1.100")
+        val dst4 = InetAddress.getByName("1.1.1.1")
+        val src6 = InetAddress.getByName("2001:db8::1")
+        val dst6 = InetAddress.getByName("2001:db8::2")
+
+        // 1. buildIpHeader
+        val ipHeader = PacketParser.buildIpHeader(src4, dst4, protocol = 6, payloadLen = 40)
+        assertEquals(20, ipHeader.size)
+        assertEquals(0x45.toByte(), ipHeader[0])
+        assertEquals(6.toByte(), ipHeader[9])
+        val verifyIp = PacketParser.computeIpChecksum(ipHeader, 0, 20)
+        assertEquals("Stand-alone IP header checksum must be valid", 0.toShort(), verifyIp)
+
+        // 2. buildSynAckPacket
+        val synAck = PacketParser.buildSynAckPacket(src4, dst4, 80, 54321, seqNum = 1000L, ackNum = 500L)
+        assertEquals(44, synAck.size) // 20 IP + 24 TCP (with MSS option)
+        val parsedSynAck = PacketParser.parseTcpHeader(synAck, 20, synAck.size)
+        assertNotNull(parsedSynAck)
+        assertTrue(parsedSynAck!!.isSyn)
+        assertTrue(parsedSynAck.isAck)
+        assertEquals(24, parsedSynAck.dataOffset)
+
+        // 3. buildRstPacket
+        val rstAck = PacketParser.buildRstPacket(src4, dst4, 80, 54321, seqNum = 1001L, ackNum = 501L, isAck = true)
+        assertEquals(40, rstAck.size)
+        val parsedRstAck = PacketParser.parseTcpHeader(rstAck, 20, rstAck.size)
+        assertNotNull(parsedRstAck)
+        assertTrue(parsedRstAck!!.isRst)
+        assertTrue(parsedRstAck.isAck)
+        assertEquals(0, parsedRstAck.windowSize)
+
+        val rstOnly = PacketParser.buildRstPacket(src4, dst4, 80, 54321, seqNum = 1001L, ackNum = 0L, isAck = false)
+        val parsedRstOnly = PacketParser.parseTcpHeader(rstOnly, 20, rstOnly.size)
+        assertNotNull(parsedRstOnly)
+        assertTrue(parsedRstOnly!!.isRst)
+        assertFalse(parsedRstOnly.isAck)
+
+        // 4. buildTcpIpPacket alias
+        val tcpPacket = PacketParser.buildTcpIpPacket(src4, dst4, 443, 60000, 100L, 200L, 0x10)
+        assertEquals(40, tcpPacket.size)
+
+        // 5. Zero-exception on invalid / overflowing builder parameters
+        val oversizedPayload = ByteArray(100)
+        val safePacket = PacketParser.buildTcpPacket(
+            srcIp = src4,
+            dstIp = dst4,
+            srcPort = 80,
+            dstPort = 80,
+            seqNum = 1L,
+            ackNum = 1L,
+            flags = 0x10,
+            payload = oversizedPayload,
+            payloadOffset = -5, // Negative offset clamped safely
+            payloadLen = 500    // Oversized len clamped safely
+        )
+        assertTrue(safePacket.isNotEmpty())
+
+        // Non-matching address families
+        val mismatched = PacketParser.buildTcpPacket(src6, dst4, 80, 80, 1L, 1L, 0x10)
+        assertEquals(0, mismatched.size)
+    }
 }
+

@@ -58,7 +58,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -105,9 +105,9 @@ enum class TrafficFilterTab(val id: String, val displayName: String, val icon: I
 fun TrafficScreen(
     modifier: Modifier = Modifier
 ) {
-    val stats by TrafficMonitor.stats.collectAsState()
-    val logs by TrafficMonitor.recentLogs.collectAsState()
-    val isVpnActive by TrafficMonitor.isVpnActive.collectAsState()
+    val stats by TrafficMonitor.stats.collectAsStateWithLifecycle()
+    val logs by TrafficMonitor.recentLogs.collectAsStateWithLifecycle()
+    val isVpnActive by TrafficMonitor.isVpnActive.collectAsStateWithLifecycle()
 
     val configuration = LocalConfiguration.current
     val isTablet = configuration.screenWidthDp >= 600
@@ -536,7 +536,7 @@ fun TrafficScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TrafficFilterTab.values().forEach { tab ->
+                    TrafficFilterTab.entries.forEach { tab ->
                         val isSelected = selectedTab == tab
                         val bg = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest
                         val textCol = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant

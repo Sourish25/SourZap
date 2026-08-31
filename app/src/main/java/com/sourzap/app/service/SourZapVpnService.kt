@@ -25,11 +25,14 @@ import com.sourzap.app.service.core.TunUdpRelay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.net.InetAddress
 
 class SourZapVpnService : VpnService() {
 
@@ -45,6 +48,20 @@ class SourZapVpnService : VpnService() {
 
     private var connectivityManager: ConnectivityManager? = null
     private var defaultNetworkCallback: ConnectivityManager.NetworkCallback? = null
+
+    private data class DnsQueryTask(
+        val srcIp: InetAddress,
+        val dstIp: InetAddress,
+        val srcPort: Int,
+        val dstPort: Int,
+        val queryBytes: ByteArray,
+        val vpnOutput: FileOutputStream
+    )
+
+    private var dnsChannel = Channel<DnsQueryTask>(
+        capacity = 256,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
@@ -207,6 +224,7 @@ class SourZapVpnService : VpnService() {
 
         tcpRelay = TunTcpRelay(this, outputStream, serviceScope)
         udpRelay = TunUdpRelay(this, outputStream, serviceScope)
+        startDnsWorkers(outputStream)
 
         try {
             while (serviceScope.isActive && isRunning) {
@@ -222,6 +240,47 @@ class SourZapVpnService : VpnService() {
             }
         } finally {
             ByteArrayPool.recyclePacketBuffer(packetBuffer)
+        }
+    }
+
+    private fun startDnsWorkers(outputStream: FileOutputStream) {
+        repeat(16) {
+            serviceScope.launch {
+                for (task in dnsChannel) {
+                    if (!serviceScope.isActive || !isRunning) break
+                    try {
+                        val strategy = SourZapApp.instance.strategyRepository.currentStrategy.value
+                        val responseWire = DohResolver.resolveWireQuery(task.queryBytes, strategy.dohProvider)
+                        if (responseWire != null) {
+                            TrafficMonitor.recordRxBytes(responseWire.size.toLong())
+
+                            val replyPacket = PacketParser.buildUdpIpPacket(
+                                srcIp = task.dstIp,
+                                dstIp = task.srcIp,
+                                srcPort = task.dstPort,
+                                dstPort = task.srcPort,
+                                payload = responseWire
+                            )
+
+                            try {
+                                synchronized(outputStream) {
+                                    outputStream.write(replyPacket)
+                                }
+                            } catch (_: Exception) {}
+
+                            TrafficMonitor.addConnectionLog(
+                                ConnectionLog(
+                                    domain = "DNS Resolution (DoH)",
+                                    port = 53,
+                                    protocol = "UDP",
+                                    technique = "RAM_CACHED_DOH",
+                                    bytesTransferred = responseWire.size.toLong()
+                                )
+                            )
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
         }
     }
 
@@ -244,7 +303,6 @@ class SourZapVpnService : VpnService() {
                 try {
                     synchronized(vpnOutput) {
                         vpnOutput.write(icmpv6Packet)
-                        vpnOutput.flush()
                     }
                 } catch (_: Exception) {}
 
@@ -282,37 +340,7 @@ class SourZapVpnService : VpnService() {
 
             if (dstPort == 53 && udpPayloadLen > 0) { // DNS Query
                 val queryBytes = buffer.copyOfRange(udpPayloadOffset, udpPayloadOffset + udpPayloadLen)
-                serviceScope.launch {
-                    val responseWire = DohResolver.resolveWireQuery(queryBytes, strategy.dohProvider)
-                    if (responseWire != null) {
-                        TrafficMonitor.recordRxBytes(responseWire.size.toLong())
-
-                        val replyPacket = PacketParser.buildUdpIpPacket(
-                            srcIp = dstIp,
-                            dstIp = srcIp,
-                            srcPort = dstPort,
-                            dstPort = srcPort,
-                            payload = responseWire
-                        )
-
-                        try {
-                            synchronized(vpnOutput) {
-                                vpnOutput.write(replyPacket)
-                                vpnOutput.flush()
-                            }
-                        } catch (_: Exception) {}
-
-                        TrafficMonitor.addConnectionLog(
-                            ConnectionLog(
-                                domain = "DNS Resolution (DoH)",
-                                port = 53,
-                                protocol = "UDP",
-                                technique = "RAM_CACHED_DOH",
-                                bytesTransferred = responseWire.size.toLong()
-                            )
-                        )
-                    }
-                }
+                dnsChannel.trySend(DnsQueryTask(srcIp, dstIp, srcPort, dstPort, queryBytes, vpnOutput))
             } else if (dstPort == 443 && strategy.blockQuic) {
                 // Instantly reject QUIC with RFC 792 ICMP Destination Unreachable (Port Unreachable: Type 3 Code 3)
                 // Google Chrome & YouTube immediately fallback to fast TCP in 0ms without delay
@@ -326,7 +354,6 @@ class SourZapVpnService : VpnService() {
                 try {
                     synchronized(vpnOutput) {
                         vpnOutput.write(icmpPacket)
-                        vpnOutput.flush()
                     }
                 } catch (_: Exception) {}
 

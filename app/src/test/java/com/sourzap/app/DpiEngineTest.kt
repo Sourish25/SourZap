@@ -3,16 +3,23 @@ package com.sourzap.app
 import com.sourzap.app.data.model.BypassStrategy
 import com.sourzap.app.service.core.ByteArrayPool
 import com.sourzap.app.service.core.DohResolver
+import com.sourzap.app.service.core.DpiEngine
 import com.sourzap.app.service.core.HttpParser
+import com.sourzap.app.service.core.LocalDpiProxyServer
+import com.sourzap.app.service.core.PacketParser
 import com.sourzap.app.service.core.TlsParser
+import com.sourzap.app.service.core.TunTcpRelay
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayOutputStream
 import java.net.InetAddress
+import java.net.Socket
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -113,10 +120,10 @@ class DpiEngineTest {
 
     @Test
     fun testHttpParser_AllMethodsAndHostExtraction() {
-        val methods = listOf("GET", "POST", "HEAD", "OPTIONS", "PUT", "DELETE", "CONNECT")
+        val methods = listOf("GET", "POST", "HEAD", "OPTIONS", "PUT", "DELETE", "CONNECT", "TRACE", "PATCH")
         for (m in methods) {
             val req = "$m /index.html HTTP/1.1\r\nHost: static.cloudflare.com\r\nUser-Agent: SourZap/1.0\r\n\r\n"
-            val bytes = req.toByteArray(Charsets.US_ASCII)
+            val bytes = req.toByteArray(Charsets.ISO_8859_1)
             val result = HttpParser.parseHttpRequest(bytes, bytes.size)
 
             assertTrue("Must parse method $m", result.isHttp)
@@ -129,7 +136,7 @@ class DpiEngineTest {
     @Test
     fun testHttpParser_CaseInsensitiveHostHeader() {
         val rawRequest = "GET /stream HTTP/1.1\r\nhost:  video.example.org:8080\r\nAccept: */*\r\n\r\n"
-        val bytes = rawRequest.toByteArray(Charsets.US_ASCII)
+        val bytes = rawRequest.toByteArray(Charsets.ISO_8859_1)
 
         val result = HttpParser.parseHttpRequest(bytes, bytes.size)
         assertTrue(result.isHttp)
@@ -140,7 +147,7 @@ class DpiEngineTest {
     @Test
     fun testHttpParser_WithoutHostHeader() {
         val rawRequest = "GET / HTTP/1.0\r\n\r\n"
-        val bytes = rawRequest.toByteArray(Charsets.US_ASCII)
+        val bytes = rawRequest.toByteArray(Charsets.ISO_8859_1)
 
         val result = HttpParser.parseHttpRequest(bytes, bytes.size)
         assertTrue(result.isHttp)
@@ -157,72 +164,218 @@ class DpiEngineTest {
     }
 
     @Test
-    fun testHttpParser_AdversarialHeadersAndEdgeCases() {
-        // Request with newline only (\n instead of \r\n)
-        val newlineOnly = "GET /test HTTP/1.1\nHost: unix.example.com\nUser-Agent: curl\n\n".toByteArray(Charsets.US_ASCII)
-        val r1 = HttpParser.parseHttpRequest(newlineOnly, newlineOnly.size)
-        assertTrue(r1.isHttp)
-        assertEquals("GET", r1.method)
-        assertEquals("unix.example.com", r1.host)
+    fun testHttpParser_FindHeaderBoundary() {
+        val crlfcrlf = "GET / HTTP/1.1\r\nHost: example.com\r\n\r\nBODY".toByteArray(Charsets.ISO_8859_1)
+        val b1 = HttpParser.findHeaderBoundary(crlfcrlf, crlfcrlf.size)
+        assertNotNull(b1)
+        assertEquals(4, b1!!.second)
 
-        // Multiple Host headers (first one parsed)
-        val multiHost = "POST /api HTTP/1.1\r\nHost: primary.com\r\nHost: secondary.com\r\n\r\n".toByteArray(Charsets.US_ASCII)
-        val r2 = HttpParser.parseHttpRequest(multiHost, multiHost.size)
-        assertTrue(r2.isHttp)
-        assertEquals("primary.com", r2.host)
+        val lflf = "GET / HTTP/1.1\nHost: example.com\n\nBODY".toByteArray(Charsets.ISO_8859_1)
+        val b2 = HttpParser.findHeaderBoundary(lflf, lflf.size)
+        assertNotNull(b2)
+        assertEquals(2, b2!!.second)
 
-        // IPv6 literal host header
-        val ipv6Host = "GET / HTTP/1.1\r\nHost: [2001:db8::1]:8443\r\n\r\n".toByteArray(Charsets.US_ASCII)
-        val r3 = HttpParser.parseHttpRequest(ipv6Host, ipv6Host.size)
-        assertTrue(r3.isHttp)
-        assertEquals("[2001:db8::1]:8443", r3.host)
+        val crlflf = "GET / HTTP/1.1\r\nHost: example.com\r\n\nBODY".toByteArray(Charsets.ISO_8859_1)
+        val b3 = HttpParser.findHeaderBoundary(crlflf, crlflf.size)
+        assertNotNull(b3)
+        assertEquals(3, b3!!.second)
 
-        // Truncated buffer (< 10 bytes)
-        val shortHttp = "GET /".toByteArray(Charsets.US_ASCII)
-        val r4 = HttpParser.parseHttpRequest(shortHttp, shortHttp.size)
-        assertFalse(r4.isHttp)
+        val lfcrlf = "GET / HTTP/1.1\nHost: example.com\n\r\nBODY".toByteArray(Charsets.ISO_8859_1)
+        val b4 = HttpParser.findHeaderBoundary(lfcrlf, lfcrlf.size)
+        assertNotNull(b4)
+        assertEquals(3, b4!!.second)
+
+        val incomplete = "GET / HTTP/1.1\r\nHost: example.com\r\n".toByteArray(Charsets.ISO_8859_1)
+        val b5 = HttpParser.findHeaderBoundary(incomplete, incomplete.size)
+        assertNull(b5)
     }
 
     @Test
-    fun testHttpDesyncPayloadTransformation() {
-        val rawRequest = "GET /videoplayback?id=123 HTTP/1.1\r\nHost: rr1---sn-4g5edn6s.googlevideo.com\r\nUser-Agent: Mozilla/5.0\r\n\r\n"
-        val bytes = rawRequest.toByteArray(Charsets.US_ASCII)
+    fun testHttpParser_BinarySafeDesyncAndPreservation() {
+        val header = "POST /announce HTTP/1.1\r\nHost: tracker.example.com\r\nContent-Length: 128\r\n\r\n"
+        val headerBytes = header.toByteArray(Charsets.ISO_8859_1)
 
-        val desynced = HttpParser.desyncHttpPayload(bytes, bytes.size)
-        val desyncedStr = String(desynced, Charsets.US_ASCII)
+        // Create 128 bytes of binary data with high bytes 0x80..0xFF
+        val binaryBody = ByteArray(128) { (it + 0x80).toByte() }
 
-        assertTrue("Must replace Host: with hOst:  (case modification and double space)", desyncedStr.contains("\r\nhOst:  rr1---sn-4g5edn6s.googlevideo.com"))
-        assertFalse("Must not retain standard Host: header", desyncedStr.contains("\r\nHost: rr1---sn-4g5edn6s.googlevideo.com"))
+        val fullRequest = ByteArray(headerBytes.size + binaryBody.size)
+        System.arraycopy(headerBytes, 0, fullRequest, 0, headerBytes.size)
+        System.arraycopy(binaryBody, 0, fullRequest, headerBytes.size, binaryBody.size)
+
+        val desynced = HttpParser.desyncHttpPayload(fullRequest, fullRequest.size)
+
+        // Verify header was desynced
+        val desyncedStr = String(desynced, Charsets.ISO_8859_1)
+        assertTrue(desyncedStr.contains("hOst:  tracker.example.com"))
+
+        // Verify binary body is intact byte-for-byte at the end
+        val extractedBody = desynced.copyOfRange(desynced.size - 128, desynced.size)
+        assertArrayEquals("Binary body bytes must not be corrupted by ASCII replacement", binaryBody, extractedBody)
     }
 
     @Test
-    fun testBitTorrentHandshakeDetection() {
+    fun testHttpParser_SplitHttpHeader() {
+        val req = "GET /download HTTP/1.1\r\nHost: cdn.test.com\r\nUser-Agent: test\r\n\r\n".toByteArray(Charsets.ISO_8859_1)
+        val (c1, c2) = HttpParser.splitHttpHeader(req, req.size)
+
+        assertTrue(c1.isNotEmpty())
+        assertTrue(c2.isNotEmpty())
+        assertEquals(req.size, c1.size + c2.size)
+
+        val combined = ByteArray(c1.size + c2.size)
+        System.arraycopy(c1, 0, combined, 0, c1.size)
+        System.arraycopy(c2, 0, combined, c1.size, c2.size)
+        assertArrayEquals(req, combined)
+    }
+
+    @Test
+    fun testLocalDpiProxyServer_ParseHostAndPort() {
+        assertEquals(Pair("2001:db8::1", 8080), LocalDpiProxyServer.parseHostAndPort("[2001:db8::1]:8080", 80))
+        assertEquals(Pair("2001:db8::1", 80), LocalDpiProxyServer.parseHostAndPort("[2001:db8::1]", 80))
+        assertEquals(Pair("2001:db8::1", 443), LocalDpiProxyServer.parseHostAndPort("2001:db8::1", 443))
+        assertEquals(Pair("::1", 80), LocalDpiProxyServer.parseHostAndPort("::1", 80))
+        assertEquals(Pair("example.com", 8080), LocalDpiProxyServer.parseHostAndPort("example.com:8080", 80))
+        assertEquals(Pair("example.com", 80), LocalDpiProxyServer.parseHostAndPort("example.com", 80))
+        assertEquals(Pair("", 80), LocalDpiProxyServer.parseHostAndPort("", 80))
+    }
+
+    @Test
+    fun testLocalDpiProxyServer_NormalizeUriPath() {
+        val trackerUrl = "http://tracker.example.com:6969/announce?info_hash=%80%91%A2&peer_id=-SZ0001-[v2]+(test)"
+        assertEquals("/announce?info_hash=%80%91%A2&peer_id=-SZ0001-[v2]+(test)", LocalDpiProxyServer.normalizeUriPath(trackerUrl))
+
+        assertEquals("/announce", LocalDpiProxyServer.normalizeUriPath("http://[2001:db8::1]:8080/announce"))
+        assertEquals("/", LocalDpiProxyServer.normalizeUriPath("http://[2001:db8::1]:8080"))
+        assertEquals("/?query=1", LocalDpiProxyServer.normalizeUriPath("http://example.com?query=1"))
+        assertEquals("/path/to/resource", LocalDpiProxyServer.normalizeUriPath("/path/to/resource"))
+    }
+
+    @Test
+    fun testLocalDpiProxyServer_IsIpLiteral() {
+        assertTrue(LocalDpiProxyServer.isIpLiteral("127.0.0.1"))
+        assertTrue(LocalDpiProxyServer.isIpLiteral("192.168.1.1"))
+        assertTrue(LocalDpiProxyServer.isIpLiteral("2001:db8::1"))
+        assertTrue(LocalDpiProxyServer.isIpLiteral("::1"))
+        assertFalse(LocalDpiProxyServer.isIpLiteral("example.com"))
+        assertFalse(LocalDpiProxyServer.isIpLiteral("tracker.openbittorrent.com"))
+    }
+
+    @Test
+    fun testBitTorrentHandshakeDetection_BEP0003Complete() {
         val btHandshake = ByteArray(68)
         btHandshake[0] = 0x13.toByte()
-        val proto = "BitTorrent protocol".toByteArray(Charsets.US_ASCII)
+        val proto = "BitTorrent protocol".toByteArray(Charsets.ISO_8859_1)
         System.arraycopy(proto, 0, btHandshake, 1, proto.size)
 
-        for (i in 28 until 48) btHandshake[i] = 0xAA.toByte()
-        for (i in 48 until 68) btHandshake[i] = 0xBB.toByte()
+        for (i in 28 until 48) btHandshake[i] = 0xAA.toByte() // InfoHash
+        for (i in 48 until 68) btHandshake[i] = 0xBB.toByte() // PeerID
 
-        assertEquals(0x13.toByte(), btHandshake[0])
-        assertEquals('B'.code.toByte(), btHandshake[1])
-        assertEquals('i'.code.toByte(), btHandshake[2])
-        assertEquals('t'.code.toByte(), btHandshake[3])
-        assertEquals('T'.code.toByte(), btHandshake[4])
+        assertTrue("68-byte BitTorrent handshake must be detected", DpiEngine.isBitTorrentHandshake(btHandshake, btHandshake.size))
 
-        val isBt = btHandshake.size >= 20 &&
-                btHandshake[0] == 0x13.toByte() &&
-                btHandshake[1] == 'B'.code.toByte() &&
-                btHandshake[2] == 'i'.code.toByte() &&
-                btHandshake[3] == 't'.code.toByte() &&
-                btHandshake[4] == 'T'.code.toByte()
+        val prefixOnly = btHandshake.copyOfRange(0, 20)
+        assertTrue("20-byte prefix must be detected", DpiEngine.isBitTorrentHandshake(prefixOnly, prefixOnly.size))
 
-        assertTrue("BitTorrent handshake must be detected", isBt)
+        val shortPrefix = btHandshake.copyOfRange(0, 19)
+        assertFalse("Prefix < 20 bytes must return false", DpiEngine.isBitTorrentHandshake(shortPrefix, shortPrefix.size))
 
-        val fakeBt = byteArrayOf(0x13, 'B'.code.toByte(), 'a'.code.toByte(), 'd'.code.toByte(), 'P'.code.toByte())
-        val isFakeBt = fakeBt.size >= 20 && fakeBt[0] == 0x13.toByte()
-        assertFalse("Short/invalid packet must not be detected as BitTorrent", isFakeBt)
+        val corruptPrefix = btHandshake.copyOf()
+        corruptPrefix[5] = 'X'.code.toByte()
+        assertFalse("Corrupted prefix must return false", DpiEngine.isBitTorrentHandshake(corruptPrefix, corruptPrefix.size))
+    }
+
+    @Test
+    fun testBitTorrentDesync_Split1AndSplit2Execution() {
+        val btHandshake = ByteArray(68)
+        btHandshake[0] = 0x13.toByte()
+        val proto = "BitTorrent protocol".toByteArray(Charsets.ISO_8859_1)
+        System.arraycopy(proto, 0, btHandshake, 1, proto.size)
+        for (i in 28 until 48) btHandshake[i] = 0x11.toByte()
+        for (i in 48 until 68) btHandshake[i] = 0x22.toByte()
+
+        // 1. Test BT_SPLIT(1)
+        val strategySplit1 = BypassStrategy(
+            id = "custom_bt1",
+            name = "BT 1",
+            description = "",
+            tlsSplitOffset = 1,
+            useMultisplit = false,
+            httpHostMod = false,
+            blockQuic = true
+        )
+        val out1 = ByteArrayOutputStream()
+        var technique1 = ""
+        val dummySocket = Socket()
+        DpiEngine.desyncAndSend(
+            socket = dummySocket,
+            outputStream = out1,
+            payload = btHandshake,
+            length = btHandshake.size,
+            strategy = strategySplit1,
+            onTechniqueApplied = { technique1 = it }
+        )
+        assertEquals("BT_SPLIT(1)", technique1)
+        assertArrayEquals("Output must match original 68 bytes exactly", btHandshake, out1.toByteArray())
+
+        // 2. Test BT_SPLIT(2)
+        val strategySplit2 = BypassStrategy(
+            id = "custom_bt2",
+            name = "BT 2",
+            description = "",
+            tlsSplitOffset = 2,
+            useMultisplit = false,
+            httpHostMod = false,
+            blockQuic = true
+        )
+        val out2 = ByteArrayOutputStream()
+        var technique2 = ""
+        DpiEngine.desyncAndSend(
+            socket = dummySocket,
+            outputStream = out2,
+            payload = btHandshake,
+            length = btHandshake.size,
+            strategy = strategySplit2,
+            onTechniqueApplied = { technique2 = it }
+        )
+        assertEquals("BT_SPLIT(2)", technique2)
+        assertArrayEquals("Output must match original 68 bytes exactly", btHandshake, out2.toByteArray())
+    }
+
+    @Test
+    fun testTunTcpRelay_IsHandshakeComplete() {
+        // 1. TLS ClientHello: 5-byte header with record length 100
+        val tlsChunk1 = byteArrayOf(0x16, 0x03, 0x01, 0x00, 0x64) // totalLen = 105
+        assertFalse("Incomplete TLS chunk must return false", TunTcpRelay.isHandshakeComplete(tlsChunk1, tlsChunk1.size))
+
+        val tlsFull = ByteArray(105)
+        System.arraycopy(tlsChunk1, 0, tlsFull, 0, 5)
+        assertTrue("Complete TLS record must return true", TunTcpRelay.isHandshakeComplete(tlsFull, tlsFull.size))
+
+        // 2. BitTorrent: prefix only (20 bytes) vs full (68 bytes)
+        val btPrefix = ByteArray(20)
+        btPrefix[0] = 0x13.toByte()
+        System.arraycopy("BitTorrent protocol".toByteArray(Charsets.ISO_8859_1), 0, btPrefix, 1, 19)
+        assertFalse("20-byte BT prefix must wait for 68-byte handshake", TunTcpRelay.isHandshakeComplete(btPrefix, btPrefix.size))
+
+        val btFull = ByteArray(68)
+        System.arraycopy(btPrefix, 0, btFull, 0, 20)
+        assertTrue("68-byte BT handshake must return true", TunTcpRelay.isHandshakeComplete(btFull, btFull.size))
+
+        val nonBtPrefix = byteArrayOf(0x13, 'X'.code.toByte(), 'Y'.code.toByte())
+        assertTrue("Non-BT starting with 0x13 must return true (passthrough)", TunTcpRelay.isHandshakeComplete(nonBtPrefix, nonBtPrefix.size))
+
+        // 3. HTTP Request
+        val partialHttp = "GET /index".toByteArray(Charsets.ISO_8859_1)
+        assertFalse("Partial HTTP headers without boundary must return false", TunTcpRelay.isHandshakeComplete(partialHttp, partialHttp.size))
+
+        val completeHttp = "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n".toByteArray(Charsets.ISO_8859_1)
+        assertTrue("Complete HTTP headers with CRLFCRLF must return true", TunTcpRelay.isHandshakeComplete(completeHttp, completeHttp.size))
+
+        // 4. Non-DPI Protocol (SSH, Noise, Raw TCP) -> 0ms immediate completion
+        val ssh = "SSH-2.0-OpenSSH\r\n".toByteArray(Charsets.ISO_8859_1)
+        assertTrue("SSH protocol must return true immediately", TunTcpRelay.isHandshakeComplete(ssh, ssh.size))
+
+        val rawTcp = byteArrayOf(0x01, 0x02, 0x03, 0x04)
+        assertTrue("Raw TCP must return true immediately", TunTcpRelay.isHandshakeComplete(rawTcp, rawTcp.size))
     }
 
     @Test
@@ -338,28 +491,12 @@ class DpiEngineTest {
             1.toByte(), 1.toByte(), 1.toByte(), 1.toByte()
         )
 
-        fun computeIpChecksum(data: ByteArray, offset: Int, length: Int): Short {
-            var sum = 0
-            for (i in offset until offset + length step 2) {
-                val word = if (i + 1 < offset + length) {
-                    ((data[i].toInt() and 0xFF) shl 8) or (data[i + 1].toInt() and 0xFF)
-                } else {
-                    ((data[i].toInt() and 0xFF) shl 8)
-                }
-                sum += word
-            }
-            while ((sum shr 16) > 0) {
-                sum = (sum and 0xFFFF) + (sum shr 16)
-            }
-            return (sum.inv() and 0xFFFF).toShort()
-        }
-
-        val cs = computeIpChecksum(ipHeader, 0, 20)
+        val cs = PacketParser.computeIpChecksum(ipHeader, 0, 20)
         assertTrue("Checksum must be non-zero", cs != 0.toShort())
 
         ipHeader[10] = ((cs.toInt() shr 8) and 0xFF).toByte()
         ipHeader[11] = (cs.toInt() and 0xFF).toByte()
-        val verify = computeIpChecksum(ipHeader, 0, 20)
+        val verify = PacketParser.computeIpChecksum(ipHeader, 0, 20)
         assertEquals("Verifying valid IP header checksum must yield 0", 0.toShort(), verify)
     }
 
@@ -373,35 +510,7 @@ class DpiEngineTest {
             'T'.code.toByte(), 'E'.code.toByte(), 'S'.code.toByte(), 'T'.code.toByte()
         )
 
-        fun computeUdpChecksum(
-            packet: ByteArray,
-            udpOffset: Int,
-            udpLen: Int,
-            srcIp: ByteArray,
-            dstIp: ByteArray
-        ): Short {
-            var sum = 0
-            for (i in 0 until 4 step 2) {
-                sum += ((srcIp[i].toInt() and 0xFF) shl 8) or (srcIp[i + 1].toInt() and 0xFF)
-                sum += ((dstIp[i].toInt() and 0xFF) shl 8) or (dstIp[i + 1].toInt() and 0xFF)
-            }
-            sum += 17
-            sum += udpLen
-
-            for (i in udpOffset until udpOffset + udpLen step 2) {
-                val b1 = packet[i].toInt() and 0xFF
-                val b2 = if (i + 1 < udpOffset + udpLen) packet[i + 1].toInt() and 0xFF else 0
-                sum += (b1 shl 8) or b2
-            }
-
-            while ((sum shr 16) > 0) {
-                sum = (sum and 0xFFFF) + (sum shr 16)
-            }
-            val checksum = (sum.inv() and 0xFFFF).toShort()
-            return if (checksum == 0.toShort()) 0xFFFF.toShort() else checksum
-        }
-
-        val udpCs = computeUdpChecksum(udpPacket, 0, 12, srcIp, dstIp)
+        val udpCs = PacketParser.computeUdpChecksum(udpPacket, 0, 12, srcIp, dstIp)
         assertTrue("UDP Checksum must be computed", udpCs != 0.toShort())
     }
 
@@ -436,7 +545,6 @@ class DpiEngineTest {
 
     @Test
     fun testWireQuestionKeyEquivalence() {
-        val googleDomainBytes = "google.com".toByteArray(Charsets.US_ASCII)
         val query1 = ByteArray(12 + 1 + 6 + 1 + 3 + 1 + 4)
         var p = 0
         query1[p++] = 0x12.toByte() // TxID 1

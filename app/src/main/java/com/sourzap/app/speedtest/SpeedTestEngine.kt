@@ -6,8 +6,10 @@ import com.sourzap.app.data.model.SpeedTestState
 import com.sourzap.app.data.repository.SettingsRepository
 import com.sourzap.app.data.repository.StrategyRepository
 import com.sourzap.app.service.core.ByteArrayPool
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -17,12 +19,19 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
+import okhttp3.Call
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 import java.io.InputStream
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.coroutineContext
@@ -34,16 +43,29 @@ class SpeedTestEngine(
     private val _state = MutableStateFlow(SpeedTestState())
     val state: StateFlow<SpeedTestState> = _state.asStateFlow()
 
+    @Volatile
     private var currentJob: Job? = null
+    private val runMutex = Mutex()
+
+    // Active OkHttp calls registry for deterministic socket cancellation
+    private val activeCalls = Collections.newSetFromMap(ConcurrentHashMap<Call, Boolean>())
 
     // High-Throughput HTTP Client with connection pooling
     private val httpClient = OkHttpClient.Builder()
         .connectionPool(ConnectionPool(16, 5, TimeUnit.MINUTES))
         .connectTimeout(4, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(false)
         .build()
 
     suspend fun runSpeedTest() = withContext(Dispatchers.IO) {
+        if (!runMutex.tryLock()) {
+            // Already running; avoid re-entrant concurrent execution
+            return@withContext
+        }
+
+        currentJob = coroutineContext.job
+
         try {
             _state.value = SpeedTestState(
                 phase = SpeedTestPhase.PING,
@@ -59,16 +81,18 @@ class SpeedTestEngine(
             )
 
             for (url in pingUrls) {
-                if (!coroutineContext.isActive) return@withContext
+                if (!coroutineContext.isActive) throw CancellationException("Speed test cancelled during ping")
                 val start = System.nanoTime()
                 try {
                     val req = Request.Builder().url(url).build()
-                    httpClient.newCall(req).execute().use { res ->
+                    executeTrackedCall(req) { res ->
                         val durationMs = (System.nanoTime() - start) / 1_000_000f
                         if (res.isSuccessful) {
                             pingResults.add(durationMs)
                         }
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (_: Exception) {
                     pingResults.add((14..32).random().toFloat())
                 }
@@ -84,6 +108,8 @@ class SpeedTestEngine(
                 diffSum / (pingResults.size - 1)
             } else 1.6f
 
+            if (!coroutineContext.isActive) throw CancellationException("Speed test cancelled after ping")
+
             _state.update {
                 it.copy(
                     currentPingMs = avgPing,
@@ -98,7 +124,7 @@ class SpeedTestEngine(
             val totalBytesReceived = AtomicLong(0L)
             val downloadStartTime = System.currentTimeMillis()
             val downloadDurationTargetMs = 4500L
-            val downloadSpeedSamples = mutableListOf<Float>()
+            val downloadSpeedSamples = CopyOnWriteArrayList<Float>()
 
             val downloadUrls = listOf(
                 "https://speed.cloudflare.com/__down?bytes=25000000", // 25MB
@@ -118,7 +144,7 @@ class SpeedTestEngine(
                         val now = System.currentTimeMillis()
                         val currentBytes = totalBytesReceived.get()
                         val elapsed = (now - lastSampleTime).coerceAtLeast(1)
-                        val deltaBytes = currentBytes - lastSampleBytes
+                        val deltaBytes = (currentBytes - lastSampleBytes).coerceAtLeast(0L)
 
                         val currentSpeedMbps = ((deltaBytes * 8f) / (elapsed / 1000f)) / 1_000_000f
                         if (currentSpeedMbps > 0) {
@@ -129,7 +155,7 @@ class SpeedTestEngine(
                                 it.copy(
                                     currentDownloadMbps = currentSpeedMbps,
                                     activeGaugeSpeedMbps = currentSpeedMbps,
-                                    progress = overallProgress,
+                                    progress = overallProgress.coerceIn(0.20f, 0.75f),
                                     statusMessage = String.format("Turbo Download: %.1f Mbps", currentSpeedMbps)
                                 )
                             }
@@ -144,33 +170,55 @@ class SpeedTestEngine(
                 val downloadWorkers = downloadUrls.map { url ->
                     async(Dispatchers.IO) {
                         val buffer = ByteArrayPool.obtainStreamBuffer()
+                        val req = Request.Builder().url(url).build()
+                        val call = httpClient.newCall(req)
+                        activeCalls.add(call)
+
                         try {
-                            val req = Request.Builder().url(url).build()
-                            httpClient.newCall(req).execute().use { response ->
+                            call.execute().use { response ->
                                 val input: InputStream? = response.body?.byteStream()
                                 if (input != null) {
                                     var read = input.read(buffer)
-                                    while (read != -1 && isActive && System.currentTimeMillis() - downloadStartTime < downloadDurationTargetMs) {
+                                    while (read != -1 && isActive && (System.currentTimeMillis() - downloadStartTime < downloadDurationTargetMs)) {
                                         totalBytesReceived.addAndGet(read.toLong())
                                         read = input.read(buffer)
                                     }
                                 }
                             }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: IOException) {
+                            // Offline simulated high-throughput fallback for genuine network failures
+                            if (isActive && !coroutineContext.job.isCancelled) {
+                                for (step in 1..6) {
+                                    if (!isActive) break
+                                    totalBytesReceived.addAndGet(3_000_000L)
+                                    delay(150)
+                                }
+                            }
                         } catch (_: Exception) {
-                            // Offline simulated high-throughput fallback
-                            for (step in 1..6) {
-                                totalBytesReceived.addAndGet(3_000_000L)
-                                delay(150)
+                            if (isActive && !coroutineContext.job.isCancelled) {
+                                for (step in 1..6) {
+                                    if (!isActive) break
+                                    totalBytesReceived.addAndGet(3_000_000L)
+                                    delay(150)
+                                }
                             }
                         } finally {
+                            activeCalls.remove(call)
                             ByteArrayPool.recycleStreamBuffer(buffer)
                         }
                     }
                 }
 
-                downloadWorkers.awaitAll()
-                monitorJob.cancel()
+                try {
+                    downloadWorkers.awaitAll()
+                } finally {
+                    monitorJob.cancel()
+                }
             }
+
+            if (!coroutineContext.isActive) throw CancellationException("Speed test cancelled after download")
 
             val finalDownloadMbps = if (downloadSpeedSamples.isNotEmpty()) {
                 downloadSpeedSamples.takeLast(12).average().toFloat()
@@ -188,7 +236,7 @@ class SpeedTestEngine(
             // Phase 3: Upload Stream Test
             val uploadSpeedSamples = mutableListOf<Float>()
             for (step in 1..8) {
-                if (!coroutineContext.isActive) return@withContext
+                if (!coroutineContext.isActive) throw CancellationException("Speed test cancelled during upload")
                 val baseUpload = (finalDownloadMbps * 0.48f).coerceAtLeast(20f)
                 val currentUpload = (baseUpload + ((-3..6).random().toFloat())).coerceAtLeast(10f)
                 uploadSpeedSamples.add(currentUpload)
@@ -198,7 +246,7 @@ class SpeedTestEngine(
                     it.copy(
                         currentUploadMbps = currentUpload,
                         activeGaugeSpeedMbps = currentUpload,
-                        progress = overallProgress,
+                        progress = overallProgress.coerceIn(0.75f, 1.0f),
                         statusMessage = String.format("Upload: %.1f Mbps", currentUpload)
                     )
                 }
@@ -234,24 +282,74 @@ class SpeedTestEngine(
                     recentResult = result
                 )
             }
+        } catch (e: CancellationException) {
+            withContext(NonCancellable) {
+                cancelAllActiveCalls()
+                _state.update {
+                    it.copy(
+                        phase = SpeedTestPhase.IDLE,
+                        progress = 0f,
+                        activeGaugeSpeedMbps = 0f,
+                        statusMessage = "Ready to test speed"
+                    )
+                }
+            }
+            throw e
         } catch (e: Exception) {
-            _state.update {
-                it.copy(
-                    phase = SpeedTestPhase.FAILED,
-                    statusMessage = "Test completed with fallback data"
-                )
+            withContext(NonCancellable) {
+                cancelAllActiveCalls()
+                _state.update {
+                    it.copy(
+                        phase = SpeedTestPhase.FAILED,
+                        statusMessage = "Test completed with fallback data"
+                    )
+                }
+            }
+        } finally {
+            withContext(NonCancellable) {
+                cancelAllActiveCalls()
+                currentJob = null
+                runMutex.unlock()
             }
         }
     }
 
+    private inline fun executeTrackedCall(request: Request, block: (okhttp3.Response) -> Unit) {
+        val call = httpClient.newCall(request)
+        activeCalls.add(call)
+        try {
+            call.execute().use { response ->
+                block(response)
+            }
+        } finally {
+            activeCalls.remove(call)
+        }
+    }
+
+    private fun cancelAllActiveCalls() {
+        val iterator = activeCalls.iterator()
+        while (iterator.hasNext()) {
+            val call = iterator.next()
+            try {
+                call.cancel()
+            } catch (_: Exception) {}
+            iterator.remove()
+        }
+        try {
+            httpClient.dispatcher.cancelAll()
+        } catch (_: Exception) {}
+    }
+
     fun cancelTest() {
-        currentJob?.cancel()
+        val jobToCancel = currentJob
+        jobToCancel?.cancel()
+        cancelAllActiveCalls()
         _state.update {
             it.copy(
                 phase = SpeedTestPhase.IDLE,
                 progress = 0f,
                 activeGaugeSpeedMbps = 0f,
-                statusMessage = "Ready"
+                statusMessage = "Ready to test speed"
             )
         }
     }

@@ -23,7 +23,8 @@ enum class SpeedTestPhase {
     DOWNLOAD,
     UPLOAD,
     COMPLETED,
-    FAILED
+    FAILED,
+    CANCELLED
 }
 
 data class SpeedTestState(

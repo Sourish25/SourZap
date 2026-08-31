@@ -5,6 +5,7 @@ import com.sourzap.app.data.model.TrafficStats
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +17,9 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 object TrafficMonitor {
+
+    private const val MAX_LOGS = 50
+    private const val MAX_SPEED_SAMPLES = 20
 
     private val _stats = MutableStateFlow(TrafficStats())
     val stats: StateFlow<TrafficStats> = _stats.asStateFlow()
@@ -34,9 +38,13 @@ object TrafficMonitor {
     private val totalPacketsCounter = AtomicLong(0L)
     private val lastSecPackets = AtomicInteger(0)
 
-    private val speedHistory = ArrayDeque<Float>(25)
+    private val speedHistory = ArrayDeque<Float>(MAX_SPEED_SAMPLES + 5)
+    private val logBuffer = ArrayDeque<ConnectionLog>(MAX_LOGS)
+    private val logLock = Any()
+    private val speedLock = Any()
+
     private var monitorJob: Job? = null
-    private val scope = CoroutineScope(Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     fun startMonitoring() {
         _isVpnActive.value = true
@@ -56,11 +64,12 @@ object TrafficMonitor {
                 lastTx = currentTx
 
                 val speedKbps = ((rxSpeed + txSpeed) * 8f) / 1000f
-                synchronized(speedHistory) {
-                    if (speedHistory.size >= 20) {
+                val speedList = synchronized(speedLock) {
+                    if (speedHistory.size >= MAX_SPEED_SAMPLES) {
                         speedHistory.removeFirst()
                     }
                     speedHistory.addLast(speedKbps)
+                    speedHistory.toList()
                 }
 
                 val pps = lastSecPackets.getAndSet(0)
@@ -76,7 +85,7 @@ object TrafficMonitor {
                         activeConnections = activeConnectionCounter.get().coerceAtLeast(0),
                         totalPacketsProcessed = totalPacketsCounter.get(),
                         packetsPerSecond = pps,
-                        recentSpeedHistory = synchronized(speedHistory) { speedHistory.toList() }
+                        recentSpeedHistory = speedList
                     )
                 }
             }
@@ -86,6 +95,7 @@ object TrafficMonitor {
     fun stopMonitoring() {
         _isVpnActive.value = false
         monitorJob?.cancel()
+        monitorJob = null
         _stats.update {
             it.copy(
                 downloadSpeedBps = 0L,
@@ -97,12 +107,14 @@ object TrafficMonitor {
     }
 
     fun recordRxBytes(bytes: Long) {
+        if (bytes <= 0) return
         sessionRxBytes.addAndGet(bytes)
         totalPacketsCounter.incrementAndGet()
         lastSecPackets.incrementAndGet()
     }
 
     fun recordTxBytes(bytes: Long) {
+        if (bytes <= 0) return
         sessionTxBytes.addAndGet(bytes)
         totalPacketsCounter.incrementAndGet()
         lastSecPackets.incrementAndGet()
@@ -113,27 +125,40 @@ object TrafficMonitor {
     }
 
     fun onConnectionClosed() {
-        activeConnectionCounter.decrementAndGet()
+        activeConnectionCounter.updateAndGet { current -> maxOf(0, current - 1) }
     }
 
     fun addConnectionLog(log: ConnectionLog) {
-        _recentLogs.update { current ->
-            (listOf(log) + current).take(50)
+        val snapshot = synchronized(logLock) {
+            if (logBuffer.size >= MAX_LOGS) {
+                logBuffer.removeLast() // drop oldest
+            }
+            logBuffer.addFirst(log) // add newest at top (index 0)
+            logBuffer.toList()
         }
+        _recentLogs.value = snapshot
+    }
+
+    fun clearLogs() {
+        synchronized(logLock) {
+            logBuffer.clear()
+        }
+        _recentLogs.value = emptyList()
     }
 
     fun resetSession() {
         sessionRxBytes.set(0L)
         sessionTxBytes.set(0L)
+        lastSecPackets.set(0)
+        synchronized(speedLock) {
+            speedHistory.clear()
+        }
         _stats.update {
             it.copy(
                 sessionDownloadBytes = 0L,
-                sessionUploadBytes = 0L
+                sessionUploadBytes = 0L,
+                recentSpeedHistory = emptyList()
             )
         }
-    }
-
-    fun clearLogs() {
-        _recentLogs.value = emptyList()
     }
 }

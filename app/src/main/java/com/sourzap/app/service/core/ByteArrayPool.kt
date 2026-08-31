@@ -47,7 +47,7 @@ object ByteArrayPool {
     fun obtain64k(): ByteArray {
         val buf = pool64k.poll()
         if (buf != null) {
-            count64k.decrementAndGet()
+            count64k.updateAndGet { (it - 1).coerceAtLeast(0) }
             return buf
         }
         return ByteArray(BUFFER_64K)
@@ -72,7 +72,7 @@ object ByteArrayPool {
     fun obtain32k(): ByteArray {
         val buf = pool32k.poll()
         if (buf != null) {
-            count32k.decrementAndGet()
+            count32k.updateAndGet { (it - 1).coerceAtLeast(0) }
             return buf
         }
         return ByteArray(BUFFER_32K)
@@ -97,7 +97,7 @@ object ByteArrayPool {
     fun obtain16k(): ByteArray {
         val buf = pool16k.poll()
         if (buf != null) {
-            count16k.decrementAndGet()
+            count16k.updateAndGet { (it - 1).coerceAtLeast(0) }
             return buf
         }
         return ByteArray(BUFFER_16K)
@@ -122,7 +122,7 @@ object ByteArrayPool {
     fun obtain4k(): ByteArray {
         val buf = pool4k.poll()
         if (buf != null) {
-            count4k.decrementAndGet()
+            count4k.updateAndGet { (it - 1).coerceAtLeast(0) }
             return buf
         }
         return ByteArray(BUFFER_4K)

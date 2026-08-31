@@ -70,7 +70,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -127,12 +127,12 @@ fun SettingsScreen(
     val settingsRepo = app.settingsRepository
     val strategyRepo = app.strategyRepository
 
-    val bypassLan by settingsRepo.bypassLan.collectAsState()
-    val autoConnect by settingsRepo.autoConnectOnBoot.collectAsState()
-    val themePreset by settingsRepo.themePreset.collectAsState()
-    val darkModePref by settingsRepo.darkModePref.collectAsState()
-    val disallowedPackages by settingsRepo.disallowedPackages.collectAsState()
-    val currentStrategy by strategyRepo.currentStrategy.collectAsState()
+    val bypassLan by settingsRepo.bypassLan.collectAsStateWithLifecycle()
+    val autoConnect by settingsRepo.autoConnectOnBoot.collectAsStateWithLifecycle()
+    val themePreset by settingsRepo.themePreset.collectAsStateWithLifecycle()
+    val darkModePref by settingsRepo.darkModePref.collectAsStateWithLifecycle()
+    val disallowedPackages by settingsRepo.disallowedPackages.collectAsStateWithLifecycle()
+    val currentStrategy by strategyRepo.currentStrategy.collectAsStateWithLifecycle()
 
     var currentPage by remember { mutableStateOf(SettingsPage.MAIN) }
     var showAppSheet by remember { mutableStateOf(false) }
@@ -143,7 +143,7 @@ fun SettingsScreen(
     val haptics = LocalHapticFeedback.current
 
     val updateManager = app.updateManager
-    var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+    val updateState by updateManager.updateState.collectAsStateWithLifecycle()
     val currentAppVersion = com.sourzap.app.BuildConfig.VERSION_NAME
 
     // Handle system back navigation to return to main settings menu
@@ -160,7 +160,7 @@ fun SettingsScreen(
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val isTablet = configuration.screenWidthDp >= 600
 
-    val currentThemeObj = AppThemePreset.values().firstOrNull { it.id == themePreset } ?: AppThemePreset.DYNAMIC
+    val currentThemeObj = AppThemePreset.entries.firstOrNull { it.id == themePreset } ?: AppThemePreset.DYNAMIC
 
     com.sourzap.app.ui.components.AdaptiveContentContainer(maxWidth = 760.dp) {
         AnimatedContent(
@@ -371,7 +371,7 @@ fun SettingsScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
 
-                                    val allPresets = AppThemePreset.values().toList()
+                                    val allPresets = AppThemePreset.entries
 
                                     if (isTablet) {
                                         allPresets.chunked(2).forEach { pair ->
@@ -792,11 +792,7 @@ fun SettingsScreen(
                                     Button(
                                         onClick = {
                                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            scope.launch {
-                                                updateManager.checkForUpdates(currentAppVersion).collect { state ->
-                                                    updateState = state
-                                                }
-                                            }
+                                            updateManager.checkForUpdates(currentAppVersion)
                                         },
                                         shape = RoundedCornerShape(16.dp),
                                         colors = ButtonDefaults.buttonColors(
@@ -855,11 +851,7 @@ fun SettingsScreen(
                                             Button(
                                                 onClick = {
                                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    scope.launch {
-                                                        updateManager.downloadAndPrepareApk(state.release.apkDownloadUrl).collect { dlState ->
-                                                            updateState = dlState
-                                                        }
-                                                    }
+                                                    updateManager.startDownload(state.release.apkDownloadUrl)
                                                 },
                                                 modifier = Modifier.fillMaxWidth().height(48.dp),
                                                 shape = RoundedCornerShape(16.dp),

@@ -50,7 +50,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -100,29 +100,20 @@ fun DashboardScreen(
     val strategyRepo = app.strategyRepository
     val haptics = LocalHapticFeedback.current
 
-    val isConnected by TrafficMonitor.isVpnActive.collectAsState()
-    val stats by TrafficMonitor.stats.collectAsState()
-    val currentStrategy by strategyRepo.currentStrategy.collectAsState()
-    val recentLogs by TrafficMonitor.recentLogs.collectAsState()
+    val isConnected by TrafficMonitor.isVpnActive.collectAsStateWithLifecycle()
+    val stats by TrafficMonitor.stats.collectAsStateWithLifecycle()
+    val currentStrategy by strategyRepo.currentStrategy.collectAsStateWithLifecycle()
+    val recentLogs by TrafficMonitor.recentLogs.collectAsStateWithLifecycle()
 
     val configuration = LocalConfiguration.current
     val isTablet = configuration.screenWidthDp >= 600
 
     val updateManager = app.updateManager
-    val scope = rememberCoroutineScope()
-    var availableRelease by remember { mutableStateOf<AppReleaseInfo?>(null) }
-    var isDownloadingUpdate by remember { mutableStateOf(false) }
-    var downloadProgress by remember { mutableStateOf(0f) }
+    val updateState by updateManager.updateState.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         val currentVer = com.sourzap.app.BuildConfig.VERSION_NAME
-        updateManager.checkForUpdates(currentVer).collect { state ->
-            when (state) {
-                is UpdateState.Available -> availableRelease = state.release
-                is UpdateState.UpToDate -> availableRelease = null
-                else -> {}
-            }
-        }
+        updateManager.checkForUpdates(currentVer)
     }
 
     val vpnPrepareLauncher = rememberLauncherForActivityResult(
@@ -174,127 +165,144 @@ fun DashboardScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Update Available Banner
-            availableRelease?.let { release ->
-                item {
-                    ExpressiveCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(24.dp),
-                        backgroundColor = MaterialTheme.colorScheme.primaryContainer,
-                        borderColor = MaterialTheme.colorScheme.primary
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+            when (val state = updateState) {
+                is UpdateState.Available, is UpdateState.Downloading, is UpdateState.ReadyToInstall -> {
+                    val release = when (state) {
+                        is UpdateState.Available -> state.release
+                        else -> null
+                    }
+                    item {
+                        ExpressiveCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                            borderColor = MaterialTheme.colorScheme.primary
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                                    contentAlignment = Alignment.Center
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.NewReleases,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.NewReleases,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
 
-                                Spacer(modifier = Modifier.width(10.dp))
+                                    Spacer(modifier = Modifier.width(10.dp))
 
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "Update Available: v${release.versionName}",
-                                        fontWeight = FontWeight.Black,
-                                        fontSize = 15.sp,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = "Tap Update to install latest improvements",
-                                        fontWeight = FontWeight.Medium,
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (release != null) "Update Available: v${release.versionName}" else "SourZap Update",
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 15.sp,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = when (state) {
+                                                is UpdateState.Downloading -> "Downloading package in background..."
+                                                is UpdateState.ReadyToInstall -> "Package ready to install"
+                                                else -> "Tap Update to install latest improvements"
+                                            },
+                                            fontWeight = FontWeight.Medium,
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
 
-                                if (!isDownloadingUpdate) {
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Button(
-                                        onClick = {
-                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            isDownloadingUpdate = true
-                                            scope.launch {
-                                                updateManager.downloadAndPrepareApk(release.apkDownloadUrl).collect { st ->
-                                                    when (st) {
-                                                        is UpdateState.Downloading -> downloadProgress = st.progress
-                                                        is UpdateState.ReadyToInstall -> {
-                                                            isDownloadingUpdate = false
-                                                            updateManager.installApk(st.apkFile)
-                                                        }
-                                                        is UpdateState.Error -> isDownloadingUpdate = false
-                                                        else -> {}
-                                                    }
+                                    when (state) {
+                                        is UpdateState.Available -> {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Button(
+                                                onClick = {
+                                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    updateManager.startDownload(state.release.apkDownloadUrl)
+                                                },
+                                                shape = RoundedCornerShape(16.dp),
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = MaterialTheme.colorScheme.primary,
+                                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                                )
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Download,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Update", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
                                                 }
                                             }
-                                        },
-                                        shape = RoundedCornerShape(16.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.primary,
-                                            contentColor = MaterialTheme.colorScheme.onPrimary
-                                        )
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Download,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Update", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
                                         }
+                                        is UpdateState.ReadyToInstall -> {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Button(
+                                                onClick = {
+                                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    updateManager.installApk(state.apkFile)
+                                                },
+                                                shape = RoundedCornerShape(16.dp),
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = MaterialTheme.colorScheme.primary,
+                                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                                )
+                                            ) {
+                                                Text("Install", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                                            }
+                                        }
+                                        else -> {}
                                     }
                                 }
-                            }
 
-                            if (isDownloadingUpdate) {
-                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            text = "Downloading package...",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                        Text(
-                                            text = "${(downloadProgress * 100).toInt()}%",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Black,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                if (state is UpdateState.Downloading) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = "Downloading package...",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                            Text(
+                                                text = "${(state.progress * 100).toInt()}%",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Black,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                        ExpressiveWavyProgressIndicator(
+                                            progress = state.progress,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
                                         )
                                     }
-                                    ExpressiveWavyProgressIndicator(
-                                        progress = downloadProgress,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-                                    )
                                 }
                             }
                         }
                     }
                 }
+                else -> {}
             }
 
             // Material You Top Bar

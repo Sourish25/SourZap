@@ -269,23 +269,23 @@ object DohResolver {
 
     private fun queryUdpDns(queryBytes: ByteArray, serverIp: String): ByteArray? {
         try {
-            val socket = DatagramSocket()
-            vpnServiceRef?.protect(socket)
-            socket.soTimeout = 1500
-            val sendPacket = DatagramPacket(queryBytes, queryBytes.size, InetAddress.getByName(serverIp), 53)
-            socket.send(sendPacket)
-            val buf = ByteArray(4096)
-            val recvPacket = DatagramPacket(buf, buf.size)
-            socket.receive(recvPacket)
-            val len = recvPacket.length
-            socket.close()
-            if (len >= 12 && isValidDnsResponse(buf, len)) {
-                val res = buf.copyOfRange(0, len)
-                if (queryBytes.size >= 2) {
-                    res[0] = queryBytes[0]
-                    res[1] = queryBytes[1]
+            DatagramSocket().use { socket ->
+                vpnServiceRef?.protect(socket)
+                socket.soTimeout = 1500
+                val sendPacket = DatagramPacket(queryBytes, queryBytes.size, InetAddress.getByName(serverIp), 53)
+                socket.send(sendPacket)
+                val buf = ByteArray(4096)
+                val recvPacket = DatagramPacket(buf, buf.size)
+                socket.receive(recvPacket)
+                val len = recvPacket.length
+                if (len >= 12 && isValidDnsResponse(buf, len)) {
+                    val res = buf.copyOfRange(0, len)
+                    if (queryBytes.size >= 2) {
+                        res[0] = queryBytes[0]
+                        res[1] = queryBytes[1]
+                    }
+                    return res
                 }
-                return res
             }
         } catch (_: Exception) {}
         return null
