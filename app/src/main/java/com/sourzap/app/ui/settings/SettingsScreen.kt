@@ -155,281 +155,261 @@ fun SettingsScreen(
         }
     }
 
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val isTablet = configuration.screenWidthDp >= 600
+
     val currentThemeObj = AppThemePreset.values().firstOrNull { it.id == themePreset } ?: AppThemePreset.DYNAMIC
 
-    AnimatedContent(
-        targetState = currentPage,
-        transitionSpec = {
-            if (targetState != SettingsPage.MAIN) {
-                (slideInHorizontally { width -> width } + fadeIn()).togetherWith(
-                    slideOutHorizontally { width -> -width } + fadeOut()
-                )
-            } else {
-                (slideInHorizontally { width -> -width } + fadeIn()).togetherWith(
-                    slideOutHorizontally { width -> width } + fadeOut()
-                )
-            }
-        },
-        label = "SettingsNavTransition"
-    ) { targetPage ->
-        LazyColumn(
-            modifier = modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface)
-                .statusBarsPadding()
-                .padding(horizontal = 16.dp),
-            contentPadding = PaddingValues(top = 16.dp, bottom = 108.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            when (targetPage) {
-                SettingsPage.MAIN -> {
-                    // Main Settings Header
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Settings",
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 32.sp,
-                                    letterSpacing = (-1).sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "Preferences & System Configuration",
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 14.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-
-                    // Category 1: Appearance & Themes
-                    item {
-                        SettingsCategoryTile(
-                            icon = Icons.Rounded.Palette,
-                            title = "Appearance & Themes",
-                            subtitle = "${currentThemeObj.displayName} • ${
-                                when (darkModePref) {
-                                    "DARK" -> "Dark Mode"
-                                    "LIGHT" -> "Light Mode"
-                                    else -> "System Default"
-                                }
-                            }",
-                            iconContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                currentPage = SettingsPage.APPEARANCE
-                            }
-                        )
-                    }
-
-                    // Category 2: Network & Routing
-                    item {
-                        SettingsCategoryTile(
-                            icon = Icons.AutoMirrored.Rounded.AltRoute,
-                            title = "Network & Routing",
-                            subtitle = if (disallowedPackages.isEmpty()) "All apps tunnelled • LAN Bypass ${if (bypassLan) "On" else "Off"}" else "${disallowedPackages.size} apps bypassed • LAN Bypass ${if (bypassLan) "On" else "Off"}",
-                            iconContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                currentPage = SettingsPage.NETWORK
-                            }
-                        )
-                    }
-
-                    // Category 3: DNS & Security
-                    item {
-                        SettingsCategoryTile(
-                            icon = Icons.Rounded.Dns,
-                            title = "DNS & Security",
-                            subtitle = "${currentStrategy.dohProvider.displayName} • 0ms LRU Cache",
-                            iconContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                            iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                currentPage = SettingsPage.DNS
-                            }
-                        )
-                    }
-
-                    // Category 4: Updates & Releases
-                    item {
-                        SettingsCategoryTile(
-                            icon = Icons.Rounded.SystemUpdate,
-                            title = "Updates & Releases",
-                            subtitle = "SourZap v$currentAppVersion • Check GitHub Releases",
-                            iconContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            iconTint = MaterialTheme.colorScheme.primary,
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                currentPage = SettingsPage.UPDATES
-                            }
-                        )
-                    }
-
-                    // Category 5: About & Diagnostics
-                    item {
-                        SettingsCategoryTile(
-                            icon = Icons.Rounded.Info,
-                            title = "About & Diagnostics",
-                            subtitle = "Rootless Architecture, MIT License & GitHub",
-                            iconContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                currentPage = SettingsPage.ABOUT
-                            }
-                        )
-                    }
+    com.sourzap.app.ui.components.AdaptiveContentContainer(maxWidth = 760.dp) {
+        AnimatedContent(
+            targetState = currentPage,
+            transitionSpec = {
+                if (targetState != SettingsPage.MAIN) {
+                    (slideInHorizontally { width -> width } + fadeIn()).togetherWith(
+                        slideOutHorizontally { width -> -width } + fadeOut()
+                    )
+                } else {
+                    (slideInHorizontally { width -> -width } + fadeIn()).togetherWith(
+                        slideOutHorizontally { width -> width } + fadeOut()
+                    )
                 }
-
-                SettingsPage.APPEARANCE -> {
-                    // Sub-Page Header with Back Button
-                    item {
-                        SettingsSubPageHeader(
-                            title = "Appearance & Themes",
-                            subtitle = "11 Material 3 color palettes and display modes",
-                            onBackClick = { currentPage = SettingsPage.MAIN }
-                        )
-                    }
-
-                    // Theme Mode Selector Card
-                    item {
-                        ExpressiveCard(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(24.dp),
-                            backgroundColor = MaterialTheme.colorScheme.surfaceContainer
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(18.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
+            },
+            label = "SettingsNavTransition"
+        ) { targetPage ->
+            LazyColumn(
+                modifier = modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surface)
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(top = 16.dp, bottom = 108.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                when (targetPage) {
+                    SettingsPage.MAIN -> {
+                        // Main Settings Header
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = "Theme Display Mode",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "Choose light, dark, or follow your system theme automatically",
-                                    fontWeight = FontWeight.Normal,
-                                    fontSize = 12.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-
-                                SegmentedPillSwitch(
-                                    items = listOf("SYSTEM", "DARK", "LIGHT"),
-                                    selectedItem = darkModePref,
-                                    itemLabel = {
-                                        when (it) {
-                                            "SYSTEM" -> "System Default"
-                                            "DARK" -> "Dark Mode"
-                                            else -> "Light Mode"
-                                        }
-                                    },
-                                    onItemSelected = { settingsRepo.setDarkModePref(it) }
-                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Settings",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 32.sp,
+                                        letterSpacing = (-1).sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Preferences & System Configuration",
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
+                        }
+
+                        // Category 1: Appearance & Themes
+                        item {
+                            SettingsCategoryTile(
+                                icon = Icons.Rounded.Palette,
+                                title = "Appearance & Themes",
+                                subtitle = "${currentThemeObj.displayName} • ${
+                                    when (darkModePref) {
+                                        "DARK" -> "Dark Mode"
+                                        "LIGHT" -> "Light Mode"
+                                        else -> "System Default"
+                                    }
+                                }",
+                                iconContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    currentPage = SettingsPage.APPEARANCE
+                                }
+                            )
+                        }
+
+                        // Category 2: Network & Routing
+                        item {
+                            SettingsCategoryTile(
+                                icon = Icons.AutoMirrored.Rounded.AltRoute,
+                                title = "Network & Routing",
+                                subtitle = if (disallowedPackages.isEmpty()) "All apps tunnelled • LAN Bypass ${if (bypassLan) "On" else "Off"}" else "${disallowedPackages.size} apps bypassed • LAN Bypass ${if (bypassLan) "On" else "Off"}",
+                                iconContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    currentPage = SettingsPage.NETWORK
+                                }
+                            )
+                        }
+
+                        // Category 3: DNS & Security
+                        item {
+                            SettingsCategoryTile(
+                                icon = Icons.Rounded.Dns,
+                                title = "DNS & Security",
+                                subtitle = "${currentStrategy.dohProvider.displayName} • 0ms LRU Cache",
+                                iconContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    currentPage = SettingsPage.DNS
+                                }
+                            )
+                        }
+
+                        // Category 4: Updates & Releases
+                        item {
+                            SettingsCategoryTile(
+                                icon = Icons.Rounded.SystemUpdate,
+                                title = "Updates & Releases",
+                                subtitle = "SourZap v$currentAppVersion • Check GitHub Releases",
+                                iconContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                iconTint = MaterialTheme.colorScheme.primary,
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    currentPage = SettingsPage.UPDATES
+                                }
+                            )
+                        }
+
+                        // Category 5: About & Diagnostics
+                        item {
+                            SettingsCategoryTile(
+                                icon = Icons.Rounded.Info,
+                                title = "About & Diagnostics",
+                                subtitle = "Rootless Architecture, MIT License & GitHub",
+                                iconContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    currentPage = SettingsPage.ABOUT
+                                }
+                            )
                         }
                     }
 
-                    // Color Palettes Grid Card
-                    item {
-                        ExpressiveCard(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(28.dp),
-                            backgroundColor = MaterialTheme.colorScheme.surfaceContainer
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(18.dp),
-                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    SettingsPage.APPEARANCE -> {
+                        // Sub-Page Header with Back Button
+                        item {
+                            SettingsSubPageHeader(
+                                title = "Appearance & Themes",
+                                subtitle = "11 Material 3 color palettes and display modes",
+                                onBackClick = { currentPage = SettingsPage.MAIN }
+                            )
+                        }
+
+                        // Theme Mode Selector Card
+                        item {
+                            ExpressiveCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(24.dp),
+                                backgroundColor = MaterialTheme.colorScheme.surfaceContainer
                             ) {
-                                Text(
-                                    text = "Material 3 Color Palettes",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "Select a color harmony tailored with Google Material You HCT tones",
-                                    fontWeight = FontWeight.Normal,
-                                    fontSize = 12.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Column(
+                                    modifier = Modifier.padding(18.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Text(
+                                        text = "Theme Display Mode",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Choose light, dark, or follow your system theme automatically",
+                                        fontWeight = FontWeight.Normal,
+                                        fontSize = 12.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
 
-                                val allPresets = AppThemePreset.values().toList()
-                                allPresets.forEach { preset ->
-                                    val isSelected = preset.id == themePreset
-                                    Surface(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(18.dp))
-                                            .border(
-                                                width = if (isSelected) 2.dp else 1.dp,
-                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                                                shape = RoundedCornerShape(18.dp)
-                                            )
-                                            .clickable {
-                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                settingsRepo.setThemePreset(preset.id)
-                                            },
-                                        shape = RoundedCornerShape(18.dp),
-                                        color = if (isSelected) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerHigh
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(28.dp)
-                                                        .clip(CircleShape)
-                                                        .background(Color(preset.previewColor))
-                                                )
-                                                Spacer(modifier = Modifier.width(12.dp))
-                                                Text(
-                                                    text = preset.displayName,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                    fontSize = 14.5.sp,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
+                                    SegmentedPillSwitch(
+                                        items = listOf("SYSTEM", "DARK", "LIGHT"),
+                                        selectedItem = darkModePref,
+                                        itemLabel = {
+                                            when (it) {
+                                                "SYSTEM" -> "System"
+                                                "DARK" -> "Dark"
+                                                else -> "Light"
                                             }
+                                        },
+                                        onItemSelected = { settingsRepo.setDarkModePref(it) }
+                                    )
+                                }
+                            }
+                        }
 
-                                            if (isSelected) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(24.dp)
-                                                        .clip(CircleShape)
-                                                        .background(MaterialTheme.colorScheme.primary),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Check,
-                                                        contentDescription = "Selected",
-                                                        tint = MaterialTheme.colorScheme.onPrimary,
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
+                        // Color Palettes Grid Card
+                        item {
+                            ExpressiveCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(28.dp),
+                                backgroundColor = MaterialTheme.colorScheme.surfaceContainer
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(18.dp),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    Text(
+                                        text = "Material 3 Color Palettes",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Select a color harmony tailored with Google Material You HCT tones",
+                                        fontWeight = FontWeight.Normal,
+                                        fontSize = 12.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+
+                                    val allPresets = AppThemePreset.values().toList()
+
+                                    if (isTablet) {
+                                        allPresets.chunked(2).forEach { pair ->
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                            ) {
+                                                pair.forEach { preset ->
+                                                    Box(modifier = Modifier.weight(1f)) {
+                                                        ThemeSwatchCard(
+                                                            preset = preset,
+                                                            isSelected = preset.id == themePreset,
+                                                            onClick = {
+                                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                                settingsRepo.setThemePreset(preset.id)
+                                                            }
+                                                        )
+                                                    }
+                                                }
+                                                if (pair.size == 1) {
+                                                    Spacer(modifier = Modifier.weight(1f))
                                                 }
                                             }
+                                        }
+                                    } else {
+                                        allPresets.forEach { preset ->
+                                            ThemeSwatchCard(
+                                                preset = preset,
+                                                isSelected = preset.id == themePreset,
+                                                onClick = {
+                                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    settingsRepo.setThemePreset(preset.id)
+                                                }
+                                            )
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                }
 
                 SettingsPage.NETWORK -> {
                     // Sub-Page Header with Back Button
@@ -1370,6 +1350,79 @@ fun SettingsScreen(
         }
     }
 }
+}
+
+/**
+ * Material 3 Color Palette Swatch Card
+ */
+@Composable
+private fun ThemeSwatchCard(
+    preset: AppThemePreset,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .border(
+                width = if (isSelected) 2.dp else 1.dp,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                shape = RoundedCornerShape(18.dp)
+            )
+            .clickable { onClick() },
+        shape = RoundedCornerShape(18.dp),
+        color = if (isSelected) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(Color(preset.previewColor))
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = preset.displayName,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            if (isSelected) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = "Selected",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+    }
+}
 
 /**
  * Clean, Ergonomic Category Tile for Main Settings Menu
@@ -1432,8 +1485,9 @@ private fun SettingsCategoryTile(
                     text = subtitle,
                     fontWeight = FontWeight.Normal,
                     fontSize = 12.5.sp,
+                    lineHeight = 16.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }

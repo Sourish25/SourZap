@@ -65,6 +65,9 @@ import com.sourzap.app.ui.components.ExpressiveSpeedGauge
 import com.sourzap.app.ui.components.ExpressiveWavyProgressIndicator
 import kotlinx.coroutines.launch
 
+import androidx.compose.ui.platform.LocalConfiguration
+import com.sourzap.app.ui.components.AdaptiveContentContainer
+
 @Composable
 fun SpeedTestScreen(
     modifier: Modifier = Modifier
@@ -77,6 +80,9 @@ fun SpeedTestScreen(
     val state by speedEngine.state.collectAsState()
     val history by settingsRepo.speedTestHistory.collectAsState()
     val currentStrategy by strategyRepo.currentStrategy.collectAsState()
+
+    val configuration = LocalConfiguration.current
+    val isTablet = configuration.screenWidthDp >= 600
 
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
@@ -104,304 +110,451 @@ fun SpeedTestScreen(
         label = "AnimUL"
     )
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
-            .statusBarsPadding()
-            .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 108.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Header
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Speed Test",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 32.sp,
-                        letterSpacing = (-1).sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Bandwidth & Latency Benchmark",
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-
-        // Speedometer Gauge Card with Dynamic Monet Gradient Arcs
-        item {
-            ExpressiveCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(32.dp),
-                backgroundColor = MaterialTheme.colorScheme.surfaceContainer
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    ExpressiveSpeedGauge(
-                        speedMbps = state.activeGaugeSpeedMbps,
-                        statusText = state.statusMessage
-                    )
-
-                    if (isRunning) {
-                        Spacer(modifier = Modifier.height(14.dp))
-                        ExpressiveWavyProgressIndicator(
-                            progress = state.progress,
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    // Large Smartphone Action Button (64dp height) with Spring Tactile Haptics
-                    Button(
-                        onClick = {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            if (isRunning) {
-                                speedEngine.cancelTest()
-                            } else {
-                                scope.launch { speedEngine.runSpeedTest() }
-                            }
-                        },
-                        shape = RoundedCornerShape(24.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isRunning) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primary,
-                            contentColor = if (isRunning) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimary
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(64.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = if (isRunning) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (isRunning) "CANCEL TEST" else "START SPEED TEST",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 15.5.sp,
-                                letterSpacing = 0.8.sp
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Section Title: Diagnostic Telemetry Metrics
-        item {
-            Text(
-                text = "DIAGNOSTIC METRICS GRID",
-                fontWeight = FontWeight.Black,
-                fontSize = 12.sp,
-                letterSpacing = 0.8.sp,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-
-        // Diagnostic Metrics: Row 1 (Ping & Jitter with Spring Physics)
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                ExpressiveMetricTile(
-                    title = "LATENCY / PING",
-                    value = if (animatedPing > 0) String.format(java.util.Locale.US, "%.0f", animatedPing) else "--",
-                    unit = if (animatedPing > 0) "ms" else null,
-                    icon = Icons.Rounded.Timer,
-                    iconTint = MaterialTheme.colorScheme.primary,
-                    subtitle = "Edge Server Round-Trip",
-                    modifier = Modifier.weight(1f)
-                )
-
-                ExpressiveMetricTile(
-                    title = "JITTER",
-                    value = if (animatedJitter > 0) String.format(java.util.Locale.US, "%.1f", animatedJitter) else "--",
-                    unit = if (animatedJitter > 0) "ms" else null,
-                    icon = Icons.Rounded.Timeline,
-                    iconTint = MaterialTheme.colorScheme.secondary,
-                    subtitle = "Packet Delay Variance",
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        // Diagnostic Metrics: Row 2 (Download & Upload Speeds with Spring Physics)
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                ExpressiveMetricTile(
-                    title = "DOWNLOAD SPEED",
-                    value = if (animatedDownload > 0) String.format(java.util.Locale.US, "%.1f", animatedDownload) else "--",
-                    unit = if (animatedDownload > 0) "Mbps" else null,
-                    icon = Icons.Rounded.ArrowDownward,
-                    iconTint = MaterialTheme.colorScheme.primary,
-                    subtitle = "4-Stream Parallel Pipe",
-                    modifier = Modifier.weight(1f)
-                )
-
-                ExpressiveMetricTile(
-                    title = "UPLOAD SPEED",
-                    value = if (animatedUpload > 0) String.format(java.util.Locale.US, "%.1f", animatedUpload) else "--",
-                    unit = if (animatedUpload > 0) "Mbps" else null,
-                    icon = Icons.Rounded.ArrowUpward,
-                    iconTint = MaterialTheme.colorScheme.secondary,
-                    subtitle = "Upstream Throughput",
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        // Diagnostic Metrics: Row 3 (Bufferbloat/Stability & Active Strategy)
-        // Benchmark History Section
-        item {
-            Column(modifier = Modifier.fillMaxWidth()) {
+    AdaptiveContentContainer(maxWidth = 760.dp) {
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(top = 16.dp, bottom = 108.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Header
+            item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "BENCHMARK HISTORY",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 12.sp,
-                        letterSpacing = 0.8.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    ExpressiveChip(
-                        text = "${history.size} tests",
-                        icon = Icons.Rounded.History,
-                        backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        textColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                if (history.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(22.dp))
-                            .background(MaterialTheme.colorScheme.surfaceContainer)
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "No speed tests recorded yet",
+                            text = "Speed Test",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 32.sp,
+                            letterSpacing = (-1).sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Bandwidth & Latency Benchmark",
                             fontWeight = FontWeight.Medium,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        history.take(5).forEach { test ->
+                }
+            }
+
+            if (isTablet) {
+                // Tablet Split View: Gauge on Left, Metrics on Right
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        // Left: Speedometer Gauge Card
+                        Box(modifier = Modifier.weight(1f)) {
                             ExpressiveCard(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(20.dp),
-                                backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                                shape = RoundedCornerShape(32.dp),
+                                backgroundColor = MaterialTheme.colorScheme.surfaceContainer
                             ) {
-                                Row(
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(16.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .padding(20.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "Speed Benchmark",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 15.sp,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = test.formattedDate(),
-                                            fontWeight = FontWeight.Normal,
-                                            fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                    ExpressiveSpeedGauge(
+                                        speedMbps = state.activeGaugeSpeedMbps,
+                                        statusText = state.statusMessage
+                                    )
+
+                                    if (isRunning) {
+                                        Spacer(modifier = Modifier.height(14.dp))
+                                        ExpressiveWavyProgressIndicator(
+                                            progress = state.progress,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                                         )
                                     }
 
-                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Spacer(modifier = Modifier.height(16.dp))
 
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                    Button(
+                                        onClick = {
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            if (isRunning) {
+                                                speedEngine.cancelTest()
+                                            } else {
+                                                scope.launch { speedEngine.runSpeedTest() }
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(22.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (isRunning) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primary,
+                                            contentColor = if (isRunning) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimary
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(58.dp)
                                     ) {
-                                        Column(horizontalAlignment = Alignment.End) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.ArrowDownward,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(13.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(2.dp))
-                                                Text(
-                                                    text = String.format(java.util.Locale.US, "%.1f Mbps", test.downloadMbps),
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 12.5.sp,
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.ArrowUpward,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    modifier = Modifier.size(13.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(2.dp))
-                                                Text(
-                                                    text = String.format(java.util.Locale.US, "%.1f Mbps", test.uploadMbps),
-                                                    fontWeight = FontWeight.Medium,
-                                                    fontSize = 11.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isRunning) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = if (isRunning) "CANCEL TEST" else "START SPEED TEST",
+                                                fontWeight = FontWeight.Black,
+                                                fontSize = 14.5.sp,
+                                                letterSpacing = 0.6.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Right: 4 Diagnostic Tiles in 2x2 Grid
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                ExpressiveMetricTile(
+                                    title = "LATENCY / PING",
+                                    value = if (animatedPing > 0) String.format(java.util.Locale.US, "%.0f", animatedPing) else "--",
+                                    unit = if (animatedPing > 0) "ms" else null,
+                                    icon = Icons.Rounded.Timer,
+                                    iconTint = MaterialTheme.colorScheme.primary,
+                                    subtitle = "Edge Server Round-Trip",
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                ExpressiveMetricTile(
+                                    title = "JITTER",
+                                    value = if (animatedJitter > 0) String.format(java.util.Locale.US, "%.1f", animatedJitter) else "--",
+                                    unit = if (animatedJitter > 0) "ms" else null,
+                                    icon = Icons.Rounded.Timeline,
+                                    iconTint = MaterialTheme.colorScheme.secondary,
+                                    subtitle = "Packet Delay Variance",
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                ExpressiveMetricTile(
+                                    title = "DOWNLOAD SPEED",
+                                    value = if (animatedDownload > 0) String.format(java.util.Locale.US, "%.1f", animatedDownload) else "--",
+                                    unit = if (animatedDownload > 0) "Mbps" else null,
+                                    icon = Icons.Rounded.ArrowDownward,
+                                    iconTint = MaterialTheme.colorScheme.primary,
+                                    subtitle = "4-Stream Parallel Pipe",
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                ExpressiveMetricTile(
+                                    title = "UPLOAD SPEED",
+                                    value = if (animatedUpload > 0) String.format(java.util.Locale.US, "%.1f", animatedUpload) else "--",
+                                    unit = if (animatedUpload > 0) "Mbps" else null,
+                                    icon = Icons.Rounded.ArrowUpward,
+                                    iconTint = MaterialTheme.colorScheme.secondary,
+                                    subtitle = "Upstream Throughput",
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Phone Vertical Stacking Layout
+                item {
+                    ExpressiveCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(32.dp),
+                        backgroundColor = MaterialTheme.colorScheme.surfaceContainer
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            ExpressiveSpeedGauge(
+                                speedMbps = state.activeGaugeSpeedMbps,
+                                statusText = state.statusMessage
+                            )
+
+                            if (isRunning) {
+                                Spacer(modifier = Modifier.height(14.dp))
+                                ExpressiveWavyProgressIndicator(
+                                    progress = state.progress,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(20.dp))
+
+                            Button(
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (isRunning) {
+                                        speedEngine.cancelTest()
+                                    } else {
+                                        scope.launch { speedEngine.runSpeedTest() }
+                                    }
+                                },
+                                shape = RoundedCornerShape(24.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isRunning) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primary,
+                                    contentColor = if (isRunning) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimary
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(62.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (isRunning) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = if (isRunning) "CANCEL TEST" else "START SPEED TEST",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 15.sp,
+                                        letterSpacing = 0.6.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Section Title: Diagnostic Telemetry Metrics
+                item {
+                    Text(
+                        text = "DIAGNOSTIC METRICS GRID",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 12.sp,
+                        letterSpacing = 0.8.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                // Diagnostic Metrics: Row 1 (Ping & Jitter with Spring Physics)
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        ExpressiveMetricTile(
+                            title = "LATENCY / PING",
+                            value = if (animatedPing > 0) String.format(java.util.Locale.US, "%.0f", animatedPing) else "--",
+                            unit = if (animatedPing > 0) "ms" else null,
+                            icon = Icons.Rounded.Timer,
+                            iconTint = MaterialTheme.colorScheme.primary,
+                            subtitle = "Edge Server Round-Trip",
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        ExpressiveMetricTile(
+                            title = "JITTER",
+                            value = if (animatedJitter > 0) String.format(java.util.Locale.US, "%.1f", animatedJitter) else "--",
+                            unit = if (animatedJitter > 0) "ms" else null,
+                            icon = Icons.Rounded.Timeline,
+                            iconTint = MaterialTheme.colorScheme.secondary,
+                            subtitle = "Packet Delay Variance",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // Diagnostic Metrics: Row 2 (Download & Upload Speeds with Spring Physics)
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        ExpressiveMetricTile(
+                            title = "DOWNLOAD SPEED",
+                            value = if (animatedDownload > 0) String.format(java.util.Locale.US, "%.1f", animatedDownload) else "--",
+                            unit = if (animatedDownload > 0) "Mbps" else null,
+                            icon = Icons.Rounded.ArrowDownward,
+                            iconTint = MaterialTheme.colorScheme.primary,
+                            subtitle = "4-Stream Parallel Pipe",
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        ExpressiveMetricTile(
+                            title = "UPLOAD SPEED",
+                            value = if (animatedUpload > 0) String.format(java.util.Locale.US, "%.1f", animatedUpload) else "--",
+                            unit = if (animatedUpload > 0) "Mbps" else null,
+                            icon = Icons.Rounded.ArrowUpward,
+                            iconTint = MaterialTheme.colorScheme.secondary,
+                            subtitle = "Upstream Throughput",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+
+            // Benchmark History Section
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "BENCHMARK HISTORY",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 12.sp,
+                            letterSpacing = 0.8.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        ExpressiveChip(
+                            text = "${history.size} tests",
+                            icon = Icons.Rounded.History,
+                            backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            textColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (history.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(22.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainer)
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No speed tests recorded yet",
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            history.take(5).forEach { test ->
+                                ExpressiveCard(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(20.dp),
+                                    backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        // Row 1: Title on left, Ping Chip on right
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Speed Benchmark",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.5.sp,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+
+                                            Spacer(modifier = Modifier.width(8.dp))
+
+                                            ExpressiveChip(
+                                                text = String.format(java.util.Locale.US, "%.0f ms", test.pingMs),
+                                                backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                textColor = MaterialTheme.colorScheme.onSurface
+                                            )
                                         }
 
-                                        ExpressiveChip(
-                                            text = String.format(java.util.Locale.US, "%.0f ms", test.pingMs),
-                                            backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                            textColor = MaterialTheme.colorScheme.onSurface
-                                        )
+                                        // Row 2: Date on left, Download/Upload speeds on right
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = test.formattedDate(),
+                                                fontWeight = FontWeight.Normal,
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+
+                                            Spacer(modifier = Modifier.width(8.dp))
+
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.ArrowDownward,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(13.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(2.dp))
+                                                    Text(
+                                                        text = String.format(java.util.Locale.US, "%.1f Mbps", test.downloadMbps),
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 12.5.sp,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
+
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.ArrowUpward,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.size(13.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(2.dp))
+                                                    Text(
+                                                        text = String.format(java.util.Locale.US, "%.1f Mbps", test.uploadMbps),
+                                                        fontWeight = FontWeight.Medium,
+                                                        fontSize = 11.5.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

@@ -90,8 +90,32 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
+ * Adaptive content container that centers content on tablets/wide screens
+ * and provides responsive horizontal padding.
+ */
+@Composable
+fun AdaptiveContentContainer(
+    modifier: Modifier = Modifier,
+    maxWidth: Dp = 720.dp,
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = maxWidth)
+        ) {
+            content()
+        }
+    }
+}
+
+/**
  * Large Smartphone Hero Connect Control with Tactile Haptics and Vector Icon
- * Generous 174dp touch target with bold state text and spring physics.
+ * Generous touch target with responsive state text and spring physics.
  */
 @Composable
 fun HeroConnectButton(
@@ -132,7 +156,7 @@ fun HeroConnectButton(
         label = "HeroSubtext"
     )
 
-    val heroShape = RoundedCornerShape(38.dp)
+    val heroShape = RoundedCornerShape(36.dp)
 
     val accessibilityDescription = if (isConnected) {
         "Zapret DPI bypass active. Tap to disconnect."
@@ -143,7 +167,7 @@ fun HeroConnectButton(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(174.dp)
+            .height(168.dp)
             .scale(scaleAnim.value)
             .shadow(
                 elevation = if (isConnected) 12.dp else 2.dp,
@@ -179,7 +203,7 @@ fun HeroConnectButton(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -189,7 +213,7 @@ fun HeroConnectButton(
                     imageVector = if (isConnected) Icons.Rounded.Shield else Icons.Rounded.PowerSettingsNew,
                     contentDescription = null,
                     tint = textColor,
-                    modifier = Modifier.size(30.dp)
+                    modifier = Modifier.size(28.dp)
                 )
 
                 Spacer(modifier = Modifier.width(10.dp))
@@ -197,10 +221,12 @@ fun HeroConnectButton(
                 Text(
                     text = if (isConnected) "ACTIVE" else "DISCONNECTED",
                     fontWeight = FontWeight.Black,
-                    fontSize = 30.sp,
-                    letterSpacing = 1.sp,
+                    fontSize = 25.sp,
+                    letterSpacing = 0.6.sp,
                     color = textColor,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
@@ -212,21 +238,23 @@ fun HeroConnectButton(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp)
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                 ) {
                     Icon(
                         imageVector = if (isConnected) Icons.Rounded.VpnLock else Icons.Rounded.VpnKey,
                         contentDescription = null,
                         tint = if (isConnected) MaterialTheme.colorScheme.onPrimary else subtextColor,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(15.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = if (isConnected) "DPI BYPASS RUNNING" else "TAP TO ACTIVATE ZAPRET",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.5.sp,
-                        letterSpacing = 0.4.sp,
-                        color = if (isConnected) MaterialTheme.colorScheme.onPrimary else subtextColor
+                        fontSize = 11.5.sp,
+                        letterSpacing = 0.3.sp,
+                        color = if (isConnected) MaterialTheme.colorScheme.onPrimary else subtextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -386,11 +414,12 @@ fun ExpressiveMetricTile(
 
             Row(
                 verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     text = value,
-                    style = NumberDisplayMedium.copy(fontSize = 24.sp),
+                    style = NumberDisplayMedium.copy(fontSize = 21.sp),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -399,9 +428,11 @@ fun ExpressiveMetricTile(
                     Text(
                         text = unit,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
+                        fontSize = 11.5.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 3.dp)
+                        modifier = Modifier.padding(bottom = 2.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -718,8 +749,8 @@ fun <T> SegmentedPillSwitch(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             items.forEach { item ->
@@ -731,7 +762,7 @@ fun <T> SegmentedPillSwitch(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(50.dp)
+                        .height(46.dp)
                         .clip(innerShape)
                         .background(bgColor)
                         .semantics {
@@ -743,13 +774,13 @@ fun <T> SegmentedPillSwitch(
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onItemSelected(item)
                         }
-                        .padding(horizontal = 8.dp),
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = label,
                         fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
-                        fontSize = 13.5.sp,
+                        fontSize = 12.5.sp,
                         color = textColor,
                         textAlign = TextAlign.Center,
                         maxLines = 1,
@@ -846,7 +877,7 @@ fun ExpressiveWavyProgressIndicator(
 }
 
 /**
- * Thick, Floating Navigation Dock Tailored for Smartphone Thumbs with Material Vector Icons
+ * Thick, Floating Navigation Dock Tailored for Smartphone Thumbs and Tablet Center Positioning
  */
 @Composable
 fun FloatingExpressiveDock(
@@ -877,14 +908,14 @@ fun FloatingExpressiveDock(
             shadowElevation = 10.dp,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
             modifier = Modifier
-                .widthIn(max = 560.dp)
+                .widthIn(max = 500.dp)
                 .fillMaxWidth()
-                .height(68.dp)
+                .height(66.dp)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .padding(horizontal = 6.dp, vertical = 5.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -892,7 +923,7 @@ fun FloatingExpressiveDock(
                     val isSelected = currentRoute == item.route
 
                     val animatedScale by animateFloatAsState(
-                        targetValue = if (isSelected) 1.04f else 1f,
+                        targetValue = if (isSelected) 1.03f else 1f,
                         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
                         label = "DockItemScale"
                     )
@@ -916,7 +947,7 @@ fun FloatingExpressiveDock(
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onNavigate(item.route)
                             }
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                            .padding(horizontal = 3.dp, vertical = 2.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
@@ -927,13 +958,13 @@ fun FloatingExpressiveDock(
                                 imageVector = item.icon,
                                 contentDescription = item.label,
                                 tint = itemColor,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(19.dp)
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = item.label,
                                 fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
-                                fontSize = 11.sp,
+                                fontSize = 10.5.sp,
                                 letterSpacing = (-0.1).sp,
                                 color = itemColor,
                                 textAlign = TextAlign.Center,

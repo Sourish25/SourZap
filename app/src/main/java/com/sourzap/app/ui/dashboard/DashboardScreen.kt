@@ -85,6 +85,10 @@ import com.sourzap.app.update.AppReleaseInfo
 import com.sourzap.app.update.UpdateState
 import kotlinx.coroutines.launch
 
+import androidx.compose.ui.platform.LocalConfiguration
+import com.sourzap.app.data.model.TrafficStats
+import com.sourzap.app.ui.components.AdaptiveContentContainer
+
 @Composable
 fun DashboardScreen(
     onNavigateToSpeedTest: () -> Unit,
@@ -100,6 +104,9 @@ fun DashboardScreen(
     val stats by TrafficMonitor.stats.collectAsState()
     val currentStrategy by strategyRepo.currentStrategy.collectAsState()
     val recentLogs by TrafficMonitor.recentLogs.collectAsState()
+
+    val configuration = LocalConfiguration.current
+    val isTablet = configuration.screenWidthDp >= 600
 
     val updateManager = app.updateManager
     val scope = rememberCoroutineScope()
@@ -156,481 +163,521 @@ fun DashboardScreen(
         }
     }
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
-            .statusBarsPadding()
-            .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 108.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Update Available Banner
-        availableRelease?.let { release ->
-            item {
-                ExpressiveCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    backgroundColor = MaterialTheme.colorScheme.primaryContainer,
-                    borderColor = MaterialTheme.colorScheme.primary
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+    AdaptiveContentContainer(maxWidth = 760.dp) {
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(top = 16.dp, bottom = 108.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Update Available Banner
+            availableRelease?.let { release ->
+                item {
+                    ExpressiveCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                        borderColor = MaterialTheme.colorScheme.primary
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.NewReleases,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.NewReleases,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
 
-                            Spacer(modifier = Modifier.width(10.dp))
+                                Spacer(modifier = Modifier.width(10.dp))
 
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Update Available: v${release.versionName}",
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 15.sp,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = "Tap Update to install latest improvements",
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Update Available: v${release.versionName}",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 15.sp,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Tap Update to install latest improvements",
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
 
-                            if (!isDownloadingUpdate) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Button(
-                                    onClick = {
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        isDownloadingUpdate = true
-                                        scope.launch {
-                                            updateManager.downloadAndPrepareApk(release.apkDownloadUrl).collect { st ->
-                                                when (st) {
-                                                    is UpdateState.Downloading -> downloadProgress = st.progress
-                                                    is UpdateState.ReadyToInstall -> {
-                                                        isDownloadingUpdate = false
-                                                        updateManager.installApk(st.apkFile)
+                                if (!isDownloadingUpdate) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Button(
+                                        onClick = {
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            isDownloadingUpdate = true
+                                            scope.launch {
+                                                updateManager.downloadAndPrepareApk(release.apkDownloadUrl).collect { st ->
+                                                    when (st) {
+                                                        is UpdateState.Downloading -> downloadProgress = st.progress
+                                                        is UpdateState.ReadyToInstall -> {
+                                                            isDownloadingUpdate = false
+                                                            updateManager.installApk(st.apkFile)
+                                                        }
+                                                        is UpdateState.Error -> isDownloadingUpdate = false
+                                                        else -> {}
                                                     }
-                                                    is UpdateState.Error -> isDownloadingUpdate = false
-                                                    else -> {}
                                                 }
                                             }
-                                        }
-                                    },
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary,
-                                        contentColor = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Download,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp)
+                                        },
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary
                                         )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Update", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Download,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Update", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        if (isDownloadingUpdate) {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = "Downloading package...",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                    Text(
-                                        text = "${(downloadProgress * 100).toInt()}%",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Black,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                            if (isDownloadingUpdate) {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "Downloading package...",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                        Text(
+                                            text = "${(downloadProgress * 100).toInt()}%",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                    ExpressiveWavyProgressIndicator(
+                                        progress = downloadProgress,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
                                     )
                                 }
-                                ExpressiveWavyProgressIndicator(
-                                    progress = downloadProgress,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-                                )
                             }
                         }
                     }
                 }
             }
-        }
 
-        // Material You Top Bar
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "SourZap",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 32.sp,
-                        letterSpacing = (-1).sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Rootless DPI Evasion",
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-
-        // Large Smartphone Hero Control
-        item {
-            HeroConnectButton(
-                isConnected = isConnected,
-                onToggle = { toggleVpn() }
-            )
-        }
-
-        // Real-Time Throughput Large Tile
-        item {
-            ExpressiveCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics {
-                        role = Role.Button
-                        contentDescription = "Live throughput: ${stats.formattedDownloadSpeed()} download, ${stats.formattedUploadSpeed()} upload. Tap to view traffic inspector."
-                    }
-                    .clickable {
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onNavigateToTraffic()
-                    },
-                shape = RoundedCornerShape(28.dp),
-                backgroundColor = MaterialTheme.colorScheme.surfaceContainer
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Sensors,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "LIVE THROUGHPUT",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 12.sp,
-                                letterSpacing = 0.8.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        Text(
-                            text = "${stats.activeConnections} active sockets",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Rounded.ArrowDownward,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "DOWNLOAD",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = stats.formattedDownloadSpeed(),
-                                style = NumberDisplayMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            horizontalAlignment = Alignment.End
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Rounded.ArrowUpward,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "UPLOAD",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = stats.formattedUploadSpeed(),
-                                style = NumberDisplayMedium,
-                                color = MaterialTheme.colorScheme.secondary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    ExpressiveTrafficWave(
-                        speedHistory = stats.recentSpeedHistory,
-                        lineColor = MaterialTheme.colorScheme.primary,
-                        fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                    )
-                }
-            }
-        }
-
-        // Recent Intercepted Packets
-        item {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            // Material You Top Bar
+            item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "INTERCEPTED FLOWS",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 12.sp,
-                        letterSpacing = 0.8.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .semantics {
-                                role = Role.Button
-                                contentDescription = "View traffic inspector"
-                            }
-                            .clickable {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onNavigateToTraffic()
-                            }
-                    ) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "View Inspector",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1
+                            text = "SourZap",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 32.sp,
+                            letterSpacing = (-1).sp,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
-                            contentDescription = "Navigate to Traffic Inspector",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                if (recentLogs.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                            .padding(20.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
                         Text(
-                            text = if (isConnected) "Listening for DPI packets on TUN interface..." else "Activate Zapret to bypass DPI",
+                            text = "Rootless DPI Evasion",
                             fontWeight = FontWeight.Medium,
-                            fontSize = 13.sp,
+                            fontSize = 14.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        recentLogs.take(3).forEach { log ->
-                            val protoIcon: ImageVector = when {
-                                log.protocol.contains("TLS", ignoreCase = true) || log.protocol.contains("HTTPS", ignoreCase = true) -> Icons.Rounded.Lock
-                                log.protocol.contains("HTTP", ignoreCase = true) -> Icons.Rounded.Language
-                                log.protocol.contains("DNS", ignoreCase = true) || log.protocol.contains("DOH", ignoreCase = true) -> Icons.Rounded.Dns
-                                else -> Icons.Rounded.Bolt
-                            }
+                }
+            }
 
-                            ExpressiveCard(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(20.dp),
-                                backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+            // Adaptive Hero Connect & Live Throughput (Side-by-Side on Tablet, Stacked on Phone)
+            if (isTablet) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            HeroConnectButton(
+                                isConnected = isConnected,
+                                onToggle = { toggleVpn() }
+                            )
+                        }
+                        Box(modifier = Modifier.weight(1f)) {
+                            LiveThroughputCard(
+                                stats = stats,
+                                onNavigateToTraffic = onNavigateToTraffic
+                            )
+                        }
+                    }
+                }
+            } else {
+                item {
+                    HeroConnectButton(
+                        isConnected = isConnected,
+                        onToggle = { toggleVpn() }
+                    )
+                }
+
+                item {
+                    LiveThroughputCard(
+                        stats = stats,
+                        onNavigateToTraffic = onNavigateToTraffic
+                    )
+                }
+            }
+
+            // Recent Intercepted Packets
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "INTERCEPTED FLOWS",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 12.sp,
+                            letterSpacing = 0.8.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .semantics {
+                                    role = Role.Button
+                                    contentDescription = "View traffic inspector"
+                                }
+                                .clickable {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onNavigateToTraffic()
+                                }
+                        ) {
+                            Text(
+                                text = "View Inspector",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                                contentDescription = "Navigate to Traffic Inspector",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (recentLogs.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .padding(20.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (isConnected) "Listening for DPI packets on TUN interface..." else "Activate Zapret to bypass DPI",
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            recentLogs.take(4).forEach { log ->
+                                val protoIcon: ImageVector = when {
+                                    log.protocol.contains("TLS", ignoreCase = true) || log.protocol.contains("HTTPS", ignoreCase = true) -> Icons.Rounded.Lock
+                                    log.protocol.contains("HTTP", ignoreCase = true) -> Icons.Rounded.Language
+                                    log.protocol.contains("DNS", ignoreCase = true) || log.protocol.contains("DOH", ignoreCase = true) -> Icons.Rounded.Dns
+                                    else -> Icons.Rounded.Bolt
+                                }
+
+                                ExpressiveCard(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(20.dp),
+                                    backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
                                 ) {
-                                    Box(
+                                    Row(
                                         modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                                        contentAlignment = Alignment.Center
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            imageVector = protoIcon,
-                                            contentDescription = log.protocol,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(16.dp)
+                                        Box(
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .clip(CircleShape)
+                                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = protoIcon,
+                                                contentDescription = log.protocol,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(10.dp))
+
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = log.domain,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "${log.protocol} : ${log.port}",
+                                                fontWeight = FontWeight.Normal,
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                        ExpressiveChip(
+                                            text = log.technique,
+                                            backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                                            textColor = MaterialTheme.colorScheme.onPrimaryContainer
                                         )
                                     }
-
-                                    Spacer(modifier = Modifier.width(10.dp))
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = log.domain,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = "${log.protocol} : ${log.port}",
-                                            fontWeight = FontWeight.Normal,
-                                            fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.width(8.dp))
-
-                                    ExpressiveChip(
-                                        text = log.technique,
-                                        backgroundColor = MaterialTheme.colorScheme.primaryContainer,
-                                        textColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
                                 }
                             }
                         }
                     }
                 }
             }
-        }
 
-        // Large Thumb Action Button for Speed Test
-        item {
-            Button(
-                onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onNavigateToSpeedTest()
-                },
-                shape = RoundedCornerShape(24.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(60.dp)
+            // Large Thumb Action Button for Speed Test
+            item {
+                Button(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onNavigateToSpeedTest()
+                    },
+                    shape = RoundedCornerShape(24.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Speed,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "TEST INTERNET SPEED",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 15.sp,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Clean Real-Time Live Throughput Telemetry Card
+ */
+@Composable
+private fun LiveThroughputCard(
+    stats: TrafficStats,
+    onNavigateToTraffic: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val haptics = LocalHapticFeedback.current
+    ExpressiveCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics {
+                role = Role.Button
+                contentDescription = "Live throughput: ${stats.formattedDownloadSpeed()} download, ${stats.formattedUploadSpeed()} upload. Tap to view traffic inspector."
+            }
+            .clickable {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onNavigateToTraffic()
+            },
+        shape = RoundedCornerShape(28.dp),
+        backgroundColor = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                    modifier = Modifier.weight(1f)
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Speed,
+                        imageVector = Icons.Rounded.Sensors,
                         contentDescription = null,
-                        modifier = Modifier.size(22.dp)
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "TEST INTERNET SPEED",
+                        text = "LIVE THROUGHPUT",
                         fontWeight = FontWeight.Black,
-                        fontSize = 15.sp,
-                        letterSpacing = 0.5.sp
+                        fontSize = 12.sp,
+                        letterSpacing = 0.8.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Text(
+                    text = "${stats.activeConnections} sockets",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Rounded.ArrowDownward,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "DOWNLOAD",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stats.formattedDownloadSpeed(),
+                        style = NumberDisplayMedium.copy(fontSize = 22.sp),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.End
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Rounded.ArrowUpward,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "UPLOAD",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stats.formattedUploadSpeed(),
+                        style = NumberDisplayMedium.copy(fontSize = 22.sp),
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            ExpressiveTrafficWave(
+                speedHistory = stats.recentSpeedHistory,
+                lineColor = MaterialTheme.colorScheme.primary,
+                fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+            )
         }
     }
 }

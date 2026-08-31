@@ -90,6 +90,9 @@ import com.sourzap.app.ui.theme.NumberDisplaySmall
 import java.text.SimpleDateFormat
 import java.util.Locale
 
+import androidx.compose.ui.platform.LocalConfiguration
+import com.sourzap.app.ui.components.AdaptiveContentContainer
+
 enum class TrafficFilterTab(val id: String, val displayName: String, val icon: ImageVector) {
     ALL("ALL", "All Flows", Icons.Rounded.SwapVert),
     TLS("TLS", "HTTPS/TLS", Icons.Rounded.Lock),
@@ -105,6 +108,9 @@ fun TrafficScreen(
     val stats by TrafficMonitor.stats.collectAsState()
     val logs by TrafficMonitor.recentLogs.collectAsState()
     val isVpnActive by TrafficMonitor.isVpnActive.collectAsState()
+
+    val configuration = LocalConfiguration.current
+    val isTablet = configuration.screenWidthDp >= 600
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf(TrafficFilterTab.ALL) }
@@ -160,244 +166,300 @@ fun TrafficScreen(
         )
     }
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
-            .statusBarsPadding()
-            .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 108.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Header
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Traffic Inspector",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 32.sp,
-                        letterSpacing = (-1).sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Real-Time DPI Packet Telemetry",
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Clear Logs Button
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .semantics {
-                                role = Role.Button
-                                contentDescription = "Clear intercepted traffic logs"
-                            }
-                            .clickable {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                showClearConfirmDialog = true
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.DeleteOutline,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "CLEAR",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 11.5.sp,
-                                letterSpacing = 0.4.sp,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-
-                    // Reset Session Counters
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .semantics {
-                                role = Role.Button
-                                contentDescription = "Reset session traffic counters"
-                            }
-                            .clickable {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                TrafficMonitor.resetSession()
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.RestartAlt,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "RESET",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 11.5.sp,
-                                letterSpacing = 0.4.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Live Bandwidth Graph Card
-        item {
-            ExpressiveCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
-                backgroundColor = MaterialTheme.colorScheme.surfaceContainer,
-                borderColor = if (isVpnActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-            ) {
+    AdaptiveContentContainer(maxWidth = 760.dp) {
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(top = 16.dp, bottom = 108.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Header with Responsive Title and Action Chips
+            item {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Rounded.ArrowDownward,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "LIVE DOWNLOAD",
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 11.5.sp,
-                                    letterSpacing = 0.8.sp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = stats.formattedDownloadSpeed(),
-                                style = NumberDisplayMedium,
-                                color = MaterialTheme.colorScheme.onSurface
+                                text = "Traffic Inspector",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 30.sp,
+                                letterSpacing = (-1).sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Real-Time DPI Packet Telemetry",
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 13.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
 
-                        Column(horizontalAlignment = Alignment.End) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Rounded.ArrowUpward,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.secondary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "LIVE UPLOAD",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // Clear Logs Button
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .semantics {
+                                        role = Role.Button
+                                        contentDescription = "Clear intercepted traffic logs"
+                                    }
+                                    .clickable {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        showClearConfirmDialog = true
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.DeleteOutline,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "CLEAR",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 11.sp,
+                                        letterSpacing = 0.3.sp,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
                             }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = stats.formattedUploadSpeed(),
-                                style = NumberDisplaySmall,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
+
+                            // Reset Session Counters
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .semantics {
+                                        role = Role.Button
+                                        contentDescription = "Reset session traffic counters"
+                                    }
+                                    .clickable {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        TrafficMonitor.resetSession()
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.RestartAlt,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "RESET",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 11.sp,
+                                        letterSpacing = 0.3.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    ExpressiveTrafficWave(
-                        speedHistory = stats.recentSpeedHistory,
-                        lineColor = MaterialTheme.colorScheme.primary,
-                        fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                    )
                 }
             }
-        }
 
-        // 2x2 Metric Tiles with Material Vector Icons
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                ExpressiveMetricTile(
-                    title = "SESSION DL",
-                    value = stats.formattedSessionDownload(),
-                    icon = Icons.Rounded.CloudDownload,
-                    iconTint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f)
-                )
+            // Live Bandwidth Graph Card
+            item {
+                ExpressiveCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(28.dp),
+                    backgroundColor = MaterialTheme.colorScheme.surfaceContainer,
+                    borderColor = if (isVpnActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ArrowDownward,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "LIVE DOWNLOAD",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 11.sp,
+                                        letterSpacing = 0.8.sp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = stats.formattedDownloadSpeed(),
+                                    style = NumberDisplayMedium.copy(fontSize = 22.sp),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
 
-                ExpressiveMetricTile(
-                    title = "SESSION UL",
-                    value = stats.formattedSessionUpload(),
-                    icon = Icons.Rounded.CloudUpload,
-                    iconTint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.weight(1f)
-                )
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ArrowUpward,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.secondary,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "LIVE UPLOAD",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = stats.formattedUploadSpeed(),
+                                    style = NumberDisplaySmall.copy(fontSize = 20.sp),
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        ExpressiveTrafficWave(
+                            speedHistory = stats.recentSpeedHistory,
+                            lineColor = MaterialTheme.colorScheme.primary,
+                            fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                        )
+                    }
+                }
             }
-        }
 
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                ExpressiveMetricTile(
-                    title = "TOTAL LIFETIME",
-                    value = stats.formattedTotalDownload(),
-                    icon = Icons.Rounded.Storage,
-                    iconTint = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.weight(1f)
-                )
+            // Summary Metric Tiles (4-Column on Tablet, 2x2 Grid on Phone)
+            if (isTablet) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        ExpressiveMetricTile(
+                            title = "SESSION DL",
+                            value = stats.formattedSessionDownload(),
+                            icon = Icons.Rounded.CloudDownload,
+                            iconTint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
+                        )
 
-                ExpressiveMetricTile(
-                    title = "PACKET RATE",
-                    value = "${stats.packetsPerSecond}",
-                    unit = "pps",
-                    icon = Icons.Rounded.Speed,
-                    iconTint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
+                        ExpressiveMetricTile(
+                            title = "SESSION UL",
+                            value = stats.formattedSessionUpload(),
+                            icon = Icons.Rounded.CloudUpload,
+                            iconTint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        ExpressiveMetricTile(
+                            title = "TOTAL LIFETIME",
+                            value = stats.formattedTotalDownload(),
+                            icon = Icons.Rounded.Storage,
+                            iconTint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        ExpressiveMetricTile(
+                            title = "PACKET RATE",
+                            value = "${stats.packetsPerSecond}",
+                            unit = "pps",
+                            icon = Icons.Rounded.Speed,
+                            iconTint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            } else {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        ExpressiveMetricTile(
+                            title = "SESSION DL",
+                            value = stats.formattedSessionDownload(),
+                            icon = Icons.Rounded.CloudDownload,
+                            iconTint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        ExpressiveMetricTile(
+                            title = "SESSION UL",
+                            value = stats.formattedSessionUpload(),
+                            icon = Icons.Rounded.CloudUpload,
+                            iconTint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        ExpressiveMetricTile(
+                            title = "TOTAL LIFETIME",
+                            value = stats.formattedTotalDownload(),
+                            icon = Icons.Rounded.Storage,
+                            iconTint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        ExpressiveMetricTile(
+                            title = "PACKET RATE",
+                            value = "${stats.packetsPerSecond}",
+                            unit = "pps",
+                            icon = Icons.Rounded.Speed,
+                            iconTint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
             }
-        }
 
         // Search & Animated Filter Tabs Header
         item {
@@ -642,4 +704,5 @@ fun TrafficScreen(
             }
         }
     }
+}
 }
