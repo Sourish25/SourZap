@@ -106,82 +106,86 @@ class LibtorrentEngineManager(
         override fun types(): IntArray? = null // Listen to all alerts
 
         override fun alert(alert: Alert<*>) {
-            when (alert.type()) {
-                AlertType.ADD_TORRENT -> {
-                    val a = alert as? AddTorrentAlert ?: return
-                    val handle = a.handle()
-                    if (handle != null && handle.isValid) {
-                        handleTorrentAdded(handle)
+            try {
+                when (alert.type()) {
+                    AlertType.ADD_TORRENT -> {
+                        val a = alert as? AddTorrentAlert ?: return
+                        val handle = try { a.handle() } catch (_: Throwable) { null }
+                        if (handle != null && handle.isValid) {
+                            handleTorrentAdded(handle)
+                        }
+                    }
+                    AlertType.METADATA_RECEIVED -> {
+                        val a = alert as? MetadataReceivedAlert ?: return
+                        val handle = try { a.handle() } catch (_: Throwable) { null }
+                        if (handle != null && handle.isValid) {
+                            handleMetadataReceived(handle)
+                        }
+                    }
+                    AlertType.STATE_CHANGED -> {
+                        val a = alert as? StateChangedAlert ?: return
+                        val handle = try { a.handle() } catch (_: Throwable) { null }
+                        if (handle != null && handle.isValid) {
+                            refreshTorrent(handle)
+                        }
+                    }
+                    AlertType.PIECE_FINISHED -> {
+                        val a = alert as? PieceFinishedAlert ?: return
+                        val handle = try { a.handle() } catch (_: Throwable) { null }
+                        if (handle != null && handle.isValid) {
+                            refreshTorrent(handle)
+                        }
+                    }
+                    AlertType.TORRENT_FINISHED -> {
+                        val a = alert as? TorrentFinishedAlert ?: return
+                        val handle = try { a.handle() } catch (_: Throwable) { null }
+                        if (handle != null && handle.isValid) {
+                            refreshTorrent(handle)
+                        }
+                    }
+                    AlertType.TORRENT_PAUSED -> {
+                        val a = alert as? TorrentPausedAlert ?: return
+                        val handle = try { a.handle() } catch (_: Throwable) { null }
+                        if (handle != null && handle.isValid) {
+                            refreshTorrent(handle)
+                        }
+                    }
+                    AlertType.TORRENT_RESUMED -> {
+                        val a = alert as? TorrentResumedAlert ?: return
+                        val handle = try { a.handle() } catch (_: Throwable) { null }
+                        if (handle != null && handle.isValid) {
+                            refreshTorrent(handle)
+                        }
+                    }
+                    AlertType.TORRENT_CHECKED -> {
+                        val a = alert as? TorrentCheckedAlert ?: return
+                        val handle = try { a.handle() } catch (_: Throwable) { null }
+                        if (handle != null && handle.isValid) {
+                            refreshTorrent(handle)
+                        }
+                    }
+                    AlertType.TORRENT_REMOVED -> {
+                        val a = alert as? TorrentRemovedAlert ?: return
+                        val handle = try { a.handle() } catch (_: Throwable) { null }
+                        val hashHex = try { handle?.infoHash()?.toHex() } catch (_: Throwable) { null }
+                        if (hashHex != null) {
+                            handleTorrentRemoved(hashHex)
+                        }
+                    }
+                    AlertType.TORRENT_ERROR -> {
+                        val a = alert as? TorrentErrorAlert ?: return
+                        handleTorrentError(a)
+                    }
+                    AlertType.SESSION_STATS -> {
+                        val a = alert as? SessionStatsAlert ?: return
+                        handleSessionStats(a)
+                    }
+                    else -> {
+                        // Ignore unhandled alert types
                     }
                 }
-                AlertType.METADATA_RECEIVED -> {
-                    val a = alert as? MetadataReceivedAlert ?: return
-                    val handle = a.handle()
-                    if (handle != null && handle.isValid) {
-                        handleMetadataReceived(handle)
-                    }
-                }
-                AlertType.STATE_CHANGED -> {
-                    val a = alert as? StateChangedAlert ?: return
-                    val handle = a.handle()
-                    if (handle != null && handle.isValid) {
-                        refreshTorrent(handle)
-                    }
-                }
-                AlertType.PIECE_FINISHED -> {
-                    val a = alert as? PieceFinishedAlert ?: return
-                    val handle = a.handle()
-                    if (handle != null && handle.isValid) {
-                        refreshTorrent(handle)
-                    }
-                }
-                AlertType.TORRENT_FINISHED -> {
-                    val a = alert as? TorrentFinishedAlert ?: return
-                    val handle = a.handle()
-                    if (handle != null && handle.isValid) {
-                        refreshTorrent(handle)
-                    }
-                }
-                AlertType.TORRENT_PAUSED -> {
-                    val a = alert as? TorrentPausedAlert ?: return
-                    val handle = a.handle()
-                    if (handle != null && handle.isValid) {
-                        refreshTorrent(handle)
-                    }
-                }
-                AlertType.TORRENT_RESUMED -> {
-                    val a = alert as? TorrentResumedAlert ?: return
-                    val handle = a.handle()
-                    if (handle != null && handle.isValid) {
-                        refreshTorrent(handle)
-                    }
-                }
-                AlertType.TORRENT_CHECKED -> {
-                    val a = alert as? TorrentCheckedAlert ?: return
-                    val handle = a.handle()
-                    if (handle != null && handle.isValid) {
-                        refreshTorrent(handle)
-                    }
-                }
-                AlertType.TORRENT_REMOVED -> {
-                    val a = alert as? TorrentRemovedAlert ?: return
-                    val handle = a.handle()
-                    val hashHex = handle?.infoHash()?.toHex()
-                    if (hashHex != null) {
-                        handleTorrentRemoved(hashHex)
-                    }
-                }
-                AlertType.TORRENT_ERROR -> {
-                    val a = alert as? TorrentErrorAlert ?: return
-                    handleTorrentError(a)
-                }
-                AlertType.SESSION_STATS -> {
-                    val a = alert as? SessionStatsAlert ?: return
-                    handleSessionStats(a)
-                }
-                else -> {
-                    // Ignore unhandled alert types
-                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Exception in alertListener dispatch", t)
             }
         }
     }
@@ -529,38 +533,51 @@ class LibtorrentEngineManager(
         }
     }
 
+    private fun refreshTorrent(handle: TorrentHandle) {
+        try {
+            if (!handle.isValid) return
+            val id = try { handle.infoHash().toHex() } catch (_: Throwable) { return }
+            torrentHandles[id] = handle
+            triggerRefresh()
+        } catch (_: Throwable) {}
+    }
+
     private fun handleTorrentAdded(handle: TorrentHandle) {
-        if (!handle.isValid) return
-        val id: String = handle.infoHash().toHex()
-        torrentHandles[id] = handle
-        if (!torrentMetadataMap.containsKey(id)) {
-            val status = handle.status()
-            val hName: String = status.name() ?: ""
-            val displayName: String = if (hName.isNotEmpty()) hName else id
-            val meta = TorrentMetadata(
-                id = id,
-                displayName = displayName,
-                savePath = "",
-                addedTimestamp = System.currentTimeMillis()
-            )
-            torrentMetadataMap[id] = meta
-        }
+        try {
+            if (!handle.isValid) return
+            val id: String = try { handle.infoHash().toHex() } catch (_: Throwable) { return }
+            torrentHandles[id] = handle
+            if (!torrentMetadataMap.containsKey(id)) {
+                val status = try { handle.status() } catch (_: Throwable) { null }
+                val hName: String = try { status?.name() ?: "" } catch (_: Throwable) { "" }
+                val displayName: String = if (hName.isNotEmpty()) hName else id
+                val meta = TorrentMetadata(
+                    id = id,
+                    displayName = displayName,
+                    savePath = "",
+                    addedTimestamp = System.currentTimeMillis()
+                )
+                torrentMetadataMap[id] = meta
+            }
 
-        // Auto-inject 20+ verified HTTPS Port-443 trackers into the torrent handle
-        for (tr in TrackerInjector.HTTPS_PORT_443_TRACKERS) {
-            try {
-                handle.addTracker(AnnounceEntry(tr))
-            } catch (_: Throwable) {}
-        }
+            // Auto-inject 20+ verified HTTPS Port-443 trackers into the torrent handle
+            for (tr in TrackerInjector.HTTPS_PORT_443_TRACKERS) {
+                try {
+                    handle.addTracker(AnnounceEntry(tr))
+                } catch (_: Throwable) {}
+            }
 
-        // Asynchronously pre-resolve tracker hostnames via DoH
-        engineScope.launch {
-            try {
-                DohTrackerResolver.preResolveTrackers(TrackerInjector.HTTPS_PORT_443_TRACKERS)
-            } catch (_: Throwable) {}
-        }
+            // Asynchronously pre-resolve tracker hostnames via DoH
+            engineScope.launch {
+                try {
+                    DohTrackerResolver.preResolveTrackers(TrackerInjector.HTTPS_PORT_443_TRACKERS)
+                } catch (_: Throwable) {}
+            }
 
-        triggerRefresh()
+            triggerRefresh()
+        } catch (e: Throwable) {
+            Log.w(TAG, "Error in handleTorrentAdded", e)
+        }
     }
 
     private fun handleMetadataReceived(handle: TorrentHandle) {
@@ -600,13 +617,6 @@ class LibtorrentEngineManager(
     }
 
     private fun handleSessionStats(alert: SessionStatsAlert) {
-        triggerRefresh()
-    }
-
-    private fun refreshTorrent(handle: TorrentHandle) {
-        if (!handle.isValid) return
-        val id = try { handle.infoHash().toHex() } catch (_: Throwable) { return }
-        torrentHandles[id] = handle
         triggerRefresh()
     }
 

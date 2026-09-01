@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.sourzap.app.MainActivity
 import com.sourzap.app.R
@@ -35,12 +36,34 @@ class TorrentDownloadService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        ensureNotificationChannel()
+        startForegroundServiceNotification(TorrentSessionStats())
         val app = application as? SourZapApp ?: return
         val manager = app.torrentEngineManager
         if (!manager.isSessionRunning()) {
             manager.startSession(this)
         }
         observeSessionStats()
+    }
+
+    private fun ensureNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val channelId = getString(R.string.torrent_channel_id)
+                val channelName = getString(R.string.torrent_channel_name)
+                val channelDesc = getString(R.string.torrent_channel_desc)
+                val channel = android.app.NotificationChannel(
+                    channelId,
+                    channelName,
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = channelDesc
+                    setShowBadge(false)
+                }
+                val manager = getSystemService(NotificationManager::class.java)
+                manager?.createNotificationChannel(channel)
+            } catch (_: Throwable) {}
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -55,7 +78,9 @@ class TorrentDownloadService : Service() {
                 manager?.resumeAll()
             }
             ACTION_STOP_SERVICE -> {
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                try {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } catch (_: Throwable) {}
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -82,16 +107,23 @@ class TorrentDownloadService : Service() {
     }
 
     private fun startForegroundServiceNotification(stats: TorrentSessionStats) {
-        val notification = buildNotification(stats)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        try {
+            ensureNotificationChannel()
+            val notification = buildNotification(stats)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    )
+                } catch (_: Throwable) {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (_: Throwable) {}
     }
 
     private fun updateNotification(stats: TorrentSessionStats) {
@@ -177,13 +209,17 @@ class TorrentDownloadService : Service() {
         const val ACTION_STOP_SERVICE = "com.sourzap.app.torrent.STOP"
 
         fun start(context: Context) {
-            val intent = Intent(context, TorrentDownloadService::class.java).apply {
-                action = ACTION_START
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                val intent = Intent(context, TorrentDownloadService::class.java).apply {
+                    action = ACTION_START
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Throwable) {
+                Log.w("TorrentDownloadService", "Unable to start foreground service: ${e.message}")
             }
         }
 
