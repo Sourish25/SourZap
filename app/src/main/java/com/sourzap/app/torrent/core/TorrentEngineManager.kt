@@ -458,7 +458,15 @@ class LibtorrentEngineManager(
 
     override fun getTorrentInfo(id: String): TorrentInfo? {
         val handle = findHandle(id) ?: return null
-        return if (handle.isValid) handle.torrentFile() else null
+        return try {
+            if (handle.isValid && handle.status().hasMetadata()) {
+                handle.torrentFile()
+            } else {
+                null
+            }
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     override fun pauseAll() {
@@ -557,12 +565,17 @@ class LibtorrentEngineManager(
 
     private fun handleMetadataReceived(handle: TorrentHandle) {
         if (!handle.isValid) return
-        val id: String = handle.infoHash().toHex()
+        val id: String = try { handle.infoHash().toHex() } catch (_: Throwable) { return }
         torrentHandles[id] = handle
-        val info: TorrentInfo? = handle.torrentFile()
+        val info: TorrentInfo? = try {
+            val hasMeta = try { handle.status().hasMetadata() } catch (_: Throwable) { false }
+            if (hasMeta && handle.isValid) handle.torrentFile() else null
+        } catch (_: Throwable) {
+            null
+        }
         if (info != null) {
             val existing: TorrentMetadata = torrentMetadataMap[id] ?: TorrentMetadata(id = id)
-            val infoName: String = info.files().name()
+            val infoName: String = try { info.files().name() } catch (_: Throwable) { "" }
             val updated = existing.copy(displayName = if (infoName.isNotEmpty()) infoName else id)
             torrentMetadataMap[id] = updated
         }
@@ -575,11 +588,11 @@ class LibtorrentEngineManager(
     }
 
     private fun handleTorrentError(alert: TorrentErrorAlert) {
-        val handle: TorrentHandle? = alert.handle()
+        val handle: TorrentHandle? = try { alert.handle() } catch (_: Throwable) { null }
         if (handle != null && handle.isValid) {
-            val id: String = handle.infoHash().toHex()
+            val id: String = try { handle.infoHash().toHex() } catch (_: Throwable) { return }
             val existing: TorrentMetadata = torrentMetadataMap[id] ?: TorrentMetadata(id = id)
-            val errorMessage: String = alert.message() ?: "Torrent error"
+            val errorMessage: String = try { alert.message() ?: "Torrent error" } catch (_: Throwable) { "Torrent error" }
             val updated = existing.copy(error = errorMessage)
             torrentMetadataMap[id] = updated
             triggerRefresh()
@@ -592,7 +605,7 @@ class LibtorrentEngineManager(
 
     private fun refreshTorrent(handle: TorrentHandle) {
         if (!handle.isValid) return
-        val id = handle.infoHash().toHex()
+        val id = try { handle.infoHash().toHex() } catch (_: Throwable) { return }
         torrentHandles[id] = handle
         triggerRefresh()
     }
@@ -612,102 +625,113 @@ class LibtorrentEngineManager(
         var seedingCount = 0
 
         for (handle in handles) {
-            if (!handle.isValid) continue
-            val id: String = handle.infoHash().toHex()
-            val status: TorrentStatus = handle.status()
-            val state = mapTorrentState(handle, status)
-            val info: TorrentInfo? = handle.torrentFile()
-
-            val hName: String = status.name() ?: ""
-            val fallbackName: String = if (hName.isNotEmpty()) hName else id
-            val meta: TorrentMetadata = torrentMetadataMap[id] ?: TorrentMetadata(
-                id = id,
-                displayName = fallbackName,
-                savePath = "",
-                addedTimestamp = System.currentTimeMillis()
-            )
-
-            val infoName: String? = info?.files()?.name()
-            val name: String = meta.displayName ?: (if (!infoName.isNullOrEmpty()) infoName else fallbackName)
-            val progress: Float = status.progress()
-            val downRate: Long = status.downloadRate().toLong()
-            val upRate: Long = status.uploadRate().toLong()
-            val totalDone: Long = status.totalDone()
-            val totalSize: Long = info?.totalSize() ?: status.total()
-            val allTimeUpload: Long = status.allTimeUpload()
-
-            totalDownSpeed += downRate
-            totalUpSpeed += upRate
-            totalDownloaded += totalDone
-            totalUploaded += allTimeUpload
-            totalAllBytes += totalSize
-
-            when (state) {
-                TorrentState.DOWNLOADING, TorrentState.ALLOCATING, TorrentState.METADATA -> activeCount++
-                TorrentState.PAUSED -> pausedCount++
-                TorrentState.SEEDING -> seedingCount++
-                else -> {}
-            }
-
-            val remainingBytes: Long = totalSize - totalDone
-            val eta: Long = if (downRate > 0L && remainingBytes > 0L) {
-                remainingBytes / downRate
-            } else if (progress >= 1.0f) {
-                0L
-            } else {
-                -1L
-            }
-            val shareRatio: Float = if (totalDone > 0L) allTimeUpload.toFloat() / totalDone.toFloat() else 0.0f
-
-            val files = mutableListOf<TorrentFileItem>()
-            if (info != null) {
-                val fileStorage: FileStorage = info.files()
-                val numFiles = fileStorage.numFiles()
-                val fileProgress: LongArray? = handle.fileProgress()
-                for (i in 0 until numFiles) {
-                    val p = Priority.fromLibtorrent(handle.filePriority(i))
-                    val bytes: Long = if (fileProgress != null && i < fileProgress.size) fileProgress[i] else 0L
-                    val fileSize: Long = fileStorage.fileSize(i)
-                    val fileProg: Float = if (fileSize > 0L) (bytes.toFloat() / fileSize.toFloat()).coerceIn(0.0f, 1.0f) else 0.0f
-                    files.add(
-                        TorrentFileItem(
-                            index = i,
-                            path = fileStorage.filePath(i),
-                            size = fileSize,
-                            downloadedBytes = bytes,
-                            progress = fileProg,
-                            priority = p
-                        )
-                    )
+            try {
+                if (!handle.isValid) continue
+                val id: String = try { handle.infoHash().toHex() } catch (_: Throwable) { continue }
+                val status: TorrentStatus = try { handle.status() } catch (_: Throwable) { continue }
+                val state = mapTorrentState(handle, status)
+                val hasMeta = try { status.hasMetadata() } catch (_: Throwable) { false }
+                val info: TorrentInfo? = if (hasMeta && handle.isValid) {
+                    try { handle.torrentFile() } catch (_: Throwable) { null }
+                } else {
+                    null
                 }
+
+                val hName: String = try { status.name() ?: "" } catch (_: Throwable) { "" }
+                val fallbackName: String = if (hName.isNotEmpty()) hName else id
+                val meta: TorrentMetadata = torrentMetadataMap[id] ?: TorrentMetadata(
+                    id = id,
+                    displayName = fallbackName,
+                    savePath = "",
+                    addedTimestamp = System.currentTimeMillis()
+                )
+
+                val infoName: String? = try { info?.files()?.name() } catch (_: Throwable) { null }
+                val name: String = meta.displayName ?: (if (!infoName.isNullOrEmpty()) infoName else fallbackName)
+                val progress: Float = try { status.progress() } catch (_: Throwable) { 0f }
+                val downRate: Long = try { status.downloadRate().toLong() } catch (_: Throwable) { 0L }
+                val upRate: Long = try { status.uploadRate().toLong() } catch (_: Throwable) { 0L }
+                val totalDone: Long = try { status.totalDone() } catch (_: Throwable) { 0L }
+                val totalSize: Long = try { info?.totalSize() ?: status.total() } catch (_: Throwable) { status.total() }
+                val allTimeUpload: Long = try { status.allTimeUpload() } catch (_: Throwable) { 0L }
+
+                totalDownSpeed += downRate
+                totalUpSpeed += upRate
+                totalDownloaded += totalDone
+                totalUploaded += allTimeUpload
+                totalAllBytes += totalSize
+
+                when (state) {
+                    TorrentState.DOWNLOADING, TorrentState.ALLOCATING, TorrentState.METADATA -> activeCount++
+                    TorrentState.PAUSED -> pausedCount++
+                    TorrentState.SEEDING -> seedingCount++
+                    else -> {}
+                }
+
+                val remainingBytes: Long = totalSize - totalDone
+                val eta: Long = if (downRate > 0L && remainingBytes > 0L) {
+                    remainingBytes / downRate
+                } else if (progress >= 1.0f) {
+                    0L
+                } else {
+                    -1L
+                }
+                val shareRatio: Float = if (totalDone > 0L) allTimeUpload.toFloat() / totalDone.toFloat() else 0.0f
+
+                val files = mutableListOf<TorrentFileItem>()
+                if (info != null) {
+                    try {
+                        val fileStorage: FileStorage = info.files()
+                        val numFiles = fileStorage.numFiles()
+                        val fileProgress: LongArray? = try { handle.fileProgress() } catch (_: Throwable) { null }
+                        for (i in 0 until numFiles) {
+                            val p = try { Priority.fromLibtorrent(handle.filePriority(i)) } catch (_: Throwable) { Priority.NORMAL }
+                            val bytes: Long = if (fileProgress != null && i < fileProgress.size) fileProgress[i] else 0L
+                            val fileSize: Long = try { fileStorage.fileSize(i) } catch (_: Throwable) { 0L }
+                            val fileProg: Float = if (fileSize > 0L) (bytes.toFloat() / fileSize.toFloat()).coerceIn(0.0f, 1.0f) else 0.0f
+                            files.add(
+                                TorrentFileItem(
+                                    index = i,
+                                    path = try { fileStorage.filePath(i) } catch (_: Throwable) { "" },
+                                    size = fileSize,
+                                    downloadedBytes = bytes,
+                                    progress = fileProg,
+                                    priority = p
+                                )
+                            )
+                        }
+                    } catch (_: Throwable) {}
+                }
+
+                val isSequential = meta.isSequential
+
+                val item = TorrentItem(
+                    id = id,
+                    name = name,
+                    state = state,
+                    progress = progress,
+                    downloadSpeed = downRate,
+                    uploadSpeed = upRate,
+                    totalBytes = totalSize,
+                    downloadedBytes = totalDone,
+                    uploadedBytes = allTimeUpload,
+                    numSeeds = try { status.numSeeds() } catch (_: Throwable) { 0 },
+                    numPeers = try { status.numPeers() } catch (_: Throwable) { 0 },
+                    totalSeeds = try { status.listSeeds() } catch (_: Throwable) { 0 },
+                    totalPeers = try { status.listPeers() } catch (_: Throwable) { 0 },
+                    etaSeconds = eta,
+                    shareRatio = shareRatio,
+                    savePath = meta.savePath,
+                    addedTimestamp = meta.addedTimestamp,
+                    isSequential = isSequential,
+                    files = files,
+                    error = meta.error,
+                    pieces = null
+                )
+                items.add(item)
+            } catch (e: Throwable) {
+                Log.w(TAG, "Error extracting torrent stats for handle", e)
             }
-
-            val isSequential = meta.isSequential
-
-            val item = TorrentItem(
-                id = id,
-                name = name,
-                state = state,
-                progress = progress,
-                downloadSpeed = downRate,
-                uploadSpeed = upRate,
-                totalBytes = totalSize,
-                downloadedBytes = totalDone,
-                uploadedBytes = allTimeUpload,
-                numSeeds = status.numSeeds(),
-                numPeers = status.numPeers(),
-                totalSeeds = status.listSeeds(),
-                totalPeers = status.listPeers(),
-                etaSeconds = eta,
-                shareRatio = shareRatio,
-                savePath = meta.savePath,
-                addedTimestamp = meta.addedTimestamp,
-                isSequential = isSequential,
-                files = files,
-                error = meta.error,
-                pieces = null
-            )
-            items.add(item)
         }
 
         _torrents.value = items
