@@ -125,8 +125,10 @@ class TrackerInjectorTest {
     }
 
     @Test
-    fun `test SessionManager methods inspection`() {
-        val methods = org.libtorrent4j.SessionManager::class.java.methods.map { it.name }
-        assertTrue("SessionManager must have torrents() or find()", methods.contains("find") || methods.contains("torrents"))
+    fun `test TrackerInjector port 443 catalog non empty and valid`() {
+        assertTrue("Trackers list should not be empty", TrackerInjector.HTTPS_PORT_443_TRACKERS.isNotEmpty())
+        for (tracker in TrackerInjector.HTTPS_PORT_443_TRACKERS) {
+            assertTrue("Tracker must use https scheme", tracker.startsWith("https://"))
+        }
     }
 }

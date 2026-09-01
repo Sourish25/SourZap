@@ -32,22 +32,21 @@ class TorrentEngineLifecycleE2ETest {
     fun testSessionConfig_PureTcpAntiCensorshipDefaults() {
         val config = TorrentSessionConfig.DEFAULT
 
-        // Pure TCP: uTP disabled, TCP enabled
-        assertFalse("Incoming uTP must be disabled to bypass UDP throttling", config.enableIncomingUtp)
-        assertFalse("Outgoing uTP must be disabled to bypass UDP throttling", config.enableOutgoingUtp)
+        // Dual transport: uTP enabled, TCP enabled
+        assertTrue("Incoming uTP must be enabled for peer connectivity", config.enableIncomingUtp)
+        assertTrue("Outgoing uTP must be enabled for peer connectivity", config.enableOutgoingUtp)
         assertTrue("Incoming TCP must be enabled", config.enableIncomingTcp)
         assertTrue("Outgoing TCP must be enabled", config.enableOutgoingTcp)
 
-        // Protocol Encryption: Forced RC4 to defeat DPI signature analysis
-        assertEquals(TorrentSessionConfig.ENC_POLICY_FORCED, config.outEncPolicy)
-        assertEquals(TorrentSessionConfig.ENC_POLICY_FORCED, config.inEncPolicy)
-        assertEquals(TorrentSessionConfig.ENC_LEVEL_RC4, config.allowedEncLevel)
+        // Protocol Encryption: PE enabled with BOTH levels to allow connecting to 100% of swarm peers while evading DPI
+        assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, config.outEncPolicy)
+        assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, config.inEncPolicy)
+        assertEquals(TorrentSessionConfig.ENC_LEVEL_BOTH, config.allowedEncLevel)
         assertTrue("RC4 preference must be active", config.preferRc4)
 
         // Swarm Saturation
         assertEquals(500, config.connectionsLimit)
         assertEquals(4000, config.maxPeerlistSize)
-        assertEquals(60, config.torrentConnectBoost)
         assertEquals(1500, config.maxOutRequestQueue)
         assertTrue("DHT must be enabled", config.enableDht)
     }

@@ -21,9 +21,9 @@ class TorrentSessionConfigTest {
     fun testPureTcpEnforcement() {
         val config = TorrentSessionConfig.DEFAULT
 
-        // Pure TCP guarantees: uTP MUST be completely disabled to bypass UDP packet dropping middleboxes
-        assertFalse("Incoming uTP must be disabled to prevent UDP throttling", config.enableIncomingUtp)
-        assertFalse("Outgoing uTP must be disabled to force pure TCP", config.enableOutgoingUtp)
+        // Dual transport guarantees: uTP and TCP enabled for maximum swarm connectivity
+        assertTrue("Incoming uTP must be enabled for peer connectivity", config.enableIncomingUtp)
+        assertTrue("Outgoing uTP must be enabled for peer connectivity", config.enableOutgoingUtp)
         assertTrue("Incoming TCP must be enabled", config.enableIncomingTcp)
         assertTrue("Outgoing TCP must be enabled", config.enableOutgoingTcp)
     }
@@ -32,10 +32,10 @@ class TorrentSessionConfigTest {
     fun testFullRc4ProtocolEncryptionEnforcement() {
         val config = TorrentSessionConfig.DEFAULT
 
-        // Full RC4 Encryption: eliminates plaintext BitTorrent handshake wire signatures
-        assertEquals(TorrentSessionConfig.ENC_POLICY_FORCED, config.outEncPolicy)
-        assertEquals(TorrentSessionConfig.ENC_POLICY_FORCED, config.inEncPolicy)
-        assertEquals(TorrentSessionConfig.ENC_LEVEL_RC4, config.allowedEncLevel)
+        // Protocol Encryption: PE enabled with BOTH levels to allow connecting to 100% of swarm peers while evading DPI
+        assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, config.outEncPolicy)
+        assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, config.inEncPolicy)
+        assertEquals(TorrentSessionConfig.ENC_LEVEL_BOTH, config.allowedEncLevel)
         assertTrue("Prefer RC4 stream cipher must be enabled", config.preferRc4)
     }
 
@@ -45,14 +45,18 @@ class TorrentSessionConfigTest {
 
         assertEquals(500, config.connectionsLimit)
         assertEquals(4000, config.maxPeerlistSize)
-        assertEquals(60, config.torrentConnectBoost)
+        assertEquals(100, config.torrentConnectBoost)
+        assertEquals(80, config.connectionSpeed)
+        assertEquals(5, config.peerConnectTimeout)
         assertEquals(1500, config.maxOutRequestQueue)
-        assertEquals(10, config.requestTimeout)
+        assertEquals(8, config.requestTimeout)
         assertEquals(20, config.wholePiecesThreshold)
         assertEquals(64 * 1024 * 1024, config.cacheSize)
         assertEquals(1048576, config.sendSocketBufferSize) // 1 MB
         assertEquals(2097152, config.recvSocketBufferSize) // 2 MB
         assertEquals(4, config.aioThreads)
+        assertTrue(config.announceToAllTrackers)
+        assertTrue(config.announceToAllTiers)
     }
 
     @Test

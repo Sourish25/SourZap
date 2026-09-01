@@ -649,10 +649,10 @@ class Tier1FeatureCoverageTest {
     @Test
     fun testF12_Build_PureTcpRc4SessionConfigValidation() {
         val config = TorrentSessionConfig.DEFAULT
-        assertFalse(config.enableIncomingUtp)
-        assertFalse(config.enableOutgoingUtp)
-        assertEquals(TorrentSessionConfig.ENC_POLICY_FORCED, config.outEncPolicy)
-        assertEquals(TorrentSessionConfig.ENC_LEVEL_RC4, config.allowedEncLevel)
+        assertTrue(config.enableIncomingUtp)
+        assertTrue(config.enableOutgoingUtp)
+        assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, config.outEncPolicy)
+        assertEquals(TorrentSessionConfig.ENC_LEVEL_BOTH, config.allowedEncLevel)
     }
 
     @Test

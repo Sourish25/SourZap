@@ -365,6 +365,9 @@ class LibtorrentEngineManager(
         try {
             val handle = findHandle(id) ?: return
             handle.resume()
+            try {
+                handle.forceReannounce()
+            } catch (_: Throwable) {}
             triggerRefresh()
         } catch (_: Throwable) {}
     }
@@ -386,6 +389,9 @@ class LibtorrentEngineManager(
         try {
             val handle = findHandle(id) ?: return
             handle.forceRecheck()
+            try {
+                handle.forceReannounce()
+            } catch (_: Throwable) {}
             triggerRefresh()
         } catch (_: Throwable) {}
     }
@@ -534,6 +540,11 @@ class LibtorrentEngineManager(
                     handle.addTracker(AnnounceEntry(tr))
                 } catch (_: Throwable) {}
             }
+
+            // Immediately force announce to all trackers
+            try {
+                handle.forceReannounce()
+            } catch (_: Throwable) {}
 
             // Asynchronously pre-resolve tracker hostnames via DoH
             engineScope.launch {
