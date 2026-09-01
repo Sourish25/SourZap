@@ -110,71 +110,40 @@ class LibtorrentEngineManager(
                 when (alert.type()) {
                     AlertType.ADD_TORRENT -> {
                         val a = alert as? AddTorrentAlert ?: return
-                        val handle = try { a.handle() } catch (_: Throwable) { null }
-                        if (handle != null && handle.isValid) {
-                            handleTorrentAdded(handle)
+                        val id = try { a.handle()?.infoHash()?.toHex() } catch (_: Throwable) { null }
+                        if (id != null) {
+                            handleTorrentAdded(id)
                         }
                     }
                     AlertType.METADATA_RECEIVED -> {
                         val a = alert as? MetadataReceivedAlert ?: return
-                        val handle = try { a.handle() } catch (_: Throwable) { null }
-                        if (handle != null && handle.isValid) {
-                            handleMetadataReceived(handle)
+                        val id = try { a.handle()?.infoHash()?.toHex() } catch (_: Throwable) { null }
+                        if (id != null) {
+                            handleMetadataReceived(id)
                         }
                     }
-                    AlertType.STATE_CHANGED -> {
-                        val a = alert as? StateChangedAlert ?: return
-                        val handle = try { a.handle() } catch (_: Throwable) { null }
-                        if (handle != null && handle.isValid) {
-                            refreshTorrent(handle)
-                        }
-                    }
-                    AlertType.PIECE_FINISHED -> {
-                        val a = alert as? PieceFinishedAlert ?: return
-                        val handle = try { a.handle() } catch (_: Throwable) { null }
-                        if (handle != null && handle.isValid) {
-                            refreshTorrent(handle)
-                        }
-                    }
-                    AlertType.TORRENT_FINISHED -> {
-                        val a = alert as? TorrentFinishedAlert ?: return
-                        val handle = try { a.handle() } catch (_: Throwable) { null }
-                        if (handle != null && handle.isValid) {
-                            refreshTorrent(handle)
-                        }
-                    }
-                    AlertType.TORRENT_PAUSED -> {
-                        val a = alert as? TorrentPausedAlert ?: return
-                        val handle = try { a.handle() } catch (_: Throwable) { null }
-                        if (handle != null && handle.isValid) {
-                            refreshTorrent(handle)
-                        }
-                    }
-                    AlertType.TORRENT_RESUMED -> {
-                        val a = alert as? TorrentResumedAlert ?: return
-                        val handle = try { a.handle() } catch (_: Throwable) { null }
-                        if (handle != null && handle.isValid) {
-                            refreshTorrent(handle)
-                        }
-                    }
+                    AlertType.STATE_CHANGED,
+                    AlertType.PIECE_FINISHED,
+                    AlertType.TORRENT_FINISHED,
+                    AlertType.TORRENT_PAUSED,
+                    AlertType.TORRENT_RESUMED,
                     AlertType.TORRENT_CHECKED -> {
-                        val a = alert as? TorrentCheckedAlert ?: return
-                        val handle = try { a.handle() } catch (_: Throwable) { null }
-                        if (handle != null && handle.isValid) {
-                            refreshTorrent(handle)
-                        }
+                        triggerRefresh()
                     }
                     AlertType.TORRENT_REMOVED -> {
                         val a = alert as? TorrentRemovedAlert ?: return
-                        val handle = try { a.handle() } catch (_: Throwable) { null }
-                        val hashHex = try { handle?.infoHash()?.toHex() } catch (_: Throwable) { null }
+                        val hashHex = try { a.handle()?.infoHash()?.toHex() } catch (_: Throwable) { null }
                         if (hashHex != null) {
                             handleTorrentRemoved(hashHex)
                         }
                     }
                     AlertType.TORRENT_ERROR -> {
                         val a = alert as? TorrentErrorAlert ?: return
-                        handleTorrentError(a)
+                        val id = try { a.handle()?.infoHash()?.toHex() } catch (_: Throwable) { null }
+                        val msg = try { a.message() ?: "Torrent error" } catch (_: Throwable) { "Torrent error" }
+                        if (id != null) {
+                            handleTorrentError(id, msg)
+                        }
                     }
                     AlertType.SESSION_STATS -> {
                         val a = alert as? SessionStatsAlert ?: return
@@ -385,52 +354,54 @@ class LibtorrentEngineManager(
     }
 
     override fun pauseTorrent(id: String) {
-        val handle = findHandle(id)
-        if (handle != null && handle.isValid) {
+        try {
+            val handle = findHandle(id) ?: return
             handle.pause()
             triggerRefresh()
-        }
+        } catch (_: Throwable) {}
     }
 
     override fun resumeTorrent(id: String) {
-        val handle = findHandle(id)
-        if (handle != null && handle.isValid) {
+        try {
+            val handle = findHandle(id) ?: return
             handle.resume()
             triggerRefresh()
-        }
+        } catch (_: Throwable) {}
     }
 
     override fun removeTorrent(id: String, deleteFiles: Boolean) {
-        val handle = findHandle(id)
-        if (handle != null && handle.isValid) {
-            val options = if (deleteFiles) SessionHandle.DELETE_FILES else SessionHandle.DELETE_PARTFILE
-            sessionManager.remove(handle, options)
-        }
+        try {
+            val handle = findHandle(id)
+            if (handle != null) {
+                val options = if (deleteFiles) SessionHandle.DELETE_FILES else SessionHandle.DELETE_PARTFILE
+                sessionManager.remove(handle, options)
+            }
+        } catch (_: Throwable) {}
         torrentHandles.remove(id)
         torrentMetadataMap.remove(id)
         handleTorrentRemoved(id)
     }
 
     override fun recheckTorrent(id: String) {
-        val handle = findHandle(id)
-        if (handle != null && handle.isValid) {
+        try {
+            val handle = findHandle(id) ?: return
             handle.forceRecheck()
             triggerRefresh()
-        }
+        } catch (_: Throwable) {}
     }
 
     override fun setFilePriority(id: String, fileIndex: Int, priority: Priority) {
-        val handle = findHandle(id)
-        if (handle != null && handle.isValid) {
+        try {
+            val handle = findHandle(id) ?: return
             handle.filePriority(fileIndex, priority.toLibtorrentPriority())
             triggerRefresh()
-        }
+        } catch (_: Throwable) {}
     }
 
     override fun setSequentialDownload(id: String, sequential: Boolean) {
-        val handle = findHandle(id)
-        if (handle != null && handle.isValid) {
-            try {
+        try {
+            val handle = findHandle(id)
+            if (handle != null) {
                 val tfClass = try {
                     Class.forName("org.libtorrent4j.TorrentFlags")
                 } catch (_: Throwable) {
@@ -453,17 +424,17 @@ class LibtorrentEngineManager(
                         unsetMethod?.invoke(handle, seqFlag)
                     }
                 }
-            } catch (_: Throwable) {}
-            val existing = torrentMetadataMap[id] ?: TorrentMetadata(id = id)
-            torrentMetadataMap[id] = existing.copy(isSequential = sequential)
-            triggerRefresh()
-        }
+            }
+        } catch (_: Throwable) {}
+        val existing = torrentMetadataMap[id] ?: TorrentMetadata(id = id)
+        torrentMetadataMap[id] = existing.copy(isSequential = sequential)
+        triggerRefresh()
     }
 
     override fun getTorrentInfo(id: String): TorrentInfo? {
         val handle = findHandle(id) ?: return null
         return try {
-            if (handle.isValid && handle.status().hasMetadata()) {
+            if (handle.status().hasMetadata()) {
                 handle.torrentFile()
             } else {
                 null
@@ -474,38 +445,46 @@ class LibtorrentEngineManager(
     }
 
     override fun pauseAll() {
-        torrentHandles.values.forEach { handle ->
-            if (handle.isValid) {
-                handle.pause()
-            }
+        val allIds = (torrentMetadataMap.keys + torrentHandles.keys).toSet()
+        allIds.forEach { id ->
+            try {
+                val handle = findHandle(id)
+                handle?.pause()
+            } catch (_: Throwable) {}
         }
         triggerRefresh()
     }
 
     override fun resumeAll() {
-        torrentHandles.values.forEach { handle ->
-            if (handle.isValid) {
-                handle.resume()
-            }
+        val allIds = (torrentMetadataMap.keys + torrentHandles.keys).toSet()
+        allIds.forEach { id ->
+            try {
+                val handle = findHandle(id)
+                handle?.resume()
+            } catch (_: Throwable) {}
         }
         triggerRefresh()
     }
 
     private fun findHandle(id: String): TorrentHandle? {
-        val existing = torrentHandles[id]
-        if (existing != null && existing.isValid) {
-            return existing
-        }
         val sha1 = try {
             Sha1Hash(sha1_hash.from_hex(id))
         } catch (e: Exception) {
             return null
         }
-        val found = sessionManager.find(sha1)
-        if (found != null && found.isValid) {
-            torrentHandles[id] = found
+        val found = try {
+            sessionManager.find(sha1)
+        } catch (_: Throwable) {
+            null
         }
-        return found
+        if (found != null) {
+            val valid = try { found.isValid } catch (_: Throwable) { false }
+            if (valid) {
+                torrentHandles[id] = found
+                return found
+            }
+        }
+        return null
     }
 
     private fun startTelemetryLoop() {
@@ -533,20 +512,9 @@ class LibtorrentEngineManager(
         }
     }
 
-    private fun refreshTorrent(handle: TorrentHandle) {
+    private fun handleTorrentAdded(id: String) {
         try {
-            if (!handle.isValid) return
-            val id = try { handle.infoHash().toHex() } catch (_: Throwable) { return }
-            torrentHandles[id] = handle
-            triggerRefresh()
-        } catch (_: Throwable) {}
-    }
-
-    private fun handleTorrentAdded(handle: TorrentHandle) {
-        try {
-            if (!handle.isValid) return
-            val id: String = try { handle.infoHash().toHex() } catch (_: Throwable) { return }
-            torrentHandles[id] = handle
+            val handle = findHandle(id) ?: return
             if (!torrentMetadataMap.containsKey(id)) {
                 val status = try { handle.status() } catch (_: Throwable) { null }
                 val hName: String = try { status?.name() ?: "" } catch (_: Throwable) { "" }
@@ -580,23 +548,23 @@ class LibtorrentEngineManager(
         }
     }
 
-    private fun handleMetadataReceived(handle: TorrentHandle) {
-        if (!handle.isValid) return
-        val id: String = try { handle.infoHash().toHex() } catch (_: Throwable) { return }
-        torrentHandles[id] = handle
-        val info: TorrentInfo? = try {
-            val hasMeta = try { handle.status().hasMetadata() } catch (_: Throwable) { false }
-            if (hasMeta && handle.isValid) handle.torrentFile() else null
-        } catch (_: Throwable) {
-            null
-        }
-        if (info != null) {
-            val existing: TorrentMetadata = torrentMetadataMap[id] ?: TorrentMetadata(id = id)
-            val infoName: String = try { info.files().name() } catch (_: Throwable) { "" }
-            val updated = existing.copy(displayName = if (infoName.isNotEmpty()) infoName else id)
-            torrentMetadataMap[id] = updated
-        }
-        triggerRefresh()
+    private fun handleMetadataReceived(id: String) {
+        try {
+            val handle = findHandle(id) ?: return
+            val info: TorrentInfo? = try {
+                val hasMeta = try { handle.status().hasMetadata() } catch (_: Throwable) { false }
+                if (hasMeta) handle.torrentFile() else null
+            } catch (_: Throwable) {
+                null
+            }
+            if (info != null) {
+                val existing: TorrentMetadata = torrentMetadataMap[id] ?: TorrentMetadata(id = id)
+                val infoName: String = try { info.files().name() } catch (_: Throwable) { "" }
+                val updated = existing.copy(displayName = if (infoName.isNotEmpty()) infoName else id)
+                torrentMetadataMap[id] = updated
+            }
+            triggerRefresh()
+        } catch (_: Throwable) {}
     }
 
     private fun handleTorrentRemoved(id: String) {
@@ -604,16 +572,13 @@ class LibtorrentEngineManager(
         _torrents.value = _torrents.value.filter { it.id != id }
     }
 
-    private fun handleTorrentError(alert: TorrentErrorAlert) {
-        val handle: TorrentHandle? = try { alert.handle() } catch (_: Throwable) { null }
-        if (handle != null && handle.isValid) {
-            val id: String = try { handle.infoHash().toHex() } catch (_: Throwable) { return }
+    private fun handleTorrentError(id: String, errorMessage: String) {
+        try {
             val existing: TorrentMetadata = torrentMetadataMap[id] ?: TorrentMetadata(id = id)
-            val errorMessage: String = try { alert.message() ?: "Torrent error" } catch (_: Throwable) { "Torrent error" }
             val updated = existing.copy(error = errorMessage)
             torrentMetadataMap[id] = updated
             triggerRefresh()
-        }
+        } catch (_: Throwable) {}
     }
 
     private fun handleSessionStats(alert: SessionStatsAlert) {
@@ -622,7 +587,7 @@ class LibtorrentEngineManager(
 
     @Synchronized
     private fun updateTorrentsAndStats() {
-        val handles = torrentHandles.values.toList()
+        val allIds = (torrentMetadataMap.keys + torrentHandles.keys).toSet()
         val items = mutableListOf<TorrentItem>()
 
         var totalDownSpeed = 0L
@@ -634,14 +599,13 @@ class LibtorrentEngineManager(
         var pausedCount = 0
         var seedingCount = 0
 
-        for (handle in handles) {
+        for (id in allIds) {
             try {
-                if (!handle.isValid) continue
-                val id: String = try { handle.infoHash().toHex() } catch (_: Throwable) { continue }
+                val handle = findHandle(id) ?: continue
                 val status: TorrentStatus = try { handle.status() } catch (_: Throwable) { continue }
                 val state = mapTorrentState(handle, status)
                 val hasMeta = try { status.hasMetadata() } catch (_: Throwable) { false }
-                val info: TorrentInfo? = if (hasMeta && handle.isValid) {
+                val info: TorrentInfo? = if (hasMeta) {
                     try { handle.torrentFile() } catch (_: Throwable) { null }
                 } else {
                     null

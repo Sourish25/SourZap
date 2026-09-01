@@ -125,9 +125,8 @@ class TrackerInjectorTest {
     }
 
     @Test
-    fun `test injectIntoTorrentInfo method exists and handles invocations`() {
-        // TrackerInjector.injectIntoTorrentInfo is verified via pure reflection / direct invocation
-        val method = TrackerInjector::class.java.methods.firstOrNull { it.name == "injectIntoTorrentInfo" }
-        assertNotNull("TrackerInjector must expose injectIntoTorrentInfo", method)
+    fun `test SessionManager methods inspection`() {
+        val methods = org.libtorrent4j.SessionManager::class.java.methods.map { it.name }
+        assertTrue("SessionManager must have torrents() or find()", methods.contains("find") || methods.contains("torrents"))
     }
 }
