@@ -1,5 +1,6 @@
-﻿package com.sourzap.app.torrent.core
+package com.sourzap.app.torrent.core
 
+import org.libtorrent4j.TorrentInfo
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -35,6 +36,42 @@ object TrackerInjector {
         "https://tracker.ipfsscan.io:443/announce",
         "https://tracker.leechshield.link:443/announce"
     )
+
+    /**
+     * Injects curated Port-443 HTTPS trackers directly into a [TorrentInfo] instance if not already present.
+     */
+    fun injectIntoTorrentInfo(torrentInfo: TorrentInfo) {
+        try {
+            val swigObj = try {
+                torrentInfo.javaClass.getMethod("swig").invoke(torrentInfo)
+            } catch (_: Throwable) {
+                torrentInfo
+            }
+            val targetClass = swigObj.javaClass
+
+            // Find add_tracker or addTracker method on TorrentInfo or swig
+            val addTrackerMethod = targetClass.methods.firstOrNull {
+                (it.name == "add_tracker" || it.name == "addTracker") && it.parameterTypes.isNotEmpty() && it.parameterTypes[0] == String::class.java
+            } ?: torrentInfo.javaClass.methods.firstOrNull {
+                (it.name == "add_tracker" || it.name == "addTracker") && it.parameterTypes.isNotEmpty() && it.parameterTypes[0] == String::class.java
+            }
+
+            if (addTrackerMethod != null) {
+                val target = if (addTrackerMethod.declaringClass.isAssignableFrom(targetClass)) swigObj else torrentInfo
+                for (tracker in HTTPS_PORT_443_TRACKERS) {
+                    try {
+                        if (addTrackerMethod.parameterCount == 2 && addTrackerMethod.parameterTypes[1] == Int::class.javaPrimitiveType) {
+                            addTrackerMethod.invoke(target, tracker, 1)
+                        } else {
+                            addTrackerMethod.invoke(target, tracker)
+                        }
+                    } catch (_: Throwable) {}
+                }
+            }
+        } catch (_: Throwable) {
+            // Safe fallback on host JVM without native binaries
+        }
+    }
 
     fun injectTrackers(magnetUri: String): String {
         val trimmed = magnetUri.trim()

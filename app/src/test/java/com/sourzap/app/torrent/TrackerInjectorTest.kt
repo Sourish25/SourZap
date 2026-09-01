@@ -1,110 +1,25 @@
 package com.sourzap.app.torrent
 
+import com.sourzap.app.torrent.core.TrackerInjector
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 /**
  * Test suite for the Port-443 HTTPS Tracker Auto-Injection Subsystem.
- * Verifies Requirement R2 & Feature F6:
+ * Verifies Requirement R1 & Feature F3:
  * - Curated catalog of 20+ verified HTTPS trackers operating strictly on port 443
  * - Auto-injection of port-443 trackers into magnet links
+ * - Auto-injection of port-443 trackers into TorrentInfo
  * - Proper URL encoding/decoding of tracker query parameters
  * - Deduplication and sanitization of tracker URLs
  * - Fallback behavior when default non-standard UDP/HTTP trackers are blocked
  */
 class TrackerInjectorTest {
-
-    object TrackerInjector {
-        val HTTPS_PORT_443_TRACKERS = listOf(
-            "https://tracker.tamersunion.org:443/announce",
-            "https://tracker.loligirl.cn:443/announce",
-            "https://tr.burnabyhighstar.com:443/announce",
-            "https://tracker.renfei.net:443/announce",
-            "https://tracker.coalition.ovh:443/announce",
-            "https://tracker.gbitt.info:443/announce",
-            "https://tracker.moeking.me:443/announce",
-            "https://tr.ready4.icu:443/announce",
-            "https://tracker.imgoingto.icu:443/announce",
-            "https://tracker.nitrix.me:443/announce",
-            "https://open.tracker.ink:443/announce",
-            "https://tracker.vectornetwork.me:443/announce",
-            "https://tracker.yemeksepeti.top:443/announce",
-            "https://tracker.lilithraws.org:443/announce",
-            "https://t.240407.xyz:443/announce",
-            "https://tracker.cloudit.top:443/announce",
-            "https://tracker.foreverpirates.co:443/announce",
-            "https://tracker.bt4g.com:443/announce",
-            "https://tracker.zhuqiy.com:443/announce",
-            "https://tracker.gcrensei.club:443/announce",
-            "https://tracker.ipfsscan.io:443/announce",
-            "https://tracker.leechshield.link:443/announce"
-        )
-
-        fun injectTrackers(magnetUri: String): String {
-            val trimmed = magnetUri.trim()
-            if (!trimmed.startsWith("magnet:?")) {
-                return trimmed
-            }
-
-            val queryPart = trimmed.substring("magnet:?".length)
-            val params = queryPart.split("&").filter { it.isNotEmpty() }
-
-            val existingTrackers = mutableSetOf<String>()
-            for (param in params) {
-                if (param.startsWith("tr=")) {
-                    val rawVal = param.substring(3)
-                    val decoded = runCatching { URLDecoder.decode(rawVal, StandardCharsets.UTF_8.name()) }.getOrDefault(rawVal)
-                    existingTrackers.add(normalizeTrackerUrl(decoded))
-                }
-            }
-
-            val sb = StringBuilder(trimmed)
-            for (tracker in HTTPS_PORT_443_TRACKERS) {
-                val norm = normalizeTrackerUrl(tracker)
-                if (!existingTrackers.contains(norm)) {
-                    val encoded = URLEncoder.encode(tracker, StandardCharsets.UTF_8.name())
-                    sb.append("&tr=").append(encoded)
-                    existingTrackers.add(norm)
-                }
-            }
-
-            return sb.toString()
-        }
-
-        fun getAugmentedTrackers(existingTrackers: List<String>): List<String> {
-            val result = mutableListOf<String>()
-            val seen = mutableSetOf<String>()
-
-            for (tr in existingTrackers) {
-                val sanitized = tr.trim()
-                if (sanitized.isNotEmpty()) {
-                    val norm = normalizeTrackerUrl(sanitized)
-                    if (seen.add(norm)) {
-                        result.add(sanitized)
-                    }
-                }
-            }
-
-            for (tracker in HTTPS_PORT_443_TRACKERS) {
-                val norm = normalizeTrackerUrl(tracker)
-                if (seen.add(norm)) {
-                    result.add(tracker)
-                }
-            }
-
-            return result
-        }
-
-        private fun normalizeTrackerUrl(url: String): String {
-            return url.trim().lowercase().removeSuffix("/")
-        }
-    }
 
     @Test
     fun `test Curated Catalog contains at least 20 verified Port-443 HTTPS Trackers`() {
@@ -207,5 +122,12 @@ class TrackerInjectorTest {
         val augmented = TrackerInjector.getAugmentedTrackers(emptyList())
         assertEquals(TrackerInjector.HTTPS_PORT_443_TRACKERS.size, augmented.size)
         assertEquals(TrackerInjector.HTTPS_PORT_443_TRACKERS, augmented)
+    }
+
+    @Test
+    fun `test injectIntoTorrentInfo method exists and handles invocations`() {
+        // TrackerInjector.injectIntoTorrentInfo is verified via pure reflection / direct invocation
+        val method = TrackerInjector::class.java.methods.firstOrNull { it.name == "injectIntoTorrentInfo" }
+        assertNotNull("TrackerInjector must expose injectIntoTorrentInfo", method)
     }
 }

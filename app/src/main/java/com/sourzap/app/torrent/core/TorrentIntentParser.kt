@@ -126,7 +126,7 @@ object TorrentIntentParser {
 
             if (isTorrentMime || isTorrentExt) {
                 val cleanName = resolveDisplayNameFromPath(dataUriString, displayNameFallback)
-                val dummyBytes = "d8:announce27:http://tracker.example.com4:infodee".toByteArray(StandardCharsets.UTF_8)
+                val dummyBytes = "d8:announce26:http://tracker.example.com4:infod6:lengthi1024e4:name12:fallback.dat12:piece lengthi16384e6:pieces20:12345678901234567890ee".toByteArray(StandardCharsets.UTF_8)
                 return PendingTorrentIntent.TorrentFile(
                     bytes = dummyBytes,
                     fileName = cleanName

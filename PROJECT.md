@@ -1,64 +1,61 @@
-# Project: SourZap
+# Project: SourZap Torrent Loading & UI Enhancements
 
 ## Architecture
-SourZap is an Android application providing high-performance DPI bypass / VPN and anti-censorship BitTorrent downloading with libtorrent4j.
-Key architectural layers:
-- **UI Layer (Jetpack Compose & Navigation)**: `MainActivity`, `TorrentScreen`, `AddTorrentDialog`, `TorrentCard`, `SpeedBadge`, `FilterTabs`.
-- **Torrent Engine Core**: `TorrentEngineManager` (`LibtorrentEngineManager`), `TorrentSessionConfig`, `TrackerInjector`, `DohTrackerResolver`, `MagnetHandler`, `TorrentModels`.
-- **Services & Notifications**: `TorrentDownloadService` (Foreground Service with `dataSync`), `UpdateManager` (in-app APK update downloads), `SourZapApp` (Application lifecycle and notification channels).
-- **Storage & System Integration**: Scoped storage app-specific directory fallback, Android Intent Filters for `magnet:` URIs and `.torrent` files, Android 13+ `POST_NOTIFICATIONS` runtime permission.
+SourZap is an Android BitTorrent client built with Jetpack Compose, Material 3, Kotlin Coroutines/Flow, and libtorrent4j.
+The architecture comprises:
+- **Torrent Engine Core**: `TorrentEngineManager` (`LibtorrentEngineManager`), `TorrentEngine`, `TorrentStorageHelper`, `TrackerInjector`, `TorrentIntentParser`, and `TorrentFileValidator` / `BencodeValidator`.
+- **UI Layer**: `TorrentScreen`, `AddTorrentDialog`, `TorrentHeader`, `TorrentItemCard`, `TorrentSessionStatsBanner`, `DownloadsTorrentScanner`.
+- **System Integration**: System File Picker (`ActivityResultContracts.OpenDocument`), MediaStore / Scoped Storage scanner, Intent and Deep Link filters.
+- **Testing & Verification**: JUnit 4, Kotlinx Coroutines Test, comprehensive E2E requirement test suites (Tiers 1–5), Gradle build & release APK packaging.
 
 ## Feature Inventory
-| # | Feature | Description | Milestone | Source | Status |
-|---|---------|-------------|-----------|--------|--------|
-| F1 | Magnet Parsing & Normalization | Robust parsing and normalization of 40-char Hex and 32-char Base32 info-hashes to prevent metadata desynchronization | M1 | ORIGINAL_REQUEST §R1 | DONE |
-| F2 | Scoped Storage Safe Directory | App-compatible writable directory resolution for Android 10+ (API 29-35) with fallback to eliminate EACCES native write failures | M1 | ORIGINAL_REQUEST §R1 | DONE |
-| F3 | Torrent Session Auto-Start | Engine automatically starts session when `addTorrent` is invoked if session is not running | M1 | ORIGINAL_REQUEST §R1, §R3 | DONE |
-| F4 | Engine State & Sequential Fixes | Fix `mapTorrentState` paused detection (`status.isPaused`) and `setSequentialDownload` native handle invocation | M1 | ORIGINAL_REQUEST §R3 | DONE |
-| F5 | System Intent Filters Registration | Register `IntentFilter`s in `AndroidManifest.xml` for `scheme="magnet"`, MIME types, and `.torrent` extensions with `singleTask` launchMode | M2 | ORIGINAL_REQUEST §R2 | DONE |
-| F6 | External Intent Handling & Deep Linking | Handle external intents in `MainActivity.onCreate` and `onNewIntent`, parse payload, and auto-navigate to `"torrents"` tab | M2 | ORIGINAL_REQUEST §R2 | DONE |
-| F7 | Auto-Open Confirmation Dialog | `TorrentScreen` detects incoming intent payload and auto-opens `AddTorrentDialog` pre-filled with magnet URI or torrent file | M2 | ORIGINAL_REQUEST §R2 | DONE |
-| F8 | SAF File Name Resolution | Query `OpenableColumns.DISPLAY_NAME` in .torrent file picker for accurate original file names | M2 | ORIGINAL_REQUEST §R1 | DONE |
-| F9 | App Update Progress Notification | Live progress bar, downloaded / total MBs, Cancel action PendingIntent, completion install intent, and update notification channel | M3 | ORIGINAL_REQUEST §R4 | DONE |
-| F10 | Active Torrent Progress & Dismiss Notification | Foreground service notification with live speeds, aggregate progress bar, Pause/Resume/Dismiss actions, and throttled updates | M3 | ORIGINAL_REQUEST §R4 | DONE |
-| F11 | Android 13+ POST_NOTIFICATIONS Permission | Request runtime notification permission in `MainActivity` for Android 13+ (API 33+) | M3 | ORIGINAL_REQUEST §R4 | DONE |
-| F12 | Full Test & Release Build Verification | 100% pass rate on full unit test suite (706/706 tests pass) and clean `assembleRelease` APK compilation | Final | ORIGINAL_REQUEST Acceptance Criteria | DONE |
+| # | Feature | Description | Milestone | Source |
+|---|---------|-------------|-----------|--------|
+| F1 | Binary-Safe Bencode Validation | Pre-validate raw `.torrent` byte arrays without string conversion corruption; verify dictionary header/footer, required keys (`info`, `piece length`, `pieces`), and piece hash divisible by 20. | M1 | ORIGINAL_REQUEST R1 |
+| F2 | HTML / Web-Blocker / Corrupt Payload Protection | Detect HTML (`<!DOCTYPE`, `<html`), HTTP 302 redirects, JSON errors, empty or truncated buffers, and return actionable typed error results. | M1 | ORIGINAL_REQUEST R1 |
+| F3 | Port-443 HTTPS Tracker Injection into TorrentInfo | Automatically inject curated Port-443 HTTPS trackers (`TrackerInjector.HTTPS_PORT_443_TRACKERS`) directly into `TorrentInfo` instances before session download begins. | M1 | ORIGINAL_REQUEST R1 |
+| F4 | Actionable Error Messages in UI & Engine | Display specific, user-friendly diagnostic error messages in `TorrentScreen` and `AddTorrentDialog` instead of generic crash or "error loading .torrent". | M1 | ORIGINAL_REQUEST R1 |
+| F5 | Fix Intent Fallback Dummy Payload | Replace invalid dummy bencode in `TorrentIntentParser` with a structurally valid fallback or explicit failure handling. | M1 | ORIGINAL_REQUEST R1 |
+| F6 | Filtered System File Picker | Upgrade system file picker to filter strictly for BitTorrent MIME types (`application/x-bittorrent`, `application/x-torrent`, `application/octet-stream`) and `.torrent` extensions. | M2 | ORIGINAL_REQUEST R2 |
+| F7 | In-Dialog Downloads Torrent Scanner | Implement `DownloadsTorrentScanner` to query `MediaStore.Downloads` (API 29+) and filesystem fallback directories (API 26–35) with deduplication and sorting. | M2 | ORIGINAL_REQUEST R2 |
+| F8 | In-Dialog Quick-Picker UI | Embed a quick-selection list in `AddTorrentDialog` showing discovered `.torrent` files with one-tap loading, size, and date info. | M2 | ORIGINAL_REQUEST R2 |
+| F9 | Comprehensive Test Fixtures & Unit Tests | Synthetic test fixtures and tests for corrupted, valid single/multi-file, HTML-redirected buffers, and MIME contracts. | M3 | ORIGINAL_REQUEST R3 |
+| F10 | Scoped Storage & Integration Tests | Test Scoped Storage streaming, MediaStore fallback, and multi-tier interaction scenarios. | M3 | ORIGINAL_REQUEST R3 |
+| F11 | 100% Automated Test Suite Pass Rate | Execute all unit/integration/E2E test suites with 0 failures and 0 errors. | M3 | ORIGINAL_REQUEST R3 / Acceptance |
+| F12 | Clean Signed Release APK Assembly | Build release APK cleanly with signing keys (`./gradlew assembleRelease`). | M3 | ORIGINAL_REQUEST R3 / Acceptance |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| E2E | E2E Testing Track | Test infra, Tier 1-4 test suite derived from requirements, publish TEST_READY.md | none | DONE |
-| M1 | Engine Core & Storage Fixes | F1, F2, F3, F4, DpiEngineTest lint fix | none | DONE |
-| M2 | Intent Filters, Deep Linking & UI | F5, F6, F7, F8 | M1 | DONE |
-| M3 | Rich Interactive Notifications & Permissions | F9, F10, F11 | M1 | DONE |
-| Final | E2E Test Pass & Adversarial Hardening | F12 (Pass 100% E2E tests, Tier 5 Adversarial Coverage, assembleRelease) | E2E, M1, M2, M3 | DONE |
+| M1 | Robust .torrent File Loading & Exception Protection | F1, F2, F3, F4, F5: `BencodeValidator`, `TorrentEngineManager`, `TorrentIntentParser`, `TorrentScreen` error handling, Port-443 HTTPS tracker injection. | none | DONE |
+| M2 | Filtered System File Picker & In-Dialog Downloads Quick-Picker | F6, F7, F8: `DownloadsTorrentScanner`, system file picker MIME filtering, and `AddTorrentDialog` UI integration. | M1 | DONE |
+| M3 | Comprehensive Verification, E2E Test Suite & Clean Release APK Build | F9, F10, F11, F12: Test fixtures, unit/integration suites, 100% test pass rate, and `./gradlew assembleRelease`. | M1, M2 | DONE |
 
 ## Interface Contracts
-### MainActivity ↔ TorrentScreen (Pending Torrent Intent)
-- `MainActivity` exposes `pendingTorrentIntent: StateFlow<PendingTorrentIntent?>` or passes through `SourZapApp` / navigation arguments.
-- `sealed class PendingTorrentIntent { data class Magnet(val uri: String, val name: String? = null) : PendingTorrentIntent(); data class TorrentFile(val bytes: ByteArray, val fileName: String) : PendingTorrentIntent() }`
-- When `pendingTorrentIntent != null`, `MainActivity` navigates to `"torrents"` and `TorrentScreen` consumes the intent to display pre-filled `AddTorrentDialog`.
 
-### TorrentEngineManager ↔ TorrentDownloadService
-- `TorrentSessionStats` provides `totalDownloadSpeed`, `totalUploadSpeed`, `totalDownloadedBytes`, `totalUploadedBytes`, `activeTorrents`, `pausedTorrents`, `seedingTorrents`, `dhtNodes`, `totalBytes`, `aggregateProgress`.
-- Actions supported by `TorrentDownloadService`: `ACTION_PAUSE_ALL`, `ACTION_RESUME_ALL`, `ACTION_STOP_SERVICE`.
+### BencodeValidator ↔ TorrentEngineManager & TorrentScreen
+- `BencodeValidator.validate(bytes: ByteArray): TorrentValidationResult`
+- `sealed class TorrentValidationResult`:
+  - `data class Valid(val name: String, val totalSize: Long, val isMultiFile: Boolean, val fileCount: Int, val pieceLength: Long, val pieceCount: Int, val infoHash: String?) : TorrentValidationResult`
+  - `data class Invalid(val reason: String, val detailedMessage: String, val isHtmlPayload: Boolean = false) : TorrentValidationResult`
 
-### UpdateManager ↔ Notification Subsystem
-- `UpdateState.Downloading(progress: Float, downloadedBytes: Long, totalBytes: Long)`
-- `UpdateState.ReadyToInstall(apkFile: File)`
-- `UpdateState.Cancelled` / `UpdateState.Error(message: String)`
-- Action: `com.sourzap.app.ACTION_CANCEL_UPDATE` cancels ongoing download job.
+### TrackerInjector ↔ TorrentInfo & TorrentEngineManager
+- `TrackerInjector.injectIntoTorrentInfo(torrentInfo: TorrentInfo): Unit`
+
+### DownloadsTorrentScanner ↔ AddTorrentDialog
+- `data class DiscoveredTorrentFile(val name: String, val size: Long, val lastModified: Long, val uri: Uri? = null, val file: File? = null)`
+- `suspend fun scanDownloads(context: Context): List<DiscoveredTorrentFile>`
 
 ## Code Layout
-- `app/src/main/AndroidManifest.xml`: System Intent Filters, permissions (`POST_NOTIFICATIONS`, `FOREGROUND_SERVICE_DATA_SYNC`), singleTask launchMode.
-- `app/src/main/res/values/strings.xml`: Notification channel strings.
-- `app/src/main/java/com/sourzap/app/SourZapApp.kt`: Application lifecycle, notification channel setup, shared pending intent state.
-- `app/src/main/java/com/sourzap/app/MainActivity.kt`: Intent handling (`onNewIntent`), deep link routing, runtime permissions (`POST_NOTIFICATIONS`).
-- `app/src/main/java/com/sourzap/app/torrent/core/TorrentEngineManager.kt`: Engine lifecycle, session auto-start, state mapping, info-hash normalization.
-- `app/src/main/java/com/sourzap/app/torrent/core/TorrentStorageHelper.kt`: Safe scoped storage directory resolution with 3-tier fallback.
-- `app/src/main/java/com/sourzap/app/torrent/core/TorrentIntentParser.kt`: Unified external intent parser and SAF display name resolver.
-- `app/src/main/java/com/sourzap/app/torrent/service/TorrentDownloadService.kt`: Active torrent foreground notifications, progress bar, dismiss action, update throttling.
-- `app/src/main/java/com/sourzap/app/update/UpdateManager.kt`: App update download progress notifications, cancel intent, completion intent.
-- `app/src/main/java/com/sourzap/app/update/UpdateCancelReceiver.kt`: BroadcastReceiver handling cancel button from notification shade.
-- `app/src/main/java/com/sourzap/app/ui/torrent/TorrentScreen.kt`: UI dialog auto-open prefilling, file picker SAF resolution, save directory.
-- `app/src/test/java/com/sourzap/app/...`: Comprehensive unit, E2E, and adversarial test suites (706 tests).
+- `app/src/main/java/com/sourzap/app/torrent/core/`
+  - `TorrentEngineManager.kt` — Core BitTorrent session management and `.torrent` loading.
+  - `TorrentFileValidator.kt` — Binary-safe bencode parser, 64-bit bounds check, validation logic.
+  - `TorrentIntentParser.kt` — Deep link, Content URI, and Intent parsing with valid fallback payload.
+  - `TrackerInjector.kt` — Port-443 HTTPS tracker injection.
+  - `TorrentStorageHelper.kt` — Scoped Storage save directories.
+  - `DownloadsTorrentScanner.kt` — Scans MediaStore (API 29+) and filesystem downloads with deduplication.
+- `app/src/main/java/com/sourzap/app/ui/torrent/`
+  - `TorrentScreen.kt` — Jetpack Compose UI, `AddTorrentDialog`, system file picker (`OpenDocument`), in-dialog scanner.
+- `app/src/test/java/com/sourzap/app/`
+  - `torrent/` — Unit tests for engine, validator, tracker injector, scanner, intent parser, and stress challenges.
+  - `e2e/` — Requirement-driven E2E test suites (Tiers 1–5).

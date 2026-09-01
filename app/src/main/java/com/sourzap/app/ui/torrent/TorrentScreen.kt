@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -27,12 +28,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -83,8 +86,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sourzap.app.SourZapApp
+import com.sourzap.app.torrent.core.DiscoveredTorrentFile
+import com.sourzap.app.torrent.core.DownloadsTorrentScanner
+import com.sourzap.app.torrent.core.TorrentFileValidator
 import com.sourzap.app.torrent.core.TorrentIntentParser
 import com.sourzap.app.torrent.core.TorrentStorageHelper
+import com.sourzap.app.torrent.core.TorrentValidationResult
 import com.sourzap.app.torrent.model.PendingTorrentIntent
 import com.sourzap.app.torrent.model.Priority
 import com.sourzap.app.torrent.model.TorrentFileItem
@@ -326,6 +333,19 @@ fun TorrentScreen() {
             onAddFile = { fileBytes, fileName, saveDir ->
                 scope.launch {
                     try {
+                        val validation = TorrentFileValidator.validate(fileBytes)
+                        if (validation is TorrentValidationResult.Invalid) {
+                            withContext(Dispatchers.Main) {
+                                val errorMsg = if (validation.isHtmlPayload) {
+                                    "Cannot load .torrent: The file appears to be a web page or error response (HTML/XML/JSON), not a valid .torrent file."
+                                } else {
+                                    "Cannot load .torrent: ${validation.detailedMessage}"
+                                }
+                                Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                            }
+                            return@launch
+                        }
+
                         val source = TorrentSource.FileContent(fileBytes, fileName)
                         torrentManager.addTorrent(source, saveDir)
                         TorrentDownloadService.start(context)
@@ -340,7 +360,8 @@ fun TorrentScreen() {
                         }
                     } catch (e: Exception) {
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(context, "Error loading .torrent: ${e.message}", Toast.LENGTH_LONG).show()
+                            val msg = e.message ?: "Unknown error"
+                            Toast.makeText(context, "Error loading .torrent: $msg", Toast.LENGTH_LONG).show()
                         }
                     }
                 }
@@ -850,6 +871,23 @@ private fun TorrentItemCard(
                 }
             }
 
+            if (!item.error.isNullOrBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.85f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = item.error,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
             if (item.state == TorrentState.DOWNLOADING) {
                 ExpressiveWavyProgressIndicator(
                     progress = item.progress,
@@ -1031,7 +1069,25 @@ private fun AddTorrentDialog(
     }
     var selectedSaveDir by remember { mutableStateOf(defaultSaveDir) }
 
+    val scope = rememberCoroutineScope()
+    var discoveredTorrents by remember { mutableStateOf<List<DiscoveredTorrentFile>>(emptyList()) }
+    var isScanningDownloads by remember { mutableStateOf(false) }
+
+    fun scanForTorrents() {
+        scope.launch {
+            isScanningDownloads = true
+            try {
+                discoveredTorrents = DownloadsTorrentScanner.scanDownloads(context)
+            } catch (_: Exception) {
+                discoveredTorrents = emptyList()
+            } finally {
+                isScanningDownloads = false
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
+        scanForTorrents()
         if (magnetInput.isBlank() && loadedFileBytes == null) {
             val clipText = clipboard.getText()?.text?.trim()
             if (!clipText.isNullOrBlank() && clipText.startsWith("magnet:?")) {
@@ -1041,7 +1097,7 @@ private fun AddTorrentDialog(
     }
 
     val filePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
+        contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
             try {
@@ -1173,7 +1229,9 @@ private fun AddTorrentDialog(
                     color = MaterialTheme.colorScheme.surfaceContainerHighest,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { filePicker.launch("*/*") }
+                        .clickable {
+                            filePicker.launch(arrayOf("application/x-bittorrent", "application/x-torrent", "application/octet-stream"))
+                        }
                 ) {
                     Row(
                         modifier = Modifier.padding(14.dp),
@@ -1184,6 +1242,134 @@ private fun AddTorrentDialog(
                         Column {
                             Text("Open .torrent File", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
                             Text("Pick from device storage", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
+                // In-Dialog Downloads Quick-Picker Section
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Rounded.InsertDriveFile,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Discovered in Downloads",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { scanForTorrents() },
+                                modifier = Modifier.size(26.dp)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Refresh,
+                                    contentDescription = "Refresh Downloads",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        if (isScanningDownloads && discoveredTorrents.isEmpty()) {
+                            Text(
+                                text = "Scanning Downloads directory...",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        } else if (discoveredTorrents.isEmpty()) {
+                            Text(
+                                text = "No .torrent files found in Downloads",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        } else {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 140.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                discoveredTorrents.forEach { discovered ->
+                                    val isSelected = loadedFileName == discovered.name
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                                else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                                        border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                val bytes = discovered.readBytes(context)
+                                                if (bytes != null && bytes.isNotEmpty()) {
+                                                    loadedFileBytes = bytes
+                                                    loadedFileName = discovered.name
+                                                    magnetInput = ""
+                                                } else {
+                                                    Toast.makeText(context, "Failed to read ${discovered.name}", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 10.dp, vertical = 7.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = discovered.name,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    fontSize = 12.5.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = discovered.formattedSize,
+                                                    fontSize = 10.5.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            if (isSelected) {
+                                                Icon(
+                                                    Icons.Rounded.Check,
+                                                    contentDescription = "Selected",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

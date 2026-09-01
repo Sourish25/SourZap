@@ -254,35 +254,118 @@ class LibtorrentEngineManager(
                 infoHash
             }
             is TorrentSource.FileContent -> {
-                val torrentInfo = TorrentInfo(torrentSource.bytes)
-                val infoHash = torrentInfo.infoHash().toHex()
+                val validation = TorrentFileValidator.validate(torrentSource.bytes)
+                if (validation is TorrentValidationResult.Invalid) {
+                    val message = if (validation.isHtmlPayload) {
+                        "Cannot load .torrent file: The file appears to be a web page or error response (HTML/XML/JSON), not a valid .torrent file."
+                    } else {
+                        "Cannot load .torrent file: ${validation.detailedMessage}"
+                    }
+                    throw IllegalArgumentException(message)
+                }
+
+                val torrentInfo = try {
+                    TorrentInfo(torrentSource.bytes)
+                } catch (e: Throwable) {
+                    throw IllegalArgumentException("Failed to decode .torrent bencode data: ${e.message}", e)
+                }
+
+                TrackerInjector.injectIntoTorrentInfo(torrentInfo)
+
+                val infoHash = try {
+                    torrentInfo.infoHash().toHex()
+                } catch (_: Throwable) {
+                    (validation as? TorrentValidationResult.Valid)?.infoHash
+                        ?: throw IllegalArgumentException("Failed to extract info-hash from .torrent file")
+                }
+
+                val resolvedName = if (torrentSource.name.isNotEmpty()) {
+                    torrentSource.name
+                } else {
+                    try {
+                        torrentInfo.files().name()
+                    } catch (_: Throwable) {
+                        (validation as? TorrentValidationResult.Valid)?.name ?: "download"
+                    }
+                }
+
                 val meta = TorrentMetadata(
                     id = infoHash,
-                    displayName = if (torrentSource.name.isNotEmpty()) torrentSource.name else torrentInfo.files().name(),
+                    displayName = resolvedName,
                     savePath = saveDir.absolutePath,
                     addedTimestamp = System.currentTimeMillis()
                 )
                 torrentMetadataMap[infoHash] = meta
 
                 val prioritiesArray = filePriorities?.map { it.toLibtorrentPriority() }?.toTypedArray()
-                sessionManager.download(torrentInfo, saveDir, null, prioritiesArray, null, null)
+                try {
+                    sessionManager.download(torrentInfo, saveDir, null, prioritiesArray, null, null)
+                } catch (e: LinkageError) {
+                    throw e
+                } catch (e: Throwable) {
+                    throw IllegalStateException("Failed to queue .torrent download in BitTorrent session: ${e.message}", e)
+                }
                 triggerRefresh()
                 infoHash
             }
             is TorrentSource.FilePath -> {
                 val file = File(torrentSource.path)
-                val torrentInfo = TorrentInfo(file)
-                val infoHash = torrentInfo.infoHash().toHex()
+                if (!file.exists() || !file.isFile) {
+                    throw IllegalArgumentException("Torrent file not found: ${torrentSource.path}")
+                }
+                val bytes = try {
+                    file.readBytes()
+                } catch (e: Exception) {
+                    throw IllegalArgumentException("Unable to read torrent file: ${e.message}", e)
+                }
+
+                val validation = TorrentFileValidator.validate(bytes)
+                if (validation is TorrentValidationResult.Invalid) {
+                    val message = if (validation.isHtmlPayload) {
+                        "Cannot load .torrent file: The file appears to be a web page or error response (HTML/XML/JSON), not a valid .torrent file."
+                    } else {
+                        "Cannot load .torrent file: ${validation.detailedMessage}"
+                    }
+                    throw IllegalArgumentException(message)
+                }
+
+                val torrentInfo = try {
+                    TorrentInfo(file)
+                } catch (e: Throwable) {
+                    throw IllegalArgumentException("Failed to decode .torrent file from disk: ${e.message}", e)
+                }
+
+                TrackerInjector.injectIntoTorrentInfo(torrentInfo)
+
+                val infoHash = try {
+                    torrentInfo.infoHash().toHex()
+                } catch (_: Throwable) {
+                    (validation as? TorrentValidationResult.Valid)?.infoHash
+                        ?: throw IllegalArgumentException("Failed to extract info-hash from .torrent file")
+                }
+
+                val resolvedName = try {
+                    torrentInfo.files().name()
+                } catch (_: Throwable) {
+                    (validation as? TorrentValidationResult.Valid)?.name ?: file.nameWithoutExtension
+                }
+
                 val meta = TorrentMetadata(
                     id = infoHash,
-                    displayName = torrentInfo.files().name(),
+                    displayName = resolvedName,
                     savePath = saveDir.absolutePath,
                     addedTimestamp = System.currentTimeMillis()
                 )
                 torrentMetadataMap[infoHash] = meta
 
                 val prioritiesArray = filePriorities?.map { it.toLibtorrentPriority() }?.toTypedArray()
-                sessionManager.download(torrentInfo, saveDir, null, prioritiesArray, null, null)
+                try {
+                    sessionManager.download(torrentInfo, saveDir, null, prioritiesArray, null, null)
+                } catch (e: LinkageError) {
+                    throw e
+                } catch (e: Throwable) {
+                    throw IllegalStateException("Failed to queue .torrent download in BitTorrent session: ${e.message}", e)
+                }
                 triggerRefresh()
                 infoHash
             }
