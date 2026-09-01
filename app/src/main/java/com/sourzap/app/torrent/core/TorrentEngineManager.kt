@@ -44,7 +44,9 @@ import org.libtorrent4j.alerts.TorrentPausedAlert
 import org.libtorrent4j.alerts.TorrentRemovedAlert
 import org.libtorrent4j.alerts.TorrentResumedAlert
 import org.libtorrent4j.swig.sha1_hash
+import org.libtorrent4j.swig.settings_pack
 import org.libtorrent4j.swig.torrent_flags_t
+import com.sourzap.app.service.core.LocalDpiProxyServer
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -88,6 +90,7 @@ class LibtorrentEngineManager(
 
     private val sessionManager = SessionManager()
     private val isRunning = AtomicBoolean(false)
+    private var localDpiProxy: LocalDpiProxyServer? = null
 
     private val engineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var telemetryJob: Job? = null
@@ -162,12 +165,30 @@ class LibtorrentEngineManager(
     override fun startSession(context: Context?) {
         if (isRunning.compareAndSet(false, true)) {
             try {
+                // 1. Start dedicated Local DPI Circumvention Proxy on 127.0.0.1
+                val proxy = LocalDpiProxyServer(vpnService = null, scope = engineScope)
+                val proxyPort = proxy.start()
+                localDpiProxy = proxy
+
                 sessionManager.addListener(alertListener)
                 val settingsPack = config.createSettingsPack()
+                if (proxyPort > 0) {
+                    try {
+                        settingsPack.setString(settings_pack.string_types.proxy_hostname.swigValue(), "127.0.0.1")
+                        settingsPack.setInteger(settings_pack.int_types.proxy_port.swigValue(), proxyPort)
+                        settingsPack.setInteger(settings_pack.int_types.proxy_type.swigValue(), 4) // HTTP CONNECT Proxy
+                        settingsPack.setBoolean(settings_pack.bool_types.proxy_tracker_connections.swigValue(), true)
+                        settingsPack.setBoolean(settings_pack.bool_types.proxy_peer_connections.swigValue(), true)
+                        settingsPack.setBoolean(settings_pack.bool_types.proxy_hostnames.swigValue(), true)
+                        Log.i(TAG, "Configured libtorrent SOCKS/HTTP DPI proxy on 127.0.0.1:$proxyPort")
+                    } catch (pe: Throwable) {
+                        Log.w(TAG, "Could not set proxy on SettingsPack", pe)
+                    }
+                }
                 val sessionParams = SessionParams(settingsPack)
                 sessionManager.start(sessionParams)
                 startTelemetryLoop()
-                Log.i(TAG, "BitTorrent session started successfully with pure TCP and RC4 encryption.")
+                Log.i(TAG, "BitTorrent session started with DPI bypass proxy on port $proxyPort")
             } catch (e: Throwable) {
                 Log.e(TAG, "Failed to start BitTorrent session", e)
                 isRunning.set(false)
@@ -180,6 +201,8 @@ class LibtorrentEngineManager(
             telemetryJob?.cancel()
             telemetryJob = null
             try {
+                localDpiProxy?.stop()
+                localDpiProxy = null
                 sessionManager.removeListener(alertListener)
                 sessionManager.stop()
                 torrentHandles.clear()

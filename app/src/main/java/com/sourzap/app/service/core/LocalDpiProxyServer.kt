@@ -18,7 +18,7 @@ import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
 
 class LocalDpiProxyServer(
-    private val vpnService: VpnService,
+    private val vpnService: VpnService? = null,
     private val scope: CoroutineScope
 ) {
     private var serverSocket: ServerSocket? = null
@@ -245,7 +245,7 @@ class LocalDpiProxyServer(
                 }
                 upstreamSocket = upstream
 
-                vpnService.protect(upstream)
+                vpnService?.protect(upstream)
                 upstream.connect(InetSocketAddress(targetIp, targetPort), 6000)
 
                 // Respond 200 Connection Established to Android client app
@@ -358,7 +358,7 @@ class LocalDpiProxyServer(
                     }
                     upstreamSocket = upstream
 
-                    vpnService.protect(upstream)
+                    vpnService?.protect(upstream)
                     upstream.connect(InetSocketAddress(targetIp, targetPort), 6000)
 
                     val upstreamOut = upstream.getOutputStream()
