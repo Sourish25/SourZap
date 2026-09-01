@@ -446,106 +446,58 @@ private fun TorrentHeader(
     onPauseAll: () -> Unit,
     onResumeAll: () -> Unit
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Torrent Downloader",
+                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Black),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "Fast & encrypted P2P downloads",
+                fontSize = 12.5.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text(
-                    text = "Torrent Downloader",
-                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Black),
-                    color = MaterialTheme.colorScheme.onSurface
+            IconButton(
+                onClick = onPauseAll,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            ) {
+                Icon(
+                    Icons.Rounded.Pause,
+                    contentDescription = "Pause All",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
                 )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(top = 2.dp)
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                Icons.Rounded.Shield,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Text(
-                                text = "Pure TCP • RC4 Encryption",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                Icons.Rounded.Hub,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Text(
-                                text = "Port-443 Trackers",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                        }
-                    }
-                }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                IconButton(
-                    onClick = onPauseAll,
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                ) {
-                    Icon(
-                        Icons.Rounded.Pause,
-                        contentDescription = "Pause All",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                IconButton(
-                    onClick = onResumeAll,
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                ) {
-                    Icon(
-                        Icons.Rounded.PlayArrow,
-                        contentDescription = "Resume All",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+            IconButton(
+                onClick = onResumeAll,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+            ) {
+                Icon(
+                    Icons.Rounded.PlayArrow,
+                    contentDescription = "Resume All",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }
@@ -1105,13 +1057,18 @@ private fun AddTorrentDialog(
                 val bytes = inputStream?.readBytes()
                 inputStream?.close()
                 if (bytes != null && bytes.isNotEmpty()) {
-                    val fileName = TorrentIntentParser.resolveDisplayName(context.contentResolver, uri)
-                    loadedFileBytes = bytes
-                    loadedFileName = fileName
-                    magnetInput = ""
+                    val validation = TorrentFileValidator.validate(bytes)
+                    if (validation is TorrentValidationResult.Invalid) {
+                        Toast.makeText(context, "Invalid .torrent file: ${validation.detailedMessage}", Toast.LENGTH_LONG).show()
+                    } else {
+                        val fileName = TorrentIntentParser.resolveDisplayName(context.contentResolver, uri)
+                        loadedFileBytes = bytes
+                        loadedFileName = fileName
+                        magnetInput = ""
+                    }
                 }
             } catch (e: Exception) {
-                Toast.makeText(context, "Failed to read .torrent file", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Failed to read .torrent file: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -1230,7 +1187,7 @@ private fun AddTorrentDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            filePicker.launch(arrayOf("application/x-bittorrent", "application/x-torrent", "application/octet-stream"))
+                            filePicker.launch(arrayOf("application/x-bittorrent", "application/x-torrent"))
                         }
                 ) {
                     Row(

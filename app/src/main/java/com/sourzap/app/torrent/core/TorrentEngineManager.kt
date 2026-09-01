@@ -299,7 +299,11 @@ class LibtorrentEngineManager(
 
                 val prioritiesArray = filePriorities?.map { it.toLibtorrentPriority() }?.toTypedArray()
                 try {
-                    sessionManager.download(torrentInfo, saveDir, null, prioritiesArray, null, null)
+                    if (prioritiesArray != null && prioritiesArray.isNotEmpty()) {
+                        sessionManager.download(torrentInfo, saveDir, null, prioritiesArray, null, null)
+                    } else {
+                        sessionManager.download(torrentInfo, saveDir)
+                    }
                 } catch (e: LinkageError) {
                     throw e
                 } catch (e: Throwable) {
@@ -360,7 +364,11 @@ class LibtorrentEngineManager(
 
                 val prioritiesArray = filePriorities?.map { it.toLibtorrentPriority() }?.toTypedArray()
                 try {
-                    sessionManager.download(torrentInfo, saveDir, null, prioritiesArray, null, null)
+                    if (prioritiesArray != null && prioritiesArray.isNotEmpty()) {
+                        sessionManager.download(torrentInfo, saveDir, null, prioritiesArray, null, null)
+                    } else {
+                        sessionManager.download(torrentInfo, saveDir)
+                    }
                 } catch (e: LinkageError) {
                     throw e
                 } catch (e: Throwable) {

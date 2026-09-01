@@ -38,39 +38,12 @@ object TrackerInjector {
     )
 
     /**
-     * Injects curated Port-443 HTTPS trackers directly into a [TorrentInfo] instance if not already present.
+     * Injects curated Port-443 HTTPS trackers.
+     * Note: In libtorrent4j, trackers are attached directly to active TorrentHandle instances
+     * in handleTorrentAdded() to prevent mutating native SWIG torrent_info objects before download.
      */
     fun injectIntoTorrentInfo(torrentInfo: TorrentInfo) {
-        try {
-            val swigObj = try {
-                torrentInfo.javaClass.getMethod("swig").invoke(torrentInfo)
-            } catch (_: Throwable) {
-                torrentInfo
-            }
-            val targetClass = swigObj.javaClass
-
-            // Find add_tracker or addTracker method on TorrentInfo or swig
-            val addTrackerMethod = targetClass.methods.firstOrNull {
-                (it.name == "add_tracker" || it.name == "addTracker") && it.parameterTypes.isNotEmpty() && it.parameterTypes[0] == String::class.java
-            } ?: torrentInfo.javaClass.methods.firstOrNull {
-                (it.name == "add_tracker" || it.name == "addTracker") && it.parameterTypes.isNotEmpty() && it.parameterTypes[0] == String::class.java
-            }
-
-            if (addTrackerMethod != null) {
-                val target = if (addTrackerMethod.declaringClass.isAssignableFrom(targetClass)) swigObj else torrentInfo
-                for (tracker in HTTPS_PORT_443_TRACKERS) {
-                    try {
-                        if (addTrackerMethod.parameterCount == 2 && addTrackerMethod.parameterTypes[1] == Int::class.javaPrimitiveType) {
-                            addTrackerMethod.invoke(target, tracker, 1)
-                        } else {
-                            addTrackerMethod.invoke(target, tracker)
-                        }
-                    } catch (_: Throwable) {}
-                }
-            }
-        } catch (_: Throwable) {
-            // Safe fallback on host JVM without native binaries
-        }
+        // No-op to preserve immutable TorrentInfo integrity before sessionManager.download
     }
 
     fun injectTrackers(magnetUri: String): String {
