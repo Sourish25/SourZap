@@ -1,4 +1,4 @@
-﻿package com.sourzap.app.torrent.service
+package com.sourzap.app.torrent.service
 
 import android.app.Notification
 import android.app.NotificationManager
@@ -65,12 +65,18 @@ class TorrentDownloadService : Service() {
         return START_STICKY
     }
 
+    private var lastNotificationTime = 0L
+
     private fun observeSessionStats() {
         val app = application as? SourZapApp ?: return
         statsJob?.cancel()
         statsJob = serviceScope.launch {
             app.torrentEngineManager.observeStats().collectLatest { stats ->
-                updateNotification(stats)
+                val now = System.currentTimeMillis()
+                if (now - lastNotificationTime >= 1000L) {
+                    lastNotificationTime = now
+                    updateNotification(stats)
+                }
             }
         }
     }
@@ -93,7 +99,7 @@ class TorrentDownloadService : Service() {
         notificationManager?.notify(NOTIFICATION_ID, buildNotification(stats))
     }
 
-    private fun buildNotification(stats: TorrentSessionStats): Notification {
+    fun buildNotification(stats: TorrentSessionStats): Notification {
         val channelId = getString(R.string.torrent_channel_id)
 
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
@@ -120,6 +126,14 @@ class TorrentDownloadService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val stopIntent = Intent(this, TorrentDownloadService::class.java).apply {
+            action = ACTION_STOP_SERVICE
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this, 3, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val title = if (stats.activeTorrents > 0) {
             "SourZap Downloader: ${stats.activeTorrents} Active (${stats.formattedDownloadSpeed})"
         } else {
@@ -132,6 +146,8 @@ class TorrentDownloadService : Service() {
             "All transfers paused • Tap to open"
         }
 
+        val progressPercent = (stats.aggregateProgress * 100).toInt().coerceIn(0, 100)
+
         return NotificationCompat.Builder(this, channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
@@ -140,8 +156,10 @@ class TorrentDownloadService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setProgress(100, progressPercent, false)
             .addAction(0, "Pause All", pausePendingIntent)
             .addAction(0, "Resume All", resumePendingIntent)
+            .addAction(0, "Dismiss", stopPendingIntent)
             .build()
     }
 

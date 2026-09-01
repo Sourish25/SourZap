@@ -216,7 +216,9 @@ class DpiEngineTest {
     @Test
     fun testHttpParser_SplitHttpHeader() {
         val req = "GET /download HTTP/1.1\r\nHost: cdn.test.com\r\nUser-Agent: test\r\n\r\n".toByteArray(Charsets.ISO_8859_1)
-        val (c1, c2) = HttpParser.splitHttpHeader(req, req.size)
+        val chunks = HttpParser.splitHttpHeader(req, req.size)
+        val c1 = chunks.first
+        val c2 = chunks.second
 
         assertTrue(c1.isNotEmpty())
         assertTrue(c2.isNotEmpty())

@@ -8,4 +8,7 @@
     <string name="torrent_channel_id">sourzap_torrent_channel</string>
     <string name="torrent_channel_name">SourZap Torrent Downloader</string>
     <string name="torrent_channel_desc">Active torrent download status, progress, and speed controls</string>
+    <string name="update_channel_id">sourzap_update_channel</string>
+    <string name="update_channel_name">SourZap App Updates</string>
+    <string name="update_channel_desc">Notifications for SourZap application updates and downloads</string>
 </resources>

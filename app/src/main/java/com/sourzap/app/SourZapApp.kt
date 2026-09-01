@@ -9,7 +9,23 @@ import com.sourzap.app.data.repository.StrategyRepository
 import com.sourzap.app.speedtest.SpeedTestEngine
 import com.sourzap.app.update.UpdateManager
 
+import com.sourzap.app.torrent.model.PendingTorrentIntent
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
 class SourZapApp : Application() {
+
+    private val _pendingTorrentIntent = MutableStateFlow<PendingTorrentIntent?>(null)
+    val pendingTorrentIntent: StateFlow<PendingTorrentIntent?> = _pendingTorrentIntent.asStateFlow()
+
+    fun setPendingTorrentIntent(intent: PendingTorrentIntent?) {
+        _pendingTorrentIntent.value = intent
+    }
+
+    fun clearPendingTorrentIntent() {
+        _pendingTorrentIntent.value = null
+    }
 
     lateinit var strategyRepository: StrategyRepository
         private set
@@ -59,9 +75,19 @@ class SourZapApp : Application() {
                 setShowBadge(false)
             }
 
+            val updateChannel = NotificationChannel(
+                getString(R.string.update_channel_id),
+                getString(R.string.update_channel_name),
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = getString(R.string.update_channel_desc)
+                setShowBadge(false)
+            }
+
             val manager = getSystemService(NotificationManager::class.java)
             manager?.createNotificationChannel(vpnChannel)
             manager?.createNotificationChannel(torrentChannel)
+            manager?.createNotificationChannel(updateChannel)
         }
     }
 

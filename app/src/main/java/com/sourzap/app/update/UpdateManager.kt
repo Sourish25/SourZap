@@ -1,11 +1,16 @@
 package com.sourzap.app.update
 
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
+import com.sourzap.app.R
+import com.sourzap.app.torrent.model.TorrentItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -192,6 +197,7 @@ class UpdateManager(private val context: Context) {
                 return // Already downloading
             }
             _updateState.value = UpdateState.Downloading(0.01f, 0L, 1L)
+            showProgressNotification(0.01f, 0L, 1L)
             activeDownloadJob?.cancel()
             activeDownloadJob = scope.launch {
                 val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
@@ -206,6 +212,9 @@ class UpdateManager(private val context: Context) {
                 var totalLength = -1L
                 var attempts = 0
                 val maxAttempts = 3
+
+                var lastNotifyTime = 0L
+                var lastNotifyProgress = -1f
 
                 while (attempts < maxAttempts && isActive) {
                     attempts++
@@ -225,6 +234,7 @@ class UpdateManager(private val context: Context) {
                                     if (tempApk.renameTo(targetApk) && validateApkIntegrity(targetApk)) {
                                         targetApk.setReadable(true, false)
                                         _updateState.value = UpdateState.ReadyToInstall(targetApk)
+                                        showCompletedNotification(targetApk)
                                         return@launch
                                     }
                                 }
@@ -253,6 +263,14 @@ class UpdateManager(private val context: Context) {
                                     } else 0.5f
 
                                     _updateState.value = UpdateState.Downloading(progress, bytesDownloaded, totalLength)
+
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastNotifyTime >= 500L || Math.abs(progress - lastNotifyProgress) >= 0.01f) {
+                                        lastNotifyTime = now
+                                        lastNotifyProgress = progress
+                                        showProgressNotification(progress, bytesDownloaded, totalLength)
+                                    }
+
                                     read = inputStream.read(buffer)
                                 }
                                 outputStream.flush()
@@ -267,6 +285,7 @@ class UpdateManager(private val context: Context) {
                                 if (tempApk.renameTo(targetApk) && validateApkIntegrity(targetApk)) {
                                     targetApk.setReadable(true, false)
                                     _updateState.value = UpdateState.ReadyToInstall(targetApk)
+                                    showCompletedNotification(targetApk)
                                     return@launch
                                 } else {
                                     throw Exception("Corrupt APK package downloaded")
@@ -277,6 +296,7 @@ class UpdateManager(private val context: Context) {
                         if (!isActive) return@launch
                         if (attempts >= maxAttempts) {
                             _updateState.value = UpdateState.Error("Download interrupted: ${e.localizedMessage}")
+                            dismissNotification()
                             return@launch
                         }
                         delay(800)
@@ -286,8 +306,10 @@ class UpdateManager(private val context: Context) {
                 if (targetApk.exists() && validateApkIntegrity(targetApk)) {
                     targetApk.setReadable(true, false)
                     _updateState.value = UpdateState.ReadyToInstall(targetApk)
+                    showCompletedNotification(targetApk)
                 } else {
                     _updateState.value = UpdateState.Error("Download could not be completed")
+                    dismissNotification()
                 }
             }
         }
@@ -302,11 +324,116 @@ class UpdateManager(private val context: Context) {
             activeDownloadJob?.cancel()
             activeDownloadJob = null
             _updateState.value = UpdateState.Idle
+            dismissNotification()
         }
     }
 
     fun cancelUpdate() {
         cancelDownload()
+    }
+
+    fun buildProgressNotification(progress: Float, downloadedBytes: Long, totalBytes: Long): NotificationCompat.Builder {
+        val channelId = try {
+            context.getString(R.string.update_channel_id)
+        } catch (_: Throwable) {
+            "sourzap_update_channel"
+        }
+
+        val cancelIntent = Intent(context, UpdateCancelReceiver::class.java).apply {
+            action = ACTION_CANCEL_UPDATE
+        }
+        val cancelPendingIntent = PendingIntent.getBroadcast(
+            context,
+            10,
+            cancelIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val progressPercent = (progress * 100).toInt().coerceIn(0, 100)
+        val formattedDownloaded = TorrentItem.formatFileSize(downloadedBytes)
+        val formattedTotal = if (totalBytes > 0) TorrentItem.formatFileSize(totalBytes) else "-- MB"
+        val contentText = if (totalBytes > 0) {
+            "$formattedDownloaded / $formattedTotal ($progressPercent%)"
+        } else {
+            "$formattedDownloaded downloaded"
+        }
+
+        return NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("Downloading SourZap Update")
+            .setContentText(contentText)
+            .setProgress(100, progressPercent, totalBytes <= 0)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .addAction(0, "Cancel", cancelPendingIntent)
+    }
+
+    private fun showProgressNotification(progress: Float, downloadedBytes: Long, totalBytes: Long) {
+        try {
+            val builder = buildProgressNotification(progress, downloadedBytes, totalBytes)
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            notificationManager?.notify(NOTIFICATION_ID_UPDATE, builder.build())
+        } catch (_: Throwable) {}
+    }
+
+    fun buildCompletedNotification(apkFile: File): NotificationCompat.Builder {
+        val channelId = try {
+            context.getString(R.string.update_channel_id)
+        } catch (_: Throwable) {
+            "sourzap_update_channel"
+        }
+
+        val installIntent = getInstallIntent(apkFile)
+        val installPendingIntent = PendingIntent.getActivity(
+            context,
+            11,
+            installIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        return NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("SourZap Update Ready")
+            .setContentText("Download complete • Tap to install")
+            .setContentIntent(installPendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .addAction(0, "Install", installPendingIntent)
+    }
+
+    private fun showCompletedNotification(apkFile: File) {
+        try {
+            val builder = buildCompletedNotification(apkFile)
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            notificationManager?.notify(NOTIFICATION_ID_UPDATE, builder.build())
+        } catch (_: Throwable) {}
+    }
+
+    fun dismissNotification() {
+        try {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            notificationManager?.cancel(NOTIFICATION_ID_UPDATE)
+        } catch (_: Throwable) {}
+    }
+
+    fun getInstallIntent(apkFile: File): Intent {
+        val apkUri: Uri = try {
+            FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                apkFile
+            )
+        } catch (_: Throwable) {
+            Uri.fromFile(apkFile)
+        }
+
+        return Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(apkUri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
     }
 
     // Cold flow adapters for backwards compatibility or tests
@@ -336,18 +463,7 @@ class UpdateManager(private val context: Context) {
         }
 
         try {
-            val apkUri: Uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.provider",
-                apkFile
-            )
-
-            val installIntent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(apkUri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            }
+            val installIntent = getInstallIntent(apkFile)
             context.startActivity(installIntent)
         } catch (_: Exception) {}
     }
@@ -390,5 +506,10 @@ class UpdateManager(private val context: Context) {
             }
         } catch (_: Exception) {}
         return false
+    }
+
+    companion object {
+        const val NOTIFICATION_ID_UPDATE = 1003
+        const val ACTION_CANCEL_UPDATE = "com.sourzap.app.ACTION_CANCEL_UPDATE"
     }
 }

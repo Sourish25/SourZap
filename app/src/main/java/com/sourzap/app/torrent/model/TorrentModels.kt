@@ -271,11 +271,19 @@ data class TorrentSessionStats(
     val activeTorrents: Int = 0,
     val pausedTorrents: Int = 0,
     val seedingTorrents: Int = 0,
-    val dhtNodes: Long = 0L
+    val dhtNodes: Long = 0L,
+    val totalBytes: Long = 0L,
+    val aggregateProgress: Float = 0.0f
 ) {
     val formattedDownloadSpeed: String
         get() = TorrentItem.formatBytesPerSec(totalDownloadSpeed)
 
     val formattedUploadSpeed: String
         get() = TorrentItem.formatBytesPerSec(totalUploadSpeed)
+
+    val formattedProgress: String
+        get() = String.format(Locale.US, "%.1f%%", aggregateProgress * 100f)
+
+    val progressPercent: Int
+        get() = (aggregateProgress * 100).toInt().coerceIn(0, 100)
 }

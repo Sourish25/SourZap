@@ -227,6 +227,10 @@ class LibtorrentEngineManager(
         saveDir: File,
         filePriorities: List<Priority>?
     ): String {
+        if (!isSessionRunning()) {
+            startSession()
+        }
+
         if (!saveDir.exists()) {
             saveDir.mkdirs()
         }
@@ -331,6 +335,30 @@ class LibtorrentEngineManager(
     override fun setSequentialDownload(id: String, sequential: Boolean) {
         val handle = findHandle(id)
         if (handle != null && handle.isValid) {
+            try {
+                val tfClass = try {
+                    Class.forName("org.libtorrent4j.TorrentFlags")
+                } catch (_: Throwable) {
+                    Class.forName("org.libtorrent4j.swig.torrent_flags_t")
+                }
+                val seqFlag = tfClass.fields.firstOrNull {
+                    it.name.equals("SEQUENTIAL_DOWNLOAD", ignoreCase = true) ||
+                    it.name.equals("sequential_download", ignoreCase = true)
+                }?.get(null)
+                if (seqFlag != null) {
+                    if (sequential) {
+                        val setMethod = handle.javaClass.methods.firstOrNull {
+                            it.name.equals("setFlags", ignoreCase = true) || it.name.equals("set_flags", ignoreCase = true)
+                        }
+                        setMethod?.invoke(handle, seqFlag)
+                    } else {
+                        val unsetMethod = handle.javaClass.methods.firstOrNull {
+                            it.name.equals("unsetFlags", ignoreCase = true) || it.name.equals("unset_flags", ignoreCase = true)
+                        }
+                        unsetMethod?.invoke(handle, seqFlag)
+                    }
+                }
+            } catch (_: Throwable) {}
             val existing = torrentMetadataMap[id] ?: TorrentMetadata(id = id)
             torrentMetadataMap[id] = existing.copy(isSequential = sequential)
             triggerRefresh()
@@ -487,6 +515,7 @@ class LibtorrentEngineManager(
         var totalUpSpeed = 0L
         var totalDownloaded = 0L
         var totalUploaded = 0L
+        var totalAllBytes = 0L
         var activeCount = 0
         var pausedCount = 0
         var seedingCount = 0
@@ -520,6 +549,7 @@ class LibtorrentEngineManager(
             totalUpSpeed += upRate
             totalDownloaded += totalDone
             totalUploaded += allTimeUpload
+            totalAllBytes += totalSize
 
             when (state) {
                 TorrentState.DOWNLOADING, TorrentState.ALLOCATING, TorrentState.METADATA -> activeCount++
@@ -591,6 +621,15 @@ class LibtorrentEngineManager(
 
         _torrents.value = items
         val dhtNodes = sessionManager.stats()?.dhtNodes() ?: 0L
+        val aggProgress = if (totalAllBytes > 0L) {
+            (totalDownloaded.toFloat() / totalAllBytes.toFloat()).coerceIn(0.0f, 1.0f)
+        } else if (items.isNotEmpty()) {
+            val valid = items.filter { it.totalBytes > 0L }
+            if (valid.isNotEmpty()) {
+                valid.map { it.progress }.average().toFloat().coerceIn(0.0f, 1.0f)
+            } else 0.0f
+        } else 0.0f
+
         _stats.value = TorrentSessionStats(
             totalDownloadSpeed = totalDownSpeed,
             totalUploadSpeed = totalUpSpeed,
@@ -599,11 +638,16 @@ class LibtorrentEngineManager(
             activeTorrents = activeCount,
             pausedTorrents = pausedCount,
             seedingTorrents = seedingCount,
-            dhtNodes = dhtNodes
+            dhtNodes = dhtNodes,
+            totalBytes = totalAllBytes,
+            aggregateProgress = aggProgress
         )
     }
 
     private fun mapTorrentState(handle: TorrentHandle, status: TorrentStatus): TorrentState {
+        if (isTorrentPaused(status)) {
+            return TorrentState.PAUSED
+        }
         return when (status.state()) {
             TorrentStatus.State.CHECKING_FILES,
             TorrentStatus.State.CHECKING_RESUME_DATA -> TorrentState.CHECKING
@@ -615,9 +659,49 @@ class LibtorrentEngineManager(
         }
     }
 
+    private fun isTorrentPaused(status: TorrentStatus): Boolean {
+        return try {
+            val flags = status.flags()
+            val tfClass = try {
+                Class.forName("org.libtorrent4j.TorrentFlags")
+            } catch (_: Throwable) {
+                Class.forName("org.libtorrent4j.swig.torrent_flags_t")
+            }
+            val pausedFlag = tfClass.fields.firstOrNull {
+                it.name.equals("PAUSED", ignoreCase = true) || it.name.equals("paused", ignoreCase = true)
+            }?.get(null)
+            if (pausedFlag != null) {
+                val andMethod = flags.javaClass.methods.firstOrNull { it.name.equals("and_", ignoreCase = true) || it.name.equals("and", ignoreCase = true) }
+                val res = andMethod?.invoke(flags, pausedFlag)
+                val nonZeroMethod = res?.javaClass?.methods?.firstOrNull { it.name.equals("non_zero", ignoreCase = true) || it.name.equals("nonZero", ignoreCase = true) }
+                nonZeroMethod?.invoke(res) as? Boolean ?: false
+            } else {
+                false
+            }
+        } catch (_: Throwable) {
+            try {
+                val m = status.javaClass.getMethod("isPaused")
+                m.invoke(status) as? Boolean ?: false
+            } catch (_: Throwable) {
+                false
+            }
+        }
+    }
+
     private fun extractInfoHashFromMagnet(uri: String): String {
+        val parsed = MagnetHandler.parse(uri)
+        if (parsed != null && parsed.infoHash.isNotEmpty()) {
+            return parsed.infoHash
+        }
         val xtMatch = Regex("xt=urn:btih:([a-fA-F0-9]{40}|[a-zA-Z2-7]{32})", RegexOption.IGNORE_CASE).find(uri)
-        return xtMatch?.groupValues?.get(1)?.lowercase() ?: "hash_${System.currentTimeMillis()}"
+        val candidate = xtMatch?.groupValues?.get(1)
+        if (candidate != null) {
+            val normalized = MagnetHandler.normalizeInfoHash(candidate)
+            if (normalized != null) {
+                return normalized
+            }
+        }
+        return candidate?.lowercase() ?: "hash_${System.currentTimeMillis()}"
     }
 
     private data class TorrentMetadata(

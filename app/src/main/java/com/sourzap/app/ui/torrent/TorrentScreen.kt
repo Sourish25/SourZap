@@ -83,6 +83,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sourzap.app.SourZapApp
+import com.sourzap.app.torrent.core.TorrentIntentParser
+import com.sourzap.app.torrent.core.TorrentStorageHelper
+import com.sourzap.app.torrent.model.PendingTorrentIntent
 import com.sourzap.app.torrent.model.Priority
 import com.sourzap.app.torrent.model.TorrentFileItem
 import com.sourzap.app.torrent.model.TorrentFilter
@@ -116,10 +119,37 @@ fun TorrentScreen() {
 
     val torrents by torrentManager.observeTorrents().collectAsStateWithLifecycle()
     val stats by torrentManager.observeStats().collectAsStateWithLifecycle()
+    val pendingTorrentIntent by app.pendingTorrentIntent.collectAsStateWithLifecycle()
 
     var selectedFilter by remember { mutableStateOf(TorrentFilter.ALL) }
     var searchQuery by remember { mutableStateOf("") }
     var showAddDialog by remember { mutableStateOf(false) }
+
+    var prefilledMagnet by remember { mutableStateOf("") }
+    var prefilledName by remember { mutableStateOf("") }
+    var prefilledTorrentBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var prefilledTorrentFileName by remember { mutableStateOf("") }
+
+    LaunchedEffect(pendingTorrentIntent) {
+        pendingTorrentIntent?.let { intent ->
+            when (intent) {
+                is PendingTorrentIntent.Magnet -> {
+                    prefilledMagnet = intent.uri
+                    prefilledName = intent.name ?: ""
+                    prefilledTorrentBytes = null
+                    prefilledTorrentFileName = ""
+                    showAddDialog = true
+                }
+                is PendingTorrentIntent.TorrentFile -> {
+                    prefilledMagnet = ""
+                    prefilledName = ""
+                    prefilledTorrentBytes = intent.bytes
+                    prefilledTorrentFileName = intent.fileName
+                    showAddDialog = true
+                }
+            }
+        }
+    }
 
     var torrentToDelete by remember { mutableStateOf<TorrentItem?>(null) }
     var deleteWithFiles by remember { mutableStateOf(false) }
@@ -181,7 +211,13 @@ fun TorrentScreen() {
                     item {
                         TorrentEmptyState(
                             hasAnyTorrents = torrents.isNotEmpty(),
-                            onAddTorrentClick = { showAddDialog = true }
+                            onAddTorrentClick = {
+                                prefilledMagnet = ""
+                                prefilledName = ""
+                                prefilledTorrentBytes = null
+                                prefilledTorrentFileName = ""
+                                showAddDialog = true
+                            }
                         )
                     }
                 } else {
@@ -222,6 +258,10 @@ fun TorrentScreen() {
             FloatingActionButton(
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    prefilledMagnet = ""
+                    prefilledName = ""
+                    prefilledTorrentBytes = null
+                    prefilledTorrentFileName = ""
                     showAddDialog = true
                 },
                 containerColor = MaterialTheme.colorScheme.primary,
@@ -249,7 +289,18 @@ fun TorrentScreen() {
 
     if (showAddDialog) {
         AddTorrentDialog(
-            onDismiss = { showAddDialog = false },
+            initialMagnet = prefilledMagnet,
+            initialName = prefilledName,
+            initialTorrentBytes = prefilledTorrentBytes,
+            initialTorrentFileName = prefilledTorrentFileName,
+            onDismiss = {
+                showAddDialog = false
+                prefilledMagnet = ""
+                prefilledName = ""
+                prefilledTorrentBytes = null
+                prefilledTorrentFileName = ""
+                app.clearPendingTorrentIntent()
+            },
             onAddMagnet = { magnetUri, customName, saveDir ->
                 scope.launch {
                     try {
@@ -259,6 +310,11 @@ fun TorrentScreen() {
                         withContext(Dispatchers.Main) {
                             Toast.makeText(context, "Torrent added successfully", Toast.LENGTH_SHORT).show()
                             showAddDialog = false
+                            prefilledMagnet = ""
+                            prefilledName = ""
+                            prefilledTorrentBytes = null
+                            prefilledTorrentFileName = ""
+                            app.clearPendingTorrentIntent()
                         }
                     } catch (e: Exception) {
                         withContext(Dispatchers.Main) {
@@ -276,6 +332,11 @@ fun TorrentScreen() {
                         withContext(Dispatchers.Main) {
                             Toast.makeText(context, "Torrent file added successfully", Toast.LENGTH_SHORT).show()
                             showAddDialog = false
+                            prefilledMagnet = ""
+                            prefilledName = ""
+                            prefilledTorrentBytes = null
+                            prefilledTorrentFileName = ""
+                            app.clearPendingTorrentIntent()
                         }
                     } catch (e: Exception) {
                         withContext(Dispatchers.Main) {
@@ -950,25 +1011,32 @@ private fun TorrentEmptyState(
 
 @Composable
 private fun AddTorrentDialog(
+    initialMagnet: String = "",
+    initialName: String = "",
+    initialTorrentBytes: ByteArray? = null,
+    initialTorrentFileName: String = "",
     onDismiss: () -> Unit,
     onAddMagnet: (uri: String, displayName: String?, saveDir: File) -> Unit,
     onAddFile: (bytes: ByteArray, fileName: String, saveDir: File) -> Unit
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    var magnetInput by remember { mutableStateOf("") }
-    var customNameInput by remember { mutableStateOf("") }
+    var magnetInput by remember(initialMagnet) { mutableStateOf(initialMagnet) }
+    var customNameInput by remember(initialName) { mutableStateOf(initialName) }
+    var loadedFileBytes by remember(initialTorrentBytes) { mutableStateOf(initialTorrentBytes) }
+    var loadedFileName by remember(initialTorrentFileName) { mutableStateOf(initialTorrentFileName) }
 
     val defaultSaveDir = remember {
-        val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        File(base, "SourZap").apply { if (!exists()) mkdirs() }
+        TorrentStorageHelper.getSaveDirectory(context)
     }
     var selectedSaveDir by remember { mutableStateOf(defaultSaveDir) }
 
     LaunchedEffect(Unit) {
-        val clipText = clipboard.getText()?.text?.trim()
-        if (!clipText.isNullOrBlank() && clipText.startsWith("magnet:?")) {
-            magnetInput = clipText
+        if (magnetInput.isBlank() && loadedFileBytes == null) {
+            val clipText = clipboard.getText()?.text?.trim()
+            if (!clipText.isNullOrBlank() && clipText.startsWith("magnet:?")) {
+                magnetInput = clipText
+            }
         }
     }
 
@@ -981,14 +1049,18 @@ private fun AddTorrentDialog(
                 val bytes = inputStream?.readBytes()
                 inputStream?.close()
                 if (bytes != null && bytes.isNotEmpty()) {
-                    val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "download.torrent"
-                    onAddFile(bytes, fileName, selectedSaveDir)
+                    val fileName = TorrentIntentParser.resolveDisplayName(context.contentResolver, uri)
+                    loadedFileBytes = bytes
+                    loadedFileName = fileName
+                    magnetInput = ""
                 }
             } catch (e: Exception) {
                 Toast.makeText(context, "Failed to read .torrent file", Toast.LENGTH_SHORT).show()
             }
         }
     }
+
+    val canConfirm = magnetInput.isNotBlank() || (loadedFileBytes != null && loadedFileBytes!!.isNotEmpty())
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1004,16 +1076,80 @@ private fun AddTorrentDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                if (loadedFileBytes != null && loadedFileName.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Rounded.InsertDriveFile,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Column {
+                                    Text(
+                                        text = loadedFileName,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.5.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${TorrentItem.formatFileSize(loadedFileBytes!!.size.toLong())} • Ready to download",
+                                        fontSize = 11.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = {
+                                    loadedFileBytes = null
+                                    loadedFileName = ""
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Close,
+                                    contentDescription = "Remove file",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = magnetInput,
-                    onValueChange = { magnetInput = it },
+                    onValueChange = {
+                        magnetInput = it
+                        if (it.isNotBlank()) {
+                            loadedFileBytes = null
+                            loadedFileName = ""
+                        }
+                    },
                     label = { Text("Magnet Link (magnet:?...)") },
                     placeholder = { Text("Paste magnet link here") },
                     modifier = Modifier.fillMaxWidth(),
                     trailingIcon = {
                         IconButton(onClick = {
                             val clipText = clipboard.getText()?.text?.trim()
-                            if (!clipText.isNullOrBlank()) magnetInput = clipText
+                            if (!clipText.isNullOrBlank()) {
+                                magnetInput = clipText
+                                loadedFileBytes = null
+                                loadedFileName = ""
+                            }
                         }) {
                             Icon(Icons.Rounded.ContentPaste, contentDescription = "Paste")
                         }
@@ -1069,13 +1205,15 @@ private fun AddTorrentDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (magnetInput.isNotBlank()) {
+                    if (loadedFileBytes != null && loadedFileBytes!!.isNotEmpty()) {
+                        onAddFile(loadedFileBytes!!, loadedFileName.ifBlank { "download.torrent" }, selectedSaveDir)
+                    } else if (magnetInput.isNotBlank()) {
                         onAddMagnet(magnetInput.trim(), customNameInput.trim().ifEmpty { null }, selectedSaveDir)
                     } else {
                         Toast.makeText(context, "Please enter a magnet link or pick a .torrent file", Toast.LENGTH_SHORT).show()
                     }
                 },
-                enabled = magnetInput.isNotBlank(),
+                enabled = canConfirm,
                 shape = RoundedCornerShape(14.dp)
             ) {
                 Text("Start Download", fontWeight = FontWeight.Bold)
