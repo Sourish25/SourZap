@@ -7,8 +7,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.sourzap.app.MainActivity
@@ -31,6 +33,9 @@ class TorrentDownloadService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var statsJob: Job? = null
+
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -73,11 +78,13 @@ class TorrentDownloadService : Service() {
         when (intent?.action) {
             ACTION_PAUSE_ALL -> {
                 manager?.pauseAll()
+                releaseLocks()
             }
             ACTION_RESUME_ALL -> {
                 manager?.resumeAll()
             }
             ACTION_STOP_SERVICE -> {
+                releaseLocks()
                 try {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                 } catch (_: Throwable) {}
@@ -92,11 +99,75 @@ class TorrentDownloadService : Service() {
 
     private var lastNotificationTime = 0L
 
+    @Synchronized
+    private fun acquireLocks() {
+        try {
+            if (wakeLock == null) {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                wakeLock = powerManager?.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "SourZap:TorrentDownloadWakeLock"
+                )?.apply {
+                    setReferenceCounted(false)
+                }
+            }
+            if (wakeLock?.isHeld != true) {
+                wakeLock?.acquire(24 * 60 * 60 * 1000L) // 24-hour safety timeout
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to acquire WakeLock: ${e.message}")
+        }
+
+        try {
+            if (wifiLock == null) {
+                val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                @Suppress("DEPRECATION")
+                wifiLock = wifiManager?.createWifiLock(
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                    "SourZap:TorrentDownloadWifiLock"
+                )?.apply {
+                    setReferenceCounted(false)
+                }
+            }
+            if (wifiLock?.isHeld != true) {
+                wifiLock?.acquire()
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to acquire WifiLock: ${e.message}")
+        }
+    }
+
+    @Synchronized
+    private fun releaseLocks() {
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to release WakeLock: ${e.message}")
+        }
+
+        try {
+            if (wifiLock?.isHeld == true) {
+                wifiLock?.release()
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to release WifiLock: ${e.message}")
+        }
+    }
+
     private fun observeSessionStats() {
         val app = application as? SourZapApp ?: return
         statsJob?.cancel()
         statsJob = serviceScope.launch {
             app.torrentEngineManager.observeStats().collectLatest { stats ->
+                val isActivelyTransferring = stats.activeTorrents > 0 || stats.seedingTorrents > 0
+                if (isActivelyTransferring) {
+                    acquireLocks()
+                } else {
+                    releaseLocks()
+                }
+
                 val now = System.currentTimeMillis()
                 if (now - lastNotificationTime >= 1000L) {
                     lastNotificationTime = now
@@ -196,12 +267,14 @@ class TorrentDownloadService : Service() {
     }
 
     override fun onDestroy() {
+        releaseLocks()
         statsJob?.cancel()
         serviceScope.cancel()
         super.onDestroy()
     }
 
     companion object {
+        private const val TAG = "TorrentDownloadService"
         const val NOTIFICATION_ID = 1002
         const val ACTION_START = "com.sourzap.app.torrent.START"
         const val ACTION_PAUSE_ALL = "com.sourzap.app.torrent.PAUSE_ALL"

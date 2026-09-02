@@ -6,24 +6,31 @@ import org.libtorrent4j.swig.settings_pack
 /**
  * High-performance, anti-censorship BitTorrent session configuration.
  *
- * Configures pure TCP transport (disabling uTP to defeat firewall UDP throttling),
- * full-payload RC4 protocol encryption (eliminating plaintext BitTorrent signatures to defeat DPI),
- * and high-throughput swarm saturation parameters.
+ * Configures dynamic IPv4/IPv6 listen interfaces, NAT traversal (UPnP/NAT-PMP),
+ * TCP transport priority over uTP (defeating ISP UDP shaping and LEDBAT congestion collapse),
+ * native Message Stream Encryption (MSE / PE) with RC4 ciphers to bypass Deep Packet Inspection (DPI),
+ * and parallel tracker/DHT/LSD/PEX swarm discovery.
  */
 data class TorrentSessionConfig(
-    // 1. Dual Transport: Enables both TCP and uTP for maximum swarm penetration
+    // 1. Dynamic Listen Interfaces & NAT Traversal (UPnP / NAT-PMP)
+    val listenInterfaces: String = "0.0.0.0:0,[::]:0",
+    val enableUpnp: Boolean = true,
+    val enableNatpmp: Boolean = true,
+
+    // 2. Dual Transport & Mixed Mode Algorithm (TCP Priority over uTP to defeat LEDBAT 0 B/s stall)
     val enableIncomingUtp: Boolean = true,
     val enableOutgoingUtp: Boolean = true,
     val enableIncomingTcp: Boolean = true,
     val enableOutgoingTcp: Boolean = true,
+    val mixedModeAlgorithm: Int = MIXED_MODE_PREFER_TCP,
 
-    // 2. Adaptive Protocol Encryption: Prefers RC4 stream encryption to evade DPI, while allowing PE/Plaintext fallback so 100% of swarm peers can connect
+    // 3. Message Stream Encryption (MSE / PE) & Anti-DPI Protocol Obfuscation
     val outEncPolicy: Int = ENC_POLICY_ENABLED,
     val inEncPolicy: Int = ENC_POLICY_ENABLED,
     val allowedEncLevel: Int = ENC_LEVEL_BOTH,
     val preferRc4: Boolean = true,
 
-    // 3. High Throughput & Rapid Peer Acquisition (Aria2-like Swarm Aggressiveness)
+    // 4. High Throughput & Rapid Peer Acquisition (Aria2-like Swarm Aggressiveness)
     val connectionsLimit: Int = 500,
     val maxPeerlistSize: Int = 4000,
     val torrentConnectBoost: Int = 100,
@@ -37,24 +44,24 @@ data class TorrentSessionConfig(
     val recvSocketBufferSize: Int = 2097152, // 2 MB
     val aioThreads: Int = 4,
 
-    // 4. Parallel Tracker Saturation (Announce to ALL Trackers & Tiers concurrently)
+    // 5. Parallel Tracker Saturation (Announce to ALL Trackers & Tiers concurrently)
     val announceToAllTrackers: Boolean = true,
     val announceToAllTiers: Boolean = true,
     val trackerCompletionTimeout: Int = 10,
     val trackerReceiveTimeout: Int = 8,
     val stopTrackerTimeout: Int = 2,
 
-    // 5. Peer Discovery & DHT Bootstrap Nodes
+    // 6. Peer Discovery & DHT Bootstrap Nodes
     val enableDht: Boolean = true,
     val enableLsd: Boolean = true,
     val enablePex: Boolean = true,
     val dhtBootstrapNodes: String = "router.bittorrent.com:6881,router.utorrent.com:6881,dht.transmissionbt.com:6881,dht.aelitis.com:6881,dht.libtorrent.org:25401",
 
-    // 6. Active Limits & Identity
+    // 7. Active Limits & Identity
     val activeDownloads: Int = 20,
     val activeSeeds: Int = 20,
     val activeLimit: Int = 40,
-    val userAgent: String = "SourZap/2.6.7 libtorrent4j/2.1.0"
+    val userAgent: String = "SourZap/2.7.0 libtorrent4j/2.1.0"
 ) {
     /**
      * Builds and returns a new [SettingsPack] with all anti-censorship and throughput options applied.
@@ -69,13 +76,19 @@ data class TorrentSessionConfig(
      * Applies this configuration to an existing [SettingsPack].
      */
     fun applyTo(pack: SettingsPack) {
-        // Dual transport (TCP + uTP)
+        // Dynamic Listen Interfaces & NAT Traversal
+        pack.setString(settings_pack.string_types.listen_interfaces.swigValue(), listenInterfaces)
+        pack.setBoolean(settings_pack.bool_types.enable_upnp.swigValue(), enableUpnp)
+        pack.setBoolean(settings_pack.bool_types.enable_natpmp.swigValue(), enableNatpmp)
+
+        // Transport & mixed mode algorithm (prefer TCP to avoid uTP LEDBAT stalling)
         pack.setBoolean(settings_pack.bool_types.enable_incoming_utp.swigValue(), enableIncomingUtp)
         pack.setBoolean(settings_pack.bool_types.enable_outgoing_utp.swigValue(), enableOutgoingUtp)
         pack.setBoolean(settings_pack.bool_types.enable_incoming_tcp.swigValue(), enableIncomingTcp)
         pack.setBoolean(settings_pack.bool_types.enable_outgoing_tcp.swigValue(), enableOutgoingTcp)
+        pack.setInteger(settings_pack.int_types.mixed_mode_algorithm.swigValue(), mixedModeAlgorithm)
 
-        // Protocol encryption
+        // Protocol encryption (MSE / PE)
         pack.setInteger(settings_pack.int_types.out_enc_policy.swigValue(), outEncPolicy)
         pack.setInteger(settings_pack.int_types.in_enc_policy.swigValue(), inEncPolicy)
         pack.setInteger(settings_pack.int_types.allowed_enc_level.swigValue(), allowedEncLevel)
@@ -118,9 +131,23 @@ data class TorrentSessionConfig(
         const val ENC_POLICY_ENABLED = 1
         const val ENC_POLICY_FORCED = 2
 
+        const val PE_DISABLED = ENC_POLICY_DISABLED
+        const val PE_ENABLED = ENC_POLICY_ENABLED
+        const val PE_FORCED = ENC_POLICY_FORCED
+
         const val ENC_LEVEL_PLAINTEXT = 1
         const val ENC_LEVEL_RC4 = 2
         const val ENC_LEVEL_BOTH = 3
+
+        const val PE_PLAINTEXT = ENC_LEVEL_PLAINTEXT
+        const val PE_RC4 = ENC_LEVEL_RC4
+        const val PE_BOTH = ENC_LEVEL_BOTH
+
+        const val MIXED_MODE_PREFER_TCP = 0
+        const val MIXED_MODE_PEER_PROPORTIONAL = 1
+
+        const val PREFER_TCP = MIXED_MODE_PREFER_TCP
+        const val PEER_PROPORTIONAL = MIXED_MODE_PEER_PROPORTIONAL
 
         val DEFAULT = TorrentSessionConfig()
     }

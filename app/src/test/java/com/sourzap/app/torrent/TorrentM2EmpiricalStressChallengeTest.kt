@@ -1,34 +1,19 @@
 package com.sourzap.app.torrent
 
-import android.content.ContentResolver
-import android.content.Context
-import android.content.ContextWrapper
 import android.content.Intent
-import android.net.Uri
-import android.os.Environment
-import com.sourzap.app.torrent.core.BencodeValidator
-import com.sourzap.app.torrent.core.DiscoveredTorrentFile
-import com.sourzap.app.torrent.core.DownloadsTorrentScanner
 import com.sourzap.app.torrent.core.TorrentFileValidator
 import com.sourzap.app.torrent.core.TorrentIntentParser
-import com.sourzap.app.torrent.core.TorrentStorageHelper
 import com.sourzap.app.torrent.core.TorrentValidationResult
 import com.sourzap.app.torrent.model.PendingTorrentIntent
-import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.IOException
-import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import kotlin.random.Random
@@ -37,19 +22,7 @@ import kotlin.random.Random
  * Empirical Adversarial Challenger Test Suite for Milestone 2 and M1 Refinements in SourZap.
  *
  * Exhaustively stress-tests:
- * 1. [DownloadsTorrentScanner]:
- *    - Filesystem directory scanning across multiple candidate roots
- *    - Deep folder recursion bounds (maxDepth = 2 recursion limit)
- *    - Case-insensitive extension matching (.torrent, .TORRENT, .Torrent, .tOrReNt)
- *    - Strict non-torrent exclusion (.txt, .iso, .png, .torrent.bak, .torrent_tmp)
- *    - Deduplication by lowercased filename preferring the newest lastModified timestamp
- *    - Descending sorting by lastModified across large randomized sets
- *    - Empty directories, missing directories, files treated as dirs, SecurityException resilience
- *    - [DiscoveredTorrentFile.readBytes] file handles vs SAF ContentResolver stream reading,
- *      including I/O exceptions, SecurityException, and null streams.
- *    - [DiscoveredTorrentFile.formattedSize] across boundary byte sizes.
- *
- * 2. [TorrentFileValidator] (Milestone 1 Refinements & Attack Vectors):
+ * 1. [TorrentFileValidator] (Milestone 1 Refinements & Attack Vectors):
  *    - Integer overflow attack vectors in bencode string length headers (> Int.MAX_VALUE, Long.MAX_VALUE)
  *    - Signed integer overflow checks (pos + length arithmetic safety)
  *    - Negative string lengths (-1:, -100:, -2147483648:)
@@ -62,7 +35,7 @@ import kotlin.random.Random
  *    - Web / Error payload detection (HTML doctypes, XML, JSON errors, Cloudflare, HTTP status lines)
  *    - SHA-1 infoHash accuracy matching raw bytes
  *
- * 3. File Picker MIME Contracts & SAF Stream Reading:
+ * 2. File Picker MIME Contracts & SAF Stream Reading:
  *    - System file picker MIME contract matching (application/x-bittorrent, application/x-torrent, application/octet-stream)
  *    - Intent parser MIME recognition (mixed case, variations)
  *    - SAF URI stream reading and display name resolution
@@ -82,33 +55,6 @@ class TorrentM2EmpiricalStressChallengeTest {
     @After
     fun tearDown() {
         tempDir.deleteRecursively()
-    }
-
-    // =========================================================================
-    // Mock Context for Scanner & SAF Tests
-    // =========================================================================
-
-    private class MockChallengerContext(
-        private val extDownloads: File? = null,
-        private val extFiles: File? = null,
-        private val internalFiles: File? = null,
-        private val mockResolver: ContentResolver? = null
-    ) : ContextWrapper(null) {
-        override fun getExternalFilesDir(type: String?): File? {
-            return if (type == null || type.contains("Download", ignoreCase = true)) {
-                extDownloads ?: extFiles ?: internalFiles
-            } else {
-                extFiles ?: internalFiles
-            }
-        }
-
-        override fun getFilesDir(): File {
-            return internalFiles ?: File(System.getProperty("java.io.tmpdir") ?: ".", "internal_files_fallback")
-        }
-
-        override fun getContentResolver(): ContentResolver {
-            return mockResolver ?: super.getContentResolver()
-        }
     }
 
     // =========================================================================
@@ -184,222 +130,7 @@ class TorrentM2EmpiricalStressChallengeTest {
     }
 
     // =========================================================================
-    // 1. DownloadsTorrentScanner - Deep Recursion, Case & Deduplication Stress
-    // =========================================================================
-
-    @Test
-    fun testScanner_BoundedRecursionStopsAtMaxDepth2() = runBlocking {
-        // Hierarchy:
-        // root (depth 0) -> level1 (depth 1) -> level2 (depth 2) -> level3 (depth 3) -> level4 (depth 4)
-        val rootDir = File(tempDir, "DownloadsRoot").apply { mkdirs() }
-        val level1 = File(rootDir, "L1").apply { mkdirs() }
-        val level2 = File(level1, "L2").apply { mkdirs() }
-        val level3 = File(level2, "L3").apply { mkdirs() }
-        val level4 = File(level3, "L4").apply { mkdirs() }
-
-        // Place torrents at each depth level
-        val f0 = File(rootDir, "root_file.torrent").apply { writeText("dummy") }
-        val f1 = File(level1, "level1_file.torrent").apply { writeText("dummy") }
-        val f2 = File(level2, "level2_file.torrent").apply { writeText("dummy") }
-        val f3 = File(level3, "level3_file_too_deep.torrent").apply { writeText("dummy") }
-        val f4 = File(level4, "level4_file_too_deep.torrent").apply { writeText("dummy") }
-
-        val mockContext = MockChallengerContext(extDownloads = rootDir, internalFiles = rootDir)
-        val results = DownloadsTorrentScanner.scanDownloads(mockContext)
-        val discoveredNames = results.map { it.name.lowercase() }
-
-        assertTrue("Depth 0 file must be discovered", discoveredNames.contains("root_file.torrent"))
-        assertTrue("Depth 1 file must be discovered", discoveredNames.contains("level1_file.torrent"))
-        assertTrue("Depth 2 file must be discovered", discoveredNames.contains("level2_file.torrent"))
-        assertFalse("Depth 3 file must NOT be discovered due to maxDepth=2 bound", discoveredNames.contains("level3_file_too_deep.torrent"))
-        assertFalse("Depth 4 file must NOT be discovered due to maxDepth=2 bound", discoveredNames.contains("level4_file_too_deep.torrent"))
-    }
-
-    @Test
-    fun testScanner_CaseInsensitivityAcrossAllExtensions() = runBlocking {
-        val rootDir = File(tempDir, "CaseTestDir").apply { mkdirs() }
-
-        File(rootDir, "test1.torrent").writeText("content")
-        File(rootDir, "test2.TORRENT").writeText("content")
-        File(rootDir, "test3.Torrent").writeText("content")
-        File(rootDir, "test4.tOrReNt").writeText("content")
-        File(rootDir, "test5.toRRENT").writeText("content")
-
-        // Exclusions:
-        File(rootDir, "test6.torrent.bak").writeText("content")
-        File(rootDir, "test7.torrent_tmp").writeText("content")
-        File(rootDir, "test8.not_torrent").writeText("content")
-        File(rootDir, "torrent").writeText("content")
-
-        val mockContext = MockChallengerContext(extDownloads = rootDir, internalFiles = rootDir)
-        val results = DownloadsTorrentScanner.scanDownloads(mockContext)
-
-        assertEquals("Must discover exactly 5 torrent files matching all case variants", 5, results.size)
-        val discoveredNames = results.map { it.name.lowercase() }.toSet()
-        assertTrue(discoveredNames.contains("test1.torrent"))
-        assertTrue(discoveredNames.contains("test2.torrent"))
-        assertTrue(discoveredNames.contains("test3.torrent"))
-        assertTrue(discoveredNames.contains("test4.torrent"))
-        assertTrue(discoveredNames.contains("test5.torrent"))
-    }
-
-    @Test
-    fun testScanner_ComplexMultiDirectoryDeduplicationPrefersLatestTimestamp() = runBlocking {
-        val extDir = File(tempDir, "ExternalDownloads").apply { mkdirs() }
-        val sourzapDir = File(extDir, "SourZap").apply { mkdirs() }
-        val internalDir = File(tempDir, "InternalFiles").apply { mkdirs() }
-
-        // 3 duplicate versions of "linux_distro.torrent" across different folders and casing
-        val older = File(extDir, "linux_distro.torrent").apply {
-            writeText("older")
-            setLastModified(1000000L)
-        }
-        val newest = File(sourzapDir, "LINUX_DISTRO.TORRENT").apply {
-            writeText("newest")
-            setLastModified(5000000L)
-        }
-        val middle = File(internalDir, "Linux_Distro.Torrent").apply {
-            writeText("middle")
-            setLastModified(3000000L)
-        }
-
-        // Another unique file
-        val unique = File(extDir, "unique_arch.torrent").apply {
-            writeText("arch")
-            setLastModified(2000000L)
-        }
-
-        val mockContext = MockChallengerContext(
-            extDownloads = extDir,
-            extFiles = sourzapDir,
-            internalFiles = internalDir
-        )
-
-        val results = DownloadsTorrentScanner.scanDownloads(mockContext)
-
-        assertEquals("Must deduplicate 3 duplicate copies down to 1, plus 1 unique file = 2 items", 2, results.size)
-        val distroItem = results.find { it.name.equals("linux_distro.torrent", ignoreCase = true) }
-        assertNotNull("linux_distro.torrent must be present", distroItem)
-        assertEquals("Deduplicated file must retain newest timestamp (5000000L)", newest.lastModified(), distroItem!!.lastModified)
-        assertEquals("Deduplicated file must point to newest file", newest.absolutePath, distroItem.file?.absolutePath)
-    }
-
-    @Test
-    fun testScanner_StrictDescendingSortAcrossLargeRandomSet() = runBlocking {
-        val scanDir = File(tempDir, "LargeSet").apply { mkdirs() }
-        val count = 50
-        val baseTime = 1000000000L
-
-        for (i in 0 until count) {
-            val file = File(scanDir, "file_$i.torrent")
-            file.writeText("data $i")
-            val randomOffset = Random.nextLong(1000L, 100000000L)
-            file.setLastModified(baseTime + randomOffset)
-        }
-
-        val mockContext = MockChallengerContext(extDownloads = scanDir, internalFiles = scanDir)
-        val results = DownloadsTorrentScanner.scanDownloads(mockContext)
-
-        assertEquals("All $count files must be discovered", count, results.size)
-        for (i in 0 until results.size - 1) {
-            assertTrue(
-                "Result index $i (${results[i].lastModified}) must be >= index ${i + 1} (${results[i + 1].lastModified})",
-                results[i].lastModified >= results[i + 1].lastModified
-            )
-        }
-    }
-
-    @Test
-    fun testScanner_InaccessibleEmptyAndNonExistentDirectoriesResilience() = runBlocking {
-        val nonExistent = File(tempDir, "does_not_exist_${System.currentTimeMillis()}")
-        val emptyDir = File(tempDir, "empty_dir").apply { mkdirs() }
-        val aFileInsteadOfDir = File(tempDir, "regular_file.txt").apply { writeText("not a dir") }
-
-        val mockContext = MockChallengerContext(
-            extDownloads = nonExistent,
-            extFiles = emptyDir,
-            internalFiles = aFileInsteadOfDir
-        )
-
-        val results = DownloadsTorrentScanner.scanDownloads(mockContext)
-        assertNotNull("Results list must never be null", results)
-        assertTrue("Results must be empty for invalid/empty candidate directories", results.isEmpty())
-    }
-
-    // =========================================================================
-    // 2. DiscoveredTorrentFile - FormattedSize & ReadBytes Stream Robustness
-    // =========================================================================
-
-    @Test
-    fun testDiscoveredTorrentFile_FormattedSizeBoundaries() {
-        val zero = DiscoveredTorrentFile(name = "zero.torrent", size = 0L, lastModified = 0L)
-        assertEquals("0 B", zero.formattedSize)
-
-        val negative = DiscoveredTorrentFile(name = "neg.torrent", size = -50L, lastModified = 0L)
-        assertEquals("0 B", negative.formattedSize)
-
-        val b500 = DiscoveredTorrentFile(name = "b.torrent", size = 500L, lastModified = 0L)
-        assertEquals("500.0 B", b500.formattedSize)
-
-        val kb1 = DiscoveredTorrentFile(name = "kb.torrent", size = 1024L, lastModified = 0L)
-        assertEquals("1.0 KB", kb1.formattedSize)
-
-        val mb1 = DiscoveredTorrentFile(name = "mb.torrent", size = 1024L * 1024L, lastModified = 0L)
-        assertEquals("1.0 MB", mb1.formattedSize)
-
-        val gb1 = DiscoveredTorrentFile(name = "gb.torrent", size = 1024L * 1024L * 1024L, lastModified = 0L)
-        assertEquals("1.0 GB", gb1.formattedSize)
-
-        val tb1 = DiscoveredTorrentFile(name = "tb.torrent", size = 1024L * 1024L * 1024L * 1024L, lastModified = 0L)
-        assertEquals("1.0 TB", tb1.formattedSize)
-    }
-
-    @Test
-    fun testDiscoveredTorrentFile_ReadBytesFromRealFileSuccess() {
-        val torrentContent = createSingleFileTorrent("real.iso", 1000L)
-        val file = File(tempDir, "real.torrent").apply { writeBytes(torrentContent) }
-
-        val discovered = DiscoveredTorrentFile(
-            name = file.name,
-            size = file.length(),
-            lastModified = file.lastModified(),
-            file = file
-        )
-
-        val mockContext = MockChallengerContext(internalFiles = tempDir)
-        val readBytes = discovered.readBytes(mockContext)
-
-        assertNotNull("readBytes must return non-null for valid file", readBytes)
-        assertArrayEquals("readBytes must match original bytes", torrentContent, readBytes)
-    }
-
-    @Test
-    fun testDiscoveredTorrentFile_ReadBytesSafelyHandlesMissingFileAndExceptions() {
-        val nonExistent = File(tempDir, "deleted_file.torrent")
-        val discovered = DiscoveredTorrentFile(
-            name = nonExistent.name,
-            size = 500L,
-            lastModified = System.currentTimeMillis(),
-            file = nonExistent
-        )
-
-        val mockContext = MockChallengerContext(internalFiles = tempDir)
-        val readBytes = discovered.readBytes(mockContext)
-        assertNull("readBytes must return null when file does not exist", readBytes)
-
-        // Neither file nor uri provided
-        val emptyDiscovered = DiscoveredTorrentFile(
-            name = "empty.torrent",
-            size = 0L,
-            lastModified = 0L,
-            file = null,
-            uri = null
-        )
-        assertNull("readBytes must return null when both file and uri are null", emptyDiscovered.readBytes(mockContext))
-    }
-
-    // =========================================================================
-    // 3. TorrentFileValidator - Integer Overflow Attack Vectors & Bencode Fuzzing
+    // 1. TorrentFileValidator - Integer Overflow Attack Vectors & Bencode Fuzzing
     // =========================================================================
 
     @Test
@@ -500,7 +231,7 @@ class TorrentM2EmpiricalStressChallengeTest {
     }
 
     // =========================================================================
-    // 4. TorrentFileValidator - Multi-File Edge Cases & Refinements
+    // 2. TorrentFileValidator - Multi-File Edge Cases & Refinements
     // =========================================================================
 
     @Test
@@ -612,7 +343,7 @@ class TorrentM2EmpiricalStressChallengeTest {
     }
 
     // =========================================================================
-    // 5. TorrentFileValidator - Web / Error Payload Detection
+    // 3. TorrentFileValidator - Web / Error Payload Detection
     // =========================================================================
 
     @Test
@@ -634,7 +365,7 @@ class TorrentM2EmpiricalStressChallengeTest {
     }
 
     // =========================================================================
-    // 6. MIME Contracts & SAF URI Stream Reading
+    // 4. MIME Contracts & SAF URI Stream Reading
     // =========================================================================
 
     @Test

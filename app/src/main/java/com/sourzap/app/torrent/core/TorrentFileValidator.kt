@@ -1,5 +1,6 @@
 package com.sourzap.app.torrent.core
 
+import com.sourzap.app.torrent.model.PreDownloadFileItem
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -15,7 +16,8 @@ sealed class TorrentValidationResult {
         val pieceLength: Int,
         val pieceCount: Int,
         val infoHash: String?,
-        val fileCount: Int = 1
+        val fileCount: Int = 1,
+        val files: List<PreDownloadFileItem> = emptyList()
     ) : TorrentValidationResult()
 
     data class Invalid(
@@ -32,6 +34,8 @@ object BencodeValidator {
     fun validate(bytes: ByteArray?): TorrentValidationResult = TorrentFileValidator.validate(bytes)
     fun validate(file: File): TorrentValidationResult = TorrentFileValidator.validate(file)
     fun isValidTorrent(bytes: ByteArray?): Boolean = TorrentFileValidator.isValidTorrent(bytes)
+    fun extractFiles(bytes: ByteArray?): List<PreDownloadFileItem> = TorrentFileValidator.extractFiles(bytes)
+    fun extractFiles(file: File): List<PreDownloadFileItem> = TorrentFileValidator.extractFiles(file)
 }
 
 /**
@@ -48,6 +52,16 @@ object TorrentFileValidator {
 
     fun isValidTorrent(bytes: ByteArray?): Boolean {
         return validate(bytes) is TorrentValidationResult.Valid
+    }
+
+    fun extractFiles(bytes: ByteArray?): List<PreDownloadFileItem> {
+        val result = validate(bytes)
+        return (result as? TorrentValidationResult.Valid)?.files ?: emptyList()
+    }
+
+    fun extractFiles(file: File): List<PreDownloadFileItem> {
+        val result = validate(file)
+        return (result as? TorrentValidationResult.Valid)?.files ?: emptyList()
     }
 
     fun validate(file: File): TorrentValidationResult {
@@ -200,6 +214,7 @@ object TorrentFileValidator {
         val lengthVal = infoVal.entries["length"]
         val filesVal = infoVal.entries["files"]
 
+        val fileItems = mutableListOf<PreDownloadFileItem>()
         var totalSize = 0L
         var isMultiFile = false
         var fileCount = 1
@@ -238,7 +253,7 @@ object TorrentFileValidator {
                         isHtmlPayload = false
                     )
                 }
-                val pathElem = fileElem.entries["path"]
+                val pathElem = fileElem.entries["path.utf-8"] ?: fileElem.entries["path"]
                 if (pathElem == null || pathElem !is BencodeValue.BList || pathElem.values.isEmpty()) {
                     return TorrentValidationResult.Invalid(
                         reason = "Invalid file path",
@@ -246,7 +261,19 @@ object TorrentFileValidator {
                         isHtmlPayload = false
                     )
                 }
+                val segments = pathElem.values.mapNotNull {
+                    (it as? BencodeValue.BString)?.asUtf8String()
+                }
+                val relativePath = if (segments.isNotEmpty()) segments.joinToString("/") else "file_$idx"
                 sumSize += fLen.value
+                fileItems.add(
+                    PreDownloadFileItem(
+                        index = idx,
+                        path = relativePath,
+                        size = fLen.value,
+                        isSelected = true
+                    )
+                )
             }
             totalSize = sumSize
         } else if (lengthVal != null) {
@@ -260,6 +287,14 @@ object TorrentFileValidator {
             isMultiFile = false
             fileCount = 1
             totalSize = lengthVal.value
+            fileItems.add(
+                PreDownloadFileItem(
+                    index = 0,
+                    path = name,
+                    size = totalSize,
+                    isSelected = true
+                )
+            )
         } else {
             return TorrentValidationResult.Invalid(
                 reason = "Missing length or files",
@@ -280,7 +315,8 @@ object TorrentFileValidator {
             pieceLength = pieceLength,
             pieceCount = pieceCount,
             infoHash = infoHash,
-            fileCount = fileCount
+            fileCount = fileCount,
+            files = fileItems
         )
     }
 

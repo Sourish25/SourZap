@@ -1,5 +1,6 @@
 package com.sourzap.app.torrent.model
 
+import java.io.File
 import java.util.Locale
 
 /**
@@ -287,3 +288,121 @@ data class TorrentSessionStats(
     val progressPercent: Int
         get() = (aggregateProgress * 100).toInt().coerceIn(0, 100)
 }
+
+/**
+ * Entry representing a file extracted before download begins.
+ */
+data class PreDownloadFileItem(
+    val index: Int,
+    val path: String,
+    val size: Long,
+    val isSelected: Boolean = true
+) {
+    val fileName: String
+        get() = path.substringAfterLast('/').substringAfterLast('\\')
+
+    val formattedSize: String
+        get() = TorrentItem.formatFileSize(size)
+}
+
+/**
+ * State representing a pre-download confirmation and file selection session.
+ */
+data class PreDownloadState(
+    val torrentSource: TorrentSource,
+    val name: String,
+    val files: List<PreDownloadFileItem>,
+    val totalSize: Long,
+    val selectedSize: Long,
+    val targetDirectory: File,
+    val availableDiskSpace: Long = 0L
+) {
+    val selectedCount: Int
+        get() = files.count { it.isSelected }
+
+    val totalCount: Int
+        get() = files.size
+
+    val allSelected: Boolean
+        get() = files.isNotEmpty() && files.all { it.isSelected }
+
+    val noneSelected: Boolean
+        get() = files.all { !it.isSelected }
+
+    val isDownloadEnabled: Boolean
+        get() = files.any { it.isSelected }
+
+    val hasInsufficientSpace: Boolean
+        get() = availableDiskSpace > 0L && selectedSize > availableDiskSpace
+
+    val formattedTotalSize: String
+        get() = TorrentItem.formatFileSize(totalSize)
+
+    val formattedSelectedSize: String
+        get() = TorrentItem.formatFileSize(selectedSize)
+
+    val formattedFreeSpace: String
+        get() = TorrentItem.formatFileSize(availableDiskSpace)
+
+    fun toggleFile(index: Int): PreDownloadState {
+        val updated = files.map { file ->
+            if (file.index == index) file.copy(isSelected = !file.isSelected) else file
+        }
+        val newSelectedSize = updated.filter { it.isSelected }.sumOf { it.size }
+        return copy(files = updated, selectedSize = newSelectedSize)
+    }
+
+    fun setFileSelected(index: Int, selected: Boolean): PreDownloadState {
+        val updated = files.map { file ->
+            if (file.index == index) file.copy(isSelected = selected) else file
+        }
+        val newSelectedSize = updated.filter { it.isSelected }.sumOf { it.size }
+        return copy(files = updated, selectedSize = newSelectedSize)
+    }
+
+    fun selectAll(): PreDownloadState {
+        val updated = files.map { it.copy(isSelected = true) }
+        val newSelectedSize = updated.sumOf { it.size }
+        return copy(files = updated, selectedSize = newSelectedSize)
+    }
+
+    fun deselectAll(): PreDownloadState {
+        val updated = files.map { it.copy(isSelected = false) }
+        return copy(files = updated, selectedSize = 0L)
+    }
+
+    fun withTargetDirectory(newDir: File): PreDownloadState {
+        val freeSpace = try { newDir.usableSpace } catch (_: Throwable) { 0L }
+        return copy(targetDirectory = newDir, availableDiskSpace = freeSpace)
+    }
+
+    fun toPriorities(): List<Priority> {
+        return files.map { if (it.isSelected) Priority.NORMAL else Priority.IGNORE }
+    }
+
+    companion object {
+        fun create(
+            torrentSource: TorrentSource,
+            name: String,
+            files: List<PreDownloadFileItem>,
+            targetDirectory: File,
+            availableDiskSpace: Long = 0L
+        ): PreDownloadState {
+            val total = files.sumOf { it.size }
+            val selected = files.filter { it.isSelected }.sumOf { it.size }
+            val free = if (availableDiskSpace > 0L) availableDiskSpace else {
+                try { targetDirectory.usableSpace } catch (_: Throwable) { 0L }
+            }
+            return PreDownloadState(
+                torrentSource = torrentSource,
+                name = name,
+                files = files,
+                totalSize = total,
+                selectedSize = selected,
+                targetDirectory = targetDirectory,
+                availableDiskSpace = free
+            )
+        }
+    }
+}
+

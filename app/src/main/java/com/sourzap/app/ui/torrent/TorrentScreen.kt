@@ -86,13 +86,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sourzap.app.SourZapApp
-import com.sourzap.app.torrent.core.DiscoveredTorrentFile
-import com.sourzap.app.torrent.core.DownloadsTorrentScanner
 import com.sourzap.app.torrent.core.TorrentFileValidator
 import com.sourzap.app.torrent.core.TorrentIntentParser
 import com.sourzap.app.torrent.core.TorrentStorageHelper
 import com.sourzap.app.torrent.core.TorrentValidationResult
 import com.sourzap.app.torrent.model.PendingTorrentIntent
+import com.sourzap.app.torrent.model.PreDownloadFileItem
+import com.sourzap.app.torrent.model.PreDownloadState
 import com.sourzap.app.torrent.model.Priority
 import com.sourzap.app.torrent.model.TorrentFileItem
 import com.sourzap.app.torrent.model.TorrentFilter
@@ -105,6 +105,7 @@ import com.sourzap.app.ui.components.AdaptiveContentContainer
 import com.sourzap.app.ui.components.ExpressiveCard
 import com.sourzap.app.ui.components.ExpressiveChip
 import com.sourzap.app.ui.components.ExpressiveWavyProgressIndicator
+import com.sourzap.app.ui.torrent.PreDownloadSelectionDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -137,6 +138,8 @@ fun TorrentScreen() {
     var prefilledTorrentBytes by remember { mutableStateOf<ByteArray?>(null) }
     var prefilledTorrentFileName by remember { mutableStateOf("") }
 
+    var preDownloadState by remember { mutableStateOf<PreDownloadState?>(null) }
+
     LaunchedEffect(pendingTorrentIntent) {
         pendingTorrentIntent?.let { intent ->
             when (intent) {
@@ -148,11 +151,23 @@ fun TorrentScreen() {
                     showAddDialog = true
                 }
                 is PendingTorrentIntent.TorrentFile -> {
-                    prefilledMagnet = ""
-                    prefilledName = ""
-                    prefilledTorrentBytes = intent.bytes
-                    prefilledTorrentFileName = intent.fileName
-                    showAddDialog = true
+                    val validation = TorrentFileValidator.validate(intent.bytes)
+                    if (validation is TorrentValidationResult.Valid) {
+                        val defaultSaveDir = TorrentStorageHelper.getSaveDirectory(context)
+                        preDownloadState = PreDownloadState.create(
+                            torrentSource = TorrentSource.FileContent(intent.bytes, intent.fileName.ifBlank { validation.name }),
+                            name = validation.name,
+                            files = validation.files,
+                            targetDirectory = defaultSaveDir
+                        )
+                        showAddDialog = false
+                    } else {
+                        prefilledMagnet = ""
+                        prefilledName = ""
+                        prefilledTorrentBytes = intent.bytes
+                        prefilledTorrentFileName = intent.fileName
+                        showAddDialog = true
+                    }
                 }
             }
         }
@@ -331,26 +346,66 @@ fun TorrentScreen() {
                 }
             },
             onAddFile = { fileBytes, fileName, saveDir ->
+                val validation = TorrentFileValidator.validate(fileBytes)
+                if (validation is TorrentValidationResult.Valid) {
+                    preDownloadState = PreDownloadState.create(
+                        torrentSource = TorrentSource.FileContent(fileBytes, fileName.ifBlank { validation.name }),
+                        name = validation.name,
+                        files = validation.files,
+                        targetDirectory = saveDir
+                    )
+                    showAddDialog = false
+                } else if (validation is TorrentValidationResult.Invalid) {
+                    val errorMsg = if (validation.isHtmlPayload) {
+                        "Cannot load .torrent: The file appears to be a web page or error response (HTML/XML/JSON), not a valid .torrent file."
+                    } else {
+                        "Cannot load .torrent: ${validation.detailedMessage}"
+                    }
+                    Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                }
+            }
+        )
+    }
+
+    if (preDownloadState != null) {
+        val state = preDownloadState!!
+        PreDownloadSelectionDialog(
+            state = state,
+            onDismiss = {
+                preDownloadState = null
+                prefilledTorrentBytes = null
+                prefilledTorrentFileName = ""
+                app.clearPendingTorrentIntent()
+            },
+            onToggleFile = { fileIndex ->
+                preDownloadState = preDownloadState?.toggleFile(fileIndex)
+            },
+            onSelectAll = {
+                preDownloadState = preDownloadState?.selectAll()
+            },
+            onDeselectAll = {
+                preDownloadState = preDownloadState?.deselectAll()
+            },
+            onChangeSaveDir = { newDir ->
+                preDownloadState = preDownloadState?.withTargetDirectory(newDir)
+            },
+            onConfirmDownload = { confirmedState ->
                 scope.launch {
                     try {
-                        val validation = TorrentFileValidator.validate(fileBytes)
-                        if (validation is TorrentValidationResult.Invalid) {
-                            withContext(Dispatchers.Main) {
-                                val errorMsg = if (validation.isHtmlPayload) {
-                                    "Cannot load .torrent: The file appears to be a web page or error response (HTML/XML/JSON), not a valid .torrent file."
-                                } else {
-                                    "Cannot load .torrent: ${validation.detailedMessage}"
-                                }
-                                Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
-                            }
-                            return@launch
-                        }
-
-                        val source = TorrentSource.FileContent(fileBytes, fileName)
-                        torrentManager.addTorrent(source, saveDir)
+                        val priorities = confirmedState.toPriorities()
+                        torrentManager.addTorrent(
+                            confirmedState.torrentSource,
+                            confirmedState.targetDirectory,
+                            priorities
+                        )
                         TorrentDownloadService.start(context)
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(context, "Torrent file added successfully", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                context,
+                                "Download started for ${confirmedState.selectedCount} files",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            preDownloadState = null
                             showAddDialog = false
                             prefilledMagnet = ""
                             prefilledName = ""
@@ -360,8 +415,11 @@ fun TorrentScreen() {
                         }
                     } catch (e: Exception) {
                         withContext(Dispatchers.Main) {
-                            val msg = e.message ?: "Unknown error"
-                            Toast.makeText(context, "Error loading .torrent: $msg", Toast.LENGTH_LONG).show()
+                            Toast.makeText(
+                                context,
+                                "Error starting download: ${e.message}",
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
                     }
                 }
@@ -429,12 +487,15 @@ fun TorrentScreen() {
     }
 
     if (inspectingTorrent != null) {
-        val item = inspectingTorrent!!
+        val currentItem = torrents.firstOrNull { it.id == inspectingTorrent!!.id } ?: inspectingTorrent!!
         TorrentFilesDialog(
-            item = item,
+            item = currentItem,
             onDismiss = { inspectingTorrent = null },
             onSetPriority = { fileIndex, priority ->
-                torrentManager.setFilePriority(item.id, fileIndex, priority)
+                torrentManager.setFilePriority(currentItem.id, fileIndex, priority)
+            },
+            onSetAllPriorities = { priorities ->
+                torrentManager.setFilePriorities(currentItem.id, priorities)
             }
         )
     }
@@ -1021,25 +1082,7 @@ private fun AddTorrentDialog(
     }
     var selectedSaveDir by remember { mutableStateOf(defaultSaveDir) }
 
-    val scope = rememberCoroutineScope()
-    var discoveredTorrents by remember { mutableStateOf<List<DiscoveredTorrentFile>>(emptyList()) }
-    var isScanningDownloads by remember { mutableStateOf(false) }
-
-    fun scanForTorrents() {
-        scope.launch {
-            isScanningDownloads = true
-            try {
-                discoveredTorrents = DownloadsTorrentScanner.scanDownloads(context)
-            } catch (_: Exception) {
-                discoveredTorrents = emptyList()
-            } finally {
-                isScanningDownloads = false
-            }
-        }
-    }
-
     LaunchedEffect(Unit) {
-        scanForTorrents()
         if (magnetInput.isBlank() && loadedFileBytes == null) {
             val clipText = clipboard.getText()?.text?.trim()
             if (!clipText.isNullOrBlank() && clipText.startsWith("magnet:?")) {
@@ -1062,9 +1105,7 @@ private fun AddTorrentDialog(
                         Toast.makeText(context, "Invalid .torrent file: ${validation.detailedMessage}", Toast.LENGTH_LONG).show()
                     } else {
                         val fileName = TorrentIntentParser.resolveDisplayName(context.contentResolver, uri)
-                        loadedFileBytes = bytes
-                        loadedFileName = fileName
-                        magnetInput = ""
+                        onAddFile(bytes, fileName, selectedSaveDir)
                     }
                 }
             } catch (e: Exception) {
@@ -1203,134 +1244,6 @@ private fun AddTorrentDialog(
                     }
                 }
 
-                // In-Dialog Downloads Quick-Picker Section
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    Icons.AutoMirrored.Rounded.InsertDriveFile,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = "Discovered in Downloads",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-
-                            IconButton(
-                                onClick = { scanForTorrents() },
-                                modifier = Modifier.size(26.dp)
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Refresh,
-                                    contentDescription = "Refresh Downloads",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-
-                        if (isScanningDownloads && discoveredTorrents.isEmpty()) {
-                            Text(
-                                text = "Scanning Downloads directory...",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            )
-                        } else if (discoveredTorrents.isEmpty()) {
-                            Text(
-                                text = "No .torrent files found in Downloads",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            )
-                        } else {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 140.dp)
-                                    .verticalScroll(rememberScrollState()),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                discoveredTorrents.forEach { discovered ->
-                                    val isSelected = loadedFileName == discovered.name
-                                    Surface(
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                                                else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
-                                        border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                val bytes = discovered.readBytes(context)
-                                                if (bytes != null && bytes.isNotEmpty()) {
-                                                    loadedFileBytes = bytes
-                                                    loadedFileName = discovered.name
-                                                    magnetInput = ""
-                                                } else {
-                                                    Toast.makeText(context, "Failed to read ${discovered.name}", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 10.dp, vertical = 7.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = discovered.name,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                    fontSize = 12.5.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                                Text(
-                                                    text = discovered.formattedSize,
-                                                    fontSize = 10.5.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                            if (isSelected) {
-                                                Icon(
-                                                    Icons.Rounded.Check,
-                                                    contentDescription = "Selected",
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1375,16 +1288,31 @@ private fun AddTorrentDialog(
 private fun TorrentFilesDialog(
     item: TorrentItem,
     onDismiss: () -> Unit,
-    onSetPriority: (fileIndex: Int, priority: Priority) -> Unit
+    onSetPriority: (fileIndex: Int, priority: Priority) -> Unit,
+    onSetAllPriorities: (priorities: List<Priority>) -> Unit
 ) {
+    val selectedFilesCount = item.files.count { !it.isSkipped }
+    val totalFilesCount = item.files.size
+    val selectedSize = item.files.filter { !it.isSkipped }.sumOf { it.size }
+    val totalSize = item.files.sumOf { it.size }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(
-                text = "Torrent Files (${item.files.size})",
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Torrent Files ($totalFilesCount)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+                if (totalFilesCount > 0) {
+                    Text(
+                        text = "Selected: $selectedFilesCount/$totalFilesCount files (${TorrentItem.formatFileSize(selectedSize)} / ${TorrentItem.formatFileSize(totalSize)})",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         },
         text = {
             if (item.files.isEmpty()) {
@@ -1394,47 +1322,85 @@ private fun TorrentFilesDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(320.dp),
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(item.files, key = { it.index }) { file ->
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
-                            modifier = Modifier.fillMaxWidth()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = {
+                                onSetAllPriorities(item.files.map { Priority.NORMAL })
+                            },
+                            enabled = selectedFilesCount < totalFilesCount,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                         ) {
-                            Row(
+                            Text("Select All", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        TextButton(
+                            onClick = {
+                                onSetAllPriorities(item.files.map { Priority.IGNORE })
+                            },
+                            enabled = selectedFilesCount > 0,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text("Deselect All", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(300.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(item.files, key = { it.index }) { file ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(10.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .clickable {
+                                        val newPriority = if (file.isSkipped) Priority.NORMAL else Priority.IGNORE
+                                        onSetPriority(file.index, newPriority)
+                                    }
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = file.fileName,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = "${TorrentItem.formatFileSize(file.downloadedBytes)} / ${TorrentItem.formatFileSize(file.size)} • ${String.format(java.util.Locale.US, "%.0f%%", file.progress * 100f)}",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = file.fileName,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "${TorrentItem.formatFileSize(file.downloadedBytes)} / ${TorrentItem.formatFileSize(file.size)} • ${String.format(java.util.Locale.US, "%.0f%%", file.progress * 100f)}${if (file.isSkipped) " • Skipped" else ""}",
+                                            fontSize = 11.sp,
+                                            color = if (file.isSkipped) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    Checkbox(
+                                        checked = !file.isSkipped,
+                                        onCheckedChange = { checked ->
+                                            val priority = if (checked) Priority.NORMAL else Priority.IGNORE
+                                            onSetPriority(file.index, priority)
+                                        }
                                     )
                                 }
-
-                                Checkbox(
-                                    checked = !file.isSkipped,
-                                    onCheckedChange = { checked ->
-                                        val priority = if (checked) Priority.NORMAL else Priority.IGNORE
-                                        onSetPriority(file.index, priority)
-                                    }
-                                )
                             }
                         }
                     }
