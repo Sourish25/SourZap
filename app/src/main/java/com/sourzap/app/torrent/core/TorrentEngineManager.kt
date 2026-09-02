@@ -582,10 +582,54 @@ class LibtorrentEngineManager(
     private fun startTelemetryLoop() {
         telemetryJob?.cancel()
         telemetryJob = engineScope.launch {
+            var cycleCount = 0
+            var stalledCycleCount = 0
             while (isActive && isRunning.get()) {
                 try {
                     sessionManager.postSessionStats()
                     updateTorrentsAndStats()
+
+                    cycleCount++
+                    // Every 15 seconds, pulse active stalled torrents to discover and connect to new peers
+                    if (cycleCount % 15 == 0) {
+                        var hasStalled = false
+                        for ((_, handle) in torrentHandles) {
+                            try {
+                                val status = handle.status()
+                                val isPaused = isTorrentPaused(status)
+                                val state = status.state()
+                                if (!isPaused && state != TorrentStatus.State.CHECKING_FILES &&
+                                    state != TorrentStatus.State.CHECKING_RESUME_DATA &&
+                                    status.progress() < 1.0f
+                                ) {
+                                    if (status.downloadRate() == 0 || status.numPeers() < 3) {
+                                        hasStalled = true
+                                        // Aggressively force tracker announces across all tiers
+                                        try { handle.forceReannounce(0, -1) } catch (_: Throwable) { handle.forceReannounce() }
+                                        try { handle.forceDHTAnnounce() } catch (_: Throwable) {}
+
+                                        // Inject global public trackers if not already added
+                                        for (tr in TrackerInjector.ALL_CURATED_TRACKERS) {
+                                            try { handle.addTracker(AnnounceEntry(tr)) } catch (_: Throwable) {}
+                                        }
+                                    }
+                                }
+                            } catch (_: Throwable) {}
+                        }
+
+                        if (hasStalled) {
+                            stalledCycleCount += 15
+                            // If torrents remain stalled at 0 B/s for over 45 seconds, reopen network sockets
+                            if (stalledCycleCount >= 45) {
+                                stalledCycleCount = 0
+                                try {
+                                    sessionManager.reopenNetworkSockets()
+                                } catch (_: Throwable) {}
+                            }
+                        } else {
+                            stalledCycleCount = 0
+                        }
+                    }
                 } catch (e: Throwable) {
                     Log.w(TAG, "Error in telemetry loop", e)
                 }

@@ -37,6 +37,24 @@ object TrackerInjector {
         "https://tracker.leechshield.link:443/announce"
     )
 
+    val EXTRA_PUBLIC_TRACKERS = listOf(
+        "udp://tracker.opentrackr.org:1337/announce",
+        "udp://open.stealth.si:80/announce",
+        "udp://tracker.torrent.eu.org:451/announce",
+        "udp://open.demonii.com:1337/announce",
+        "udp://explodie.org:6969/announce",
+        "udp://tracker.coppersurfer.tk:6969/announce",
+        "udp://tracker.moeking.me:6969/announce",
+        "udp://opentracker.i2p.rocks:6969/announce",
+        "udp://tracker.tiny-vps.com:6969/announce",
+        "udp://tracker.dler.org:6969/announce",
+        "udp://p4p.arenabg.com:1337/announce",
+        "udp://tracker.srv00.com:6969/announce",
+        "http://tracker.opentrackr.org:1337/announce"
+    )
+
+    val ALL_CURATED_TRACKERS = HTTPS_PORT_443_TRACKERS + EXTRA_PUBLIC_TRACKERS
+
     /**
      * Injects curated Port-443 HTTPS trackers.
      * Note: In libtorrent4j, trackers are attached directly to active TorrentHandle instances
