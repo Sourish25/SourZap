@@ -229,7 +229,18 @@ class LibtorrentEngineManager(
                     pendingPrioritiesMap[infoHash] = filePriorities
                 }
 
-                sessionManager.download(uri, saveDir, null)
+                try {
+                    sessionManager.download(uri, saveDir, null)
+                } catch (e: LinkageError) {
+                    throw e
+                } catch (e: Throwable) {
+                    val existingHandle = findHandle(infoHash)
+                    if (existingHandle != null) {
+                        existingHandle.resume()
+                    } else {
+                        throw IllegalStateException("Failed to queue magnet download in BitTorrent session: ${e.message}", e)
+                    }
+                }
                 triggerRefresh()
                 infoHash
             }
@@ -277,9 +288,15 @@ class LibtorrentEngineManager(
                 )
                 torrentMetadataMap[infoHash] = meta
 
+                if (filePriorities != null && filePriorities.isNotEmpty()) {
+                    pendingPrioritiesMap[infoHash] = filePriorities
+                }
+
+                val totalFiles = try { torrentInfo.files().numFiles() } catch (_: Throwable) { torrentInfo.numFiles() }
                 val prioritiesArray = filePriorities?.map { it.toLibtorrentPriority() }?.toTypedArray()
+
                 try {
-                    if (prioritiesArray != null && prioritiesArray.isNotEmpty()) {
+                    if (prioritiesArray != null && prioritiesArray.size == totalFiles) {
                         sessionManager.download(torrentInfo, saveDir, null, prioritiesArray, null, null)
                     } else {
                         sessionManager.download(torrentInfo, saveDir)
@@ -287,8 +304,23 @@ class LibtorrentEngineManager(
                 } catch (e: LinkageError) {
                     throw e
                 } catch (e: Throwable) {
-                    throw IllegalStateException("Failed to queue .torrent download in BitTorrent session: ${e.message}", e)
+                    try {
+                        sessionManager.download(torrentInfo, saveDir)
+                    } catch (fallbackError: Throwable) {
+                        val existingHandle = findHandle(infoHash)
+                        if (existingHandle != null) {
+                            existingHandle.resume()
+                        } else {
+                            throw IllegalStateException("Failed to queue .torrent download in BitTorrent session: ${fallbackError.message ?: e.message}", fallbackError)
+                        }
+                    }
                 }
+
+                // If priorities were specified and handle is already created, apply priorities directly
+                if (filePriorities != null && filePriorities.isNotEmpty()) {
+                    setFilePriorities(infoHash, filePriorities)
+                }
+
                 triggerRefresh()
                 infoHash
             }
@@ -342,9 +374,15 @@ class LibtorrentEngineManager(
                 )
                 torrentMetadataMap[infoHash] = meta
 
+                if (filePriorities != null && filePriorities.isNotEmpty()) {
+                    pendingPrioritiesMap[infoHash] = filePriorities
+                }
+
+                val totalFiles = try { torrentInfo.files().numFiles() } catch (_: Throwable) { torrentInfo.numFiles() }
                 val prioritiesArray = filePriorities?.map { it.toLibtorrentPriority() }?.toTypedArray()
+
                 try {
-                    if (prioritiesArray != null && prioritiesArray.isNotEmpty()) {
+                    if (prioritiesArray != null && prioritiesArray.size == totalFiles) {
                         sessionManager.download(torrentInfo, saveDir, null, prioritiesArray, null, null)
                     } else {
                         sessionManager.download(torrentInfo, saveDir)
@@ -352,8 +390,23 @@ class LibtorrentEngineManager(
                 } catch (e: LinkageError) {
                     throw e
                 } catch (e: Throwable) {
-                    throw IllegalStateException("Failed to queue .torrent download in BitTorrent session: ${e.message}", e)
+                    try {
+                        sessionManager.download(torrentInfo, saveDir)
+                    } catch (fallbackError: Throwable) {
+                        val existingHandle = findHandle(infoHash)
+                        if (existingHandle != null) {
+                            existingHandle.resume()
+                        } else {
+                            throw IllegalStateException("Failed to queue .torrent download in BitTorrent session: ${fallbackError.message ?: e.message}", fallbackError)
+                        }
+                    }
                 }
+
+                // If priorities were specified and handle is already created, apply priorities directly
+                if (filePriorities != null && filePriorities.isNotEmpty()) {
+                    setFilePriorities(infoHash, filePriorities)
+                }
+
                 triggerRefresh()
                 infoHash
             }
@@ -578,6 +631,12 @@ class LibtorrentEngineManager(
             try {
                 handle.forceReannounce()
             } catch (_: Throwable) {}
+
+            // Apply pending priorities if available
+            val pending = pendingPrioritiesMap.remove(id)
+            if (pending != null && pending.isNotEmpty()) {
+                setFilePriorities(id, pending)
+            }
 
             // Asynchronously pre-resolve tracker hostnames via DoH
             engineScope.launch {
