@@ -13,3 +13,8 @@ local.properties
 *.apk
 !app-release.apk
 !app-debug.apk
+.agents/
+.kotlin/
+ORIGINAL_REQUEST.md
+PROJECT.md
+TEST_INFRA.md
