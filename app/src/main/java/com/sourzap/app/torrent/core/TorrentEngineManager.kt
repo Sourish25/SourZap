@@ -201,38 +201,12 @@ class LibtorrentEngineManager(
     override fun startSession(context: Context?) {
         if (isRunning.compareAndSet(false, true)) {
             try {
-                // 1. Launch embedded Local DPI Evasion Proxy on localhost
-                var proxyPort = 0
-                try {
-                    val proxy = LocalDpiProxyServer(vpnService = null, scope = engineScope)
-                    proxyPort = proxy.start()
-                    localDpiProxy = proxy
-                    Log.i(TAG, "Local DPI Evasion Proxy started on 127.0.0.1:$proxyPort")
-                } catch (e: Throwable) {
-                    Log.w(TAG, "Could not start embedded Local DPI Proxy, continuing with direct sockets", e)
-                }
-
                 sessionManager.addListener(alertListener)
                 val settingsPack = config.createSettingsPack()
-
-                // 2. Wire libtorrent HTTP CONNECT proxy through LocalDpiProxyServer for handshake desync
-                if (proxyPort > 0) {
-                    try {
-                        settingsPack.setInteger(settings_pack.int_types.proxy_type.swigValue(), settings_pack.proxy_type_t.http.swigValue())
-                        settingsPack.setString(settings_pack.string_types.proxy_hostname.swigValue(), "127.0.0.1")
-                        settingsPack.setInteger(settings_pack.int_types.proxy_port.swigValue(), proxyPort)
-                        settingsPack.setBoolean(settings_pack.bool_types.proxy_tracker_connections.swigValue(), true)
-                        settingsPack.setBoolean(settings_pack.bool_types.proxy_peer_connections.swigValue(), true)
-                        settingsPack.setBoolean(settings_pack.bool_types.proxy_hostnames.swigValue(), true)
-                    } catch (e: Throwable) {
-                        Log.w(TAG, "Error configuring proxy in settingsPack", e)
-                    }
-                }
-
                 val sessionParams = SessionParams(settingsPack)
                 sessionManager.start(sessionParams)
                 startTelemetryLoop()
-                Log.i(TAG, "BitTorrent native session started successfully with DPI evasion proxy ($proxyPort) and dynamic listen interfaces.")
+                Log.i(TAG, "BitTorrent native session started successfully with direct MSE encryption and dynamic listen interfaces.")
             } catch (e: Throwable) {
                 Log.e(TAG, "Failed to start BitTorrent session", e)
                 isRunning.set(false)
@@ -682,13 +656,16 @@ class LibtorrentEngineManager(
                                         try { handle.forceReannounce(0, -1) } catch (_: Throwable) { handle.forceReannounce() }
                                         try { handle.forceDHTAnnounce() } catch (_: Throwable) {}
 
-                                        // Inject global public trackers if not already added
-                                        for (tr in TrackerInjector.ALL_CURATED_TRACKERS) {
-                                            try { handle.addTracker(AnnounceEntry(tr)) } catch (_: Throwable) {}
-                                        }
-                                    }
-                                }
-                            } catch (_: Throwable) {}
+                                         // Inject global public trackers if not already added
+                                         for (tr in PRIORITY_LIVE_TRACKERS) {
+                                             try { handle.addTracker(AnnounceEntry(tr)) } catch (_: Throwable) {}
+                                         }
+                                         for (tr in TrackerInjector.ALL_CURATED_TRACKERS) {
+                                             try { handle.addTracker(AnnounceEntry(tr)) } catch (_: Throwable) {}
+                                         }
+                                     }
+                                 }
+                             } catch (_: Throwable) {}
                         }
 
                         if (hasStalled) {
@@ -738,17 +715,25 @@ class LibtorrentEngineManager(
                 torrentMetadataMap[id] = meta
             }
 
-            // Auto-inject 20+ verified HTTPS Port-443 trackers into the torrent handle
+            // 1. Auto-inject verified high-capacity live public trackers
+            for (tr in PRIORITY_LIVE_TRACKERS) {
+                try {
+                    handle.addTracker(AnnounceEntry(tr))
+                } catch (_: Throwable) {}
+            }
+
+            // 2. Also inject curated backup trackers
             for (tr in TrackerInjector.HTTPS_PORT_443_TRACKERS) {
                 try {
                     handle.addTracker(AnnounceEntry(tr))
                 } catch (_: Throwable) {}
             }
 
-            // Immediately force announce to all trackers
-            try {
-                handle.forceReannounce()
-            } catch (_: Throwable) {}
+            // Immediately force announce across all tracker tiers and DHT
+            try { handle.forceReannounce(0, -1) } catch (_: Throwable) {
+                try { handle.forceReannounce() } catch (_: Throwable) {}
+            }
+            try { handle.forceDHTAnnounce() } catch (_: Throwable) {}
 
             // Apply pending priorities if available
             val pending = pendingPrioritiesMap.remove(id)
@@ -1040,5 +1025,20 @@ class LibtorrentEngineManager(
 
     companion object {
         private const val TAG = "TorrentEngineManager"
+
+        val PRIORITY_LIVE_TRACKERS = listOf(
+            "udp://tracker.opentrackr.org:1337/announce",
+            "udp://open.stealth.si:80/announce",
+            "udp://open.demonii.com:1337/announce",
+            "udp://tracker.torrent.eu.org:451/announce",
+            "udp://explodie.org:6969/announce",
+            "http://tracker.opentrackr.org:1337/announce",
+            "http://nyaa.tracker.wf:7777/announce",
+            "http://open.acgnxtracker.com:80/announce",
+            "udp://zer0day.ch:1337/announce",
+            "udp://tracker.therarbg.to:6969/announce",
+            "udp://p4p.arenabg.com:1337/announce",
+            "udp://exodus.desync.com:6969/announce"
+        )
     }
 }

@@ -61,7 +61,7 @@ data class TorrentSessionConfig(
     val activeDownloads: Int = 20,
     val activeSeeds: Int = 20,
     val activeLimit: Int = 40,
-    val userAgent: String = "SourZap/2.7.2 libtorrent4j/2.1.0"
+    val userAgent: String = "SourZap/2.7.4 libtorrent4j/2.1.0"
 ) {
     /**
      * Builds and returns a new [SettingsPack] with all anti-censorship and throughput options applied.
