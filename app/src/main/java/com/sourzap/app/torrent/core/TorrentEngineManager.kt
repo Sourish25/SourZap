@@ -203,10 +203,24 @@ class LibtorrentEngineManager(
             try {
                 sessionManager.addListener(alertListener)
                 val settingsPack = config.createSettingsPack()
+
+                // 1. Bind purely to IPv4 port 6881 with ephemeral fallback (eliminates all IPv6 "Network unreachable" errors)
+                settingsPack.setString(settings_pack.string_types.listen_interfaces.swigValue(), "0.0.0.0:6881,0.0.0.0:0")
+
+                // 2. Force RC4 Message Stream Encryption (MSE / PE) to prevent ISP DPI from detecting BitTorrent or sending TCP RSTs
+                settingsPack.setInteger(settings_pack.int_types.out_enc_policy.swigValue(), TorrentSessionConfig.ENC_POLICY_FORCED)
+                settingsPack.setInteger(settings_pack.int_types.in_enc_policy.swigValue(), TorrentSessionConfig.ENC_POLICY_FORCED)
+                settingsPack.setInteger(settings_pack.int_types.allowed_enc_level.swigValue(), TorrentSessionConfig.ENC_LEVEL_BOTH)
+                settingsPack.setBoolean(settings_pack.bool_types.prefer_rc4.swigValue(), true)
+
+                // 3. Direct IP DHT bootstrap routers (immune to ISP DNS poisoning)
+                val directIpDhtNodes = "67.215.246.10:6881,87.98.162.88:6881,212.129.33.59:6881,185.157.221.247:25401,34.203.221.232:6881,82.221.103.244:6881,router.bittorrent.com:6881,dht.transmissionbt.com:6881,dht.libtorrent.org:25401"
+                settingsPack.setString(settings_pack.string_types.dht_bootstrap_nodes.swigValue(), directIpDhtNodes)
+
                 val sessionParams = SessionParams(settingsPack)
                 sessionManager.start(sessionParams)
                 startTelemetryLoop()
-                Log.i(TAG, "BitTorrent native session started successfully with direct MSE encryption and dynamic listen interfaces.")
+                Log.i(TAG, "BitTorrent native session started successfully with forced MSE encryption and pure IPv4 port 6881 interfaces.")
             } catch (e: Throwable) {
                 Log.e(TAG, "Failed to start BitTorrent session", e)
                 isRunning.set(false)
@@ -652,17 +666,8 @@ class LibtorrentEngineManager(
                                 ) {
                                     if (status.downloadRate() == 0 || status.numPeers() < 3) {
                                         hasStalled = true
-                                        // Aggressively force tracker announces across all tiers
-                                        try { handle.forceReannounce(0, -1) } catch (_: Throwable) { handle.forceReannounce() }
                                         try { handle.forceDHTAnnounce() } catch (_: Throwable) {}
-
-                                         // Inject global public trackers if not already added
-                                         for (tr in PRIORITY_LIVE_TRACKERS) {
-                                             try { handle.addTracker(AnnounceEntry(tr)) } catch (_: Throwable) {}
-                                         }
-                                         for (tr in TrackerInjector.ALL_CURATED_TRACKERS) {
-                                             try { handle.addTracker(AnnounceEntry(tr)) } catch (_: Throwable) {}
-                                         }
+                                        try { handle.forceReannounce(0, -1) } catch (_: Throwable) { handle.forceReannounce() }
                                      }
                                  }
                              } catch (_: Throwable) {}
@@ -715,15 +720,8 @@ class LibtorrentEngineManager(
                 torrentMetadataMap[id] = meta
             }
 
-            // 1. Auto-inject verified high-capacity live public trackers
+            // 1. Auto-inject verified high-capacity live public trackers (IP & domain)
             for (tr in PRIORITY_LIVE_TRACKERS) {
-                try {
-                    handle.addTracker(AnnounceEntry(tr))
-                } catch (_: Throwable) {}
-            }
-
-            // 2. Also inject curated backup trackers
-            for (tr in TrackerInjector.HTTPS_PORT_443_TRACKERS) {
                 try {
                     handle.addTracker(AnnounceEntry(tr))
                 } catch (_: Throwable) {}
@@ -1027,14 +1025,24 @@ class LibtorrentEngineManager(
         private const val TAG = "TorrentEngineManager"
 
         val PRIORITY_LIVE_TRACKERS = listOf(
+            // Direct IP addresses (Zero DNS lookup, immune to ISP DNS poisoning)
+            "udp://93.158.213.92:1337/announce",    // tracker.opentrackr.org IP
+            "udp://151.242.104.187:80/announce",   // open.stealth.si IP
+            "udp://185.121.168.96:1337/announce",  // open.demonii.com IP
+            "udp://23.157.120.14:6969/announce",   // explodie.org IP
+            "http://195.16.73.95:7777/announce",   // nyaa.tracker.wf IP
+            "udp://185.157.221.247:25401/announce",
+            "udp://67.215.246.10:6881/announce",
+            "udp://87.98.162.88:6881/announce",
+            "udp://212.129.33.59:6881/announce",
+
+            // Domain fallbacks
             "udp://tracker.opentrackr.org:1337/announce",
             "udp://open.stealth.si:80/announce",
             "udp://open.demonii.com:1337/announce",
             "udp://tracker.torrent.eu.org:451/announce",
             "udp://explodie.org:6969/announce",
-            "http://tracker.opentrackr.org:1337/announce",
             "http://nyaa.tracker.wf:7777/announce",
-            "http://open.acgnxtracker.com:80/announce",
             "udp://zer0day.ch:1337/announce",
             "udp://tracker.therarbg.to:6969/announce",
             "udp://p4p.arenabg.com:1337/announce",
