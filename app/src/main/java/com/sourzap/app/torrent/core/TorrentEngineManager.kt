@@ -46,7 +46,12 @@ import org.libtorrent4j.alerts.TorrentResumedAlert
 import org.libtorrent4j.swig.sha1_hash
 import org.libtorrent4j.swig.settings_pack
 import org.libtorrent4j.swig.torrent_flags_t
+import com.sourzap.app.service.core.LocalDpiProxyServer
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Collections
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -68,6 +73,7 @@ interface TorrentEngineManager {
     fun getTorrentFiles(id: String): List<TorrentFileItem>
     fun setSequentialDownload(id: String, sequential: Boolean)
     fun getTorrentInfo(id: String): TorrentInfo?
+    fun getTorrentLogs(id: String): List<String>
 
     fun pauseAll()
     fun resumeAll()
@@ -106,11 +112,40 @@ class LibtorrentEngineManager(
     private val torrentMetadataMap = ConcurrentHashMap<String, TorrentMetadata>()
     private val pendingPrioritiesMap = ConcurrentHashMap<String, List<Priority>>()
 
+    // Diagnostic logging buffers
+    private val torrentLogs = ConcurrentHashMap<String, MutableList<String>>()
+    private val globalLogs = Collections.synchronizedList(mutableListOf<String>())
+    private val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.US)
+
+    // Embedded Local DPI Evasion Proxy
+    private var localDpiProxy: LocalDpiProxyServer? = null
+
     private val alertListener = object : AlertListener {
         override fun types(): IntArray? = null // Listen to all alerts
 
         override fun alert(alert: Alert<*>) {
             try {
+                // Record diagnostic log
+                val timestamp = try { timeFormatter.format(Date()) } catch (_: Throwable) { "" }
+                val typeName = alert.type()?.name ?: "ALERT"
+                val alertMsg = try { alert.message() ?: "" } catch (_: Throwable) { "" }
+                val logLine = "[$timestamp] [$typeName] $alertMsg"
+
+                synchronized(globalLogs) {
+                    if (globalLogs.size >= 150) globalLogs.removeAt(0)
+                    globalLogs.add(logLine)
+                }
+
+                val tAlert = alert as? TorrentAlert
+                val alertInfoHash = try { tAlert?.handle()?.infoHash()?.toHex() } catch (_: Throwable) { null }
+                if (alertInfoHash != null) {
+                    val list = torrentLogs.getOrPut(alertInfoHash) { Collections.synchronizedList(mutableListOf()) }
+                    synchronized(list) {
+                        if (list.size >= 300) list.removeAt(0)
+                        list.add(logLine)
+                    }
+                }
+
                 when (alert.type()) {
                     AlertType.ADD_TORRENT -> {
                         val a = alert as? AddTorrentAlert ?: return
@@ -154,7 +189,7 @@ class LibtorrentEngineManager(
                         handleSessionStats(a)
                     }
                     else -> {
-                        // Ignore unhandled alert types
+                        // Unhandled alert types logged in buffer
                     }
                 }
             } catch (t: Throwable) {
@@ -166,12 +201,38 @@ class LibtorrentEngineManager(
     override fun startSession(context: Context?) {
         if (isRunning.compareAndSet(false, true)) {
             try {
+                // 1. Launch embedded Local DPI Evasion Proxy on localhost
+                var proxyPort = 0
+                try {
+                    val proxy = LocalDpiProxyServer(vpnService = null, scope = engineScope)
+                    proxyPort = proxy.start()
+                    localDpiProxy = proxy
+                    Log.i(TAG, "Local DPI Evasion Proxy started on 127.0.0.1:$proxyPort")
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Could not start embedded Local DPI Proxy, continuing with direct sockets", e)
+                }
+
                 sessionManager.addListener(alertListener)
                 val settingsPack = config.createSettingsPack()
+
+                // 2. Wire libtorrent HTTP CONNECT proxy through LocalDpiProxyServer for handshake desync
+                if (proxyPort > 0) {
+                    try {
+                        settingsPack.setInteger(settings_pack.int_types.proxy_type.swigValue(), settings_pack.proxy_type_t.http.swigValue())
+                        settingsPack.setString(settings_pack.string_types.proxy_hostname.swigValue(), "127.0.0.1")
+                        settingsPack.setInteger(settings_pack.int_types.proxy_port.swigValue(), proxyPort)
+                        settingsPack.setBoolean(settings_pack.bool_types.proxy_tracker_connections.swigValue(), true)
+                        settingsPack.setBoolean(settings_pack.bool_types.proxy_peer_connections.swigValue(), true)
+                        settingsPack.setBoolean(settings_pack.bool_types.proxy_hostnames.swigValue(), true)
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "Error configuring proxy in settingsPack", e)
+                    }
+                }
+
                 val sessionParams = SessionParams(settingsPack)
                 sessionManager.start(sessionParams)
                 startTelemetryLoop()
-                Log.i(TAG, "BitTorrent native session started successfully with direct MSE encryption and dynamic listen interfaces.")
+                Log.i(TAG, "BitTorrent native session started successfully with DPI evasion proxy ($proxyPort) and dynamic listen interfaces.")
             } catch (e: Throwable) {
                 Log.e(TAG, "Failed to start BitTorrent session", e)
                 isRunning.set(false)
@@ -190,11 +251,24 @@ class LibtorrentEngineManager(
                 torrentMetadataMap.clear()
                 _torrents.value = emptyList()
                 _stats.value = TorrentSessionStats()
+
+                // Stop embedded proxy
+                try {
+                    localDpiProxy?.stop()
+                    localDpiProxy = null
+                } catch (_: Throwable) {}
+
                 Log.i(TAG, "BitTorrent session stopped cleanly.")
             } catch (e: Throwable) {
                 Log.e(TAG, "Error stopping BitTorrent session", e)
             }
         }
+    }
+
+    override fun getTorrentLogs(id: String): List<String> {
+        val specific = torrentLogs[id]?.let { synchronized(it) { it.toList() } } ?: emptyList()
+        val global = synchronized(globalLogs) { globalLogs.toList() }
+        return (global + specific).distinct().takeLast(300)
     }
 
     override fun isSessionRunning(): Boolean = isRunning.get()

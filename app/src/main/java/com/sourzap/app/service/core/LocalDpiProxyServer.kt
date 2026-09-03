@@ -23,7 +23,7 @@ class LocalDpiProxyServer(
 ) {
     private var serverSocket: ServerSocket? = null
     private val isRunning = AtomicBoolean(false)
-    private val proxyDispatcher = Dispatchers.IO.limitedParallelism(64)
+    private val proxyDispatcher = Dispatchers.IO.limitedParallelism(256)
     var port: Int = 0
         private set
 
@@ -306,6 +306,10 @@ class LocalDpiProxyServer(
                                 )
                             )
                         }
+
+                        // Relax strict socket timeout for active stream pumping so peer transfers don't drop when choked
+                        try { clientSocket.soTimeout = 0 } catch (_: Throwable) {}
+                        try { upstream.soTimeout = 0 } catch (_: Throwable) {}
 
                         // Suspend and pump remaining stream bidirectionally until streams close
                         pumpBidirectional(clientIn, clientOut, upstreamIn, upstreamOut, clientSocket, upstream)

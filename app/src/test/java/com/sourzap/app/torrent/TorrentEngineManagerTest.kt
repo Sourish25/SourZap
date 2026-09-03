@@ -67,4 +67,17 @@ class TorrentEngineManagerTest {
             assertTrue(true)
         }
     }
+
+    @Test
+    fun testGetTorrentLogsEmptyAndQuery() {
+        try {
+            val manager = TorrentEngineManager.create()
+            val logs = manager.getTorrentLogs("nonexistent_hash")
+            assertNotNull(logs)
+            assertTrue(logs.isEmpty())
+        } catch (e: LinkageError) {
+            // Expected on host JVM without native jlibtorrent binaries loaded
+            assertTrue(true)
+        }
+    }
 }

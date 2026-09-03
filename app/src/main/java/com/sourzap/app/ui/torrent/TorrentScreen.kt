@@ -27,12 +27,14 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Check
@@ -80,10 +82,13 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sourzap.app.SourZapApp
 import com.sourzap.app.torrent.core.TorrentFileValidator
@@ -176,6 +181,7 @@ fun TorrentScreen() {
     var torrentToDelete by remember { mutableStateOf<TorrentItem?>(null) }
     var deleteWithFiles by remember { mutableStateOf(false) }
     var inspectingTorrent by remember { mutableStateOf<TorrentItem?>(null) }
+    var viewingLogsTorrent by remember { mutableStateOf<TorrentItem?>(null) }
 
     val filteredTorrents = remember(torrents, selectedFilter, searchQuery) {
         torrents.filter { item ->
@@ -271,6 +277,9 @@ fun TorrentScreen() {
                                 val uri = "magnet:?xt=urn:btih:${item.id}&dn=${Uri.encode(item.name)}"
                                 clip?.setPrimaryClip(android.content.ClipData.newPlainText("Magnet URI", uri))
                                 Toast.makeText(context, "Magnet URI copied to clipboard", Toast.LENGTH_SHORT).show()
+                            },
+                            onViewLogs = {
+                                viewingLogsTorrent = item
                             }
                         )
                     }
@@ -496,6 +505,29 @@ fun TorrentScreen() {
             },
             onSetAllPriorities = { priorities ->
                 torrentManager.setFilePriorities(currentItem.id, priorities)
+            }
+        )
+    }
+
+    if (viewingLogsTorrent != null) {
+        val currentItem = torrents.firstOrNull { it.id == viewingLogsTorrent!!.id } ?: viewingLogsTorrent!!
+        var currentLogs by remember(currentItem.id) { mutableStateOf(torrentManager.getTorrentLogs(currentItem.id)) }
+
+        LaunchedEffect(currentItem.id) {
+            while (isActive) {
+                currentLogs = torrentManager.getTorrentLogs(currentItem.id)
+                delay(1000L)
+            }
+        }
+
+        TorrentLogsDialog(
+            item = currentItem,
+            logs = currentLogs,
+            onDismiss = { viewingLogsTorrent = null },
+            onCopyLogs = { fullLogs ->
+                val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                clip?.setPrimaryClip(android.content.ClipData.newPlainText("Torrent Logs", fullLogs))
+                Toast.makeText(context, "Diagnostic logs copied to clipboard", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -774,7 +806,8 @@ private fun TorrentItemCard(
     onInspectFiles: () -> Unit,
     onRecheck: () -> Unit,
     onDelete: () -> Unit,
-    onCopyMagnet: () -> Unit
+    onCopyMagnet: () -> Unit,
+    onViewLogs: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -854,6 +887,14 @@ private fun TorrentItemCard(
                                     onInspectFiles()
                                 },
                                 leadingIcon = { Icon(Icons.AutoMirrored.Rounded.InsertDriveFile, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Diagnostic Logs") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onViewLogs()
+                                },
+                                leadingIcon = { Icon(Icons.Rounded.Info, contentDescription = null) }
                             )
                             DropdownMenuItem(
                                 text = { Text("Force Recheck") },
@@ -1409,6 +1450,127 @@ private fun TorrentFilesDialog(
         },
         confirmButton = {
             Button(onClick = onDismiss, shape = RoundedCornerShape(14.dp)) {
+                Text("Close")
+            }
+        },
+        shape = RoundedCornerShape(24.dp)
+    )
+}
+
+@Composable
+private fun TorrentLogsDialog(
+    item: TorrentItem,
+    logs: List<String>,
+    onDismiss: () -> Unit,
+    onCopyLogs: (String) -> Unit
+) {
+    val listState = rememberLazyListState()
+
+    // Auto-scroll to latest log entry
+    LaunchedEffect(logs.size) {
+        if (logs.isNotEmpty()) {
+            listState.animateScrollToItem(logs.size - 1)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp)
+                )
+                Text(
+                    text = "Diagnostics: ${item.name}",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Real-time BitTorrent swarm alerts, tracker replies, and handshake events:",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                ) {
+                    if (logs.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Listening for BitTorrent swarm events...\nTracker announces and peer handshakes will appear here.",
+                                fontSize = 11.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            items(logs) { log ->
+                                val color = when {
+                                    log.contains("ERROR", ignoreCase = true) || log.contains("FAILED", ignoreCase = true) -> MaterialTheme.colorScheme.error
+                                    log.contains("FINISHED", ignoreCase = true) || log.contains("REPLY", ignoreCase = true) -> MaterialTheme.colorScheme.primary
+                                    log.contains("CONNECT", ignoreCase = true) -> MaterialTheme.colorScheme.tertiary
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                }
+                                Text(
+                                    text = log,
+                                    fontSize = 10.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = color,
+                                    lineHeight = 14.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val fullText = logs.joinToString("\n")
+                    onCopyLogs(fullText)
+                },
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Copy Logs")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
                 Text("Close")
             }
         },
