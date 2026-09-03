@@ -204,13 +204,12 @@ class LibtorrentEngineManager(
                 sessionManager.addListener(alertListener)
                 val settingsPack = config.createSettingsPack()
 
-                // 1. Single IPv4 interface to avoid multi-interface self-connection loop
+                // 1. Single IPv4 interface
                 settingsPack.setString(settings_pack.string_types.listen_interfaces.swigValue(), "0.0.0.0:0")
 
-                // 2. Disable uTP peer transport and force 100% pure TCP (matching Aria2 architecture)
-                // Restrictive routers drop or shape UDP data streams, causing "End of file" disconnects
-                settingsPack.setBoolean(settings_pack.bool_types.enable_outgoing_utp.swigValue(), false)
-                settingsPack.setBoolean(settings_pack.bool_types.enable_incoming_utp.swigValue(), false)
+                // 2. Dual Transport with TCP priority (prefer TCP for data pieces, retain UDP for DHT/uTP NAT traversal)
+                settingsPack.setBoolean(settings_pack.bool_types.enable_outgoing_utp.swigValue(), true)
+                settingsPack.setBoolean(settings_pack.bool_types.enable_incoming_utp.swigValue(), true)
                 settingsPack.setBoolean(settings_pack.bool_types.enable_outgoing_tcp.swigValue(), true)
                 settingsPack.setBoolean(settings_pack.bool_types.enable_incoming_tcp.swigValue(), true)
                 settingsPack.setInteger(settings_pack.int_types.mixed_mode_algorithm.swigValue(), settings_pack.bandwidth_mixed_algo_t.prefer_tcp.swigValue())
@@ -232,7 +231,7 @@ class LibtorrentEngineManager(
                 val sessionParams = SessionParams(settingsPack)
                 sessionManager.start(sessionParams)
                 startTelemetryLoop()
-                Log.i(TAG, "BitTorrent native session started successfully with pure TCP transport, MSE encryption, and direct IP DHT.")
+                Log.i(TAG, "BitTorrent native session started successfully with TCP-priority mixed transport, MSE encryption, and direct IP DHT.")
             } catch (e: Throwable) {
                 Log.e(TAG, "Failed to start BitTorrent session", e)
                 isRunning.set(false)
@@ -664,9 +663,8 @@ class LibtorrentEngineManager(
                     updateTorrentsAndStats()
 
                     cycleCount++
-                    // Every 5 seconds, aggressively pulse stalled torrents to discover and connect to new peers via DHT
-                    if (cycleCount % 5 == 0) {
-                        var hasStalled = false
+                    // Every 10 seconds, pulse stalled torrents to discover and connect to new peers via DHT
+                    if (cycleCount % 10 == 0) {
                         for ((_, handle) in torrentHandles) {
                             try {
                                 val status = handle.status()
@@ -677,25 +675,11 @@ class LibtorrentEngineManager(
                                     status.progress() < 1.0f
                                 ) {
                                     if (status.downloadRate() == 0 || status.numPeers() < 5) {
-                                        hasStalled = true
                                         try { handle.forceDHTAnnounce() } catch (_: Throwable) {}
                                         try { handle.forceReannounce(0, -1) } catch (_: Throwable) { handle.forceReannounce() }
-                                     }
-                                 }
-                             } catch (_: Throwable) {}
-                        }
-
-                        if (hasStalled) {
-                            stalledCycleCount += 5
-                            // If torrents remain stalled at 0 B/s for over 25 seconds, reopen network sockets
-                            if (stalledCycleCount >= 25) {
-                                stalledCycleCount = 0
-                                try {
-                                    sessionManager.reopenNetworkSockets()
-                                } catch (_: Throwable) {}
-                            }
-                        } else {
-                            stalledCycleCount = 0
+                                    }
+                                }
+                            } catch (_: Throwable) {}
                         }
                     }
                 } catch (e: Throwable) {
