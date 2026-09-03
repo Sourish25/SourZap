@@ -204,23 +204,35 @@ class LibtorrentEngineManager(
                 sessionManager.addListener(alertListener)
                 val settingsPack = config.createSettingsPack()
 
-                // 1. Bind purely to IPv4 port 6881 with ephemeral fallback (eliminates all IPv6 "Network unreachable" errors)
-                settingsPack.setString(settings_pack.string_types.listen_interfaces.swigValue(), "0.0.0.0:6881,0.0.0.0:0")
+                // 1. Single IPv4 interface to avoid multi-interface self-connection loop
+                settingsPack.setString(settings_pack.string_types.listen_interfaces.swigValue(), "0.0.0.0:0")
 
-                // 2. Force RC4 Message Stream Encryption (MSE / PE) to prevent ISP DPI from detecting BitTorrent or sending TCP RSTs
-                settingsPack.setInteger(settings_pack.int_types.out_enc_policy.swigValue(), TorrentSessionConfig.ENC_POLICY_FORCED)
-                settingsPack.setInteger(settings_pack.int_types.in_enc_policy.swigValue(), TorrentSessionConfig.ENC_POLICY_FORCED)
+                // 2. Disable uTP peer transport and force 100% pure TCP (matching Aria2 architecture)
+                // Restrictive routers drop or shape UDP data streams, causing "End of file" disconnects
+                settingsPack.setBoolean(settings_pack.bool_types.enable_outgoing_utp.swigValue(), false)
+                settingsPack.setBoolean(settings_pack.bool_types.enable_incoming_utp.swigValue(), false)
+                settingsPack.setBoolean(settings_pack.bool_types.enable_outgoing_tcp.swigValue(), true)
+                settingsPack.setBoolean(settings_pack.bool_types.enable_incoming_tcp.swigValue(), true)
+                settingsPack.setInteger(settings_pack.int_types.mixed_mode_algorithm.swigValue(), settings_pack.bandwidth_mixed_algo_t.prefer_tcp.swigValue())
+
+                // 3. Disable Local Service Discovery (LSD) so the engine never connects to itself on LAN
+                settingsPack.setBoolean(settings_pack.bool_types.enable_lsd.swigValue(), false)
+
+                // 4. Message Stream Encryption (MSE / PE) - Prefer RC4, allow fallback so non-forced peers aren't rejected with EOF
+                settingsPack.setInteger(settings_pack.int_types.out_enc_policy.swigValue(), TorrentSessionConfig.ENC_POLICY_ENABLED)
+                settingsPack.setInteger(settings_pack.int_types.in_enc_policy.swigValue(), TorrentSessionConfig.ENC_POLICY_ENABLED)
                 settingsPack.setInteger(settings_pack.int_types.allowed_enc_level.swigValue(), TorrentSessionConfig.ENC_LEVEL_BOTH)
                 settingsPack.setBoolean(settings_pack.bool_types.prefer_rc4.swigValue(), true)
 
-                // 3. Direct IP DHT bootstrap routers (immune to ISP DNS poisoning)
+                // 5. Direct IP DHT bootstrap routers (immune to ISP DNS poisoning)
                 val directIpDhtNodes = "67.215.246.10:6881,87.98.162.88:6881,212.129.33.59:6881,185.157.221.247:25401,34.203.221.232:6881,82.221.103.244:6881,router.bittorrent.com:6881,dht.transmissionbt.com:6881,dht.libtorrent.org:25401"
                 settingsPack.setString(settings_pack.string_types.dht_bootstrap_nodes.swigValue(), directIpDhtNodes)
+                settingsPack.setBoolean(settings_pack.bool_types.enable_dht.swigValue(), true)
 
                 val sessionParams = SessionParams(settingsPack)
                 sessionManager.start(sessionParams)
                 startTelemetryLoop()
-                Log.i(TAG, "BitTorrent native session started successfully with forced MSE encryption and pure IPv4 port 6881 interfaces.")
+                Log.i(TAG, "BitTorrent native session started successfully with pure TCP transport, MSE encryption, and direct IP DHT.")
             } catch (e: Throwable) {
                 Log.e(TAG, "Failed to start BitTorrent session", e)
                 isRunning.set(false)
@@ -652,8 +664,8 @@ class LibtorrentEngineManager(
                     updateTorrentsAndStats()
 
                     cycleCount++
-                    // Every 15 seconds, pulse active stalled torrents to discover and connect to new peers
-                    if (cycleCount % 15 == 0) {
+                    // Every 5 seconds, aggressively pulse stalled torrents to discover and connect to new peers via DHT
+                    if (cycleCount % 5 == 0) {
                         var hasStalled = false
                         for ((_, handle) in torrentHandles) {
                             try {
@@ -664,7 +676,7 @@ class LibtorrentEngineManager(
                                     state != TorrentStatus.State.CHECKING_RESUME_DATA &&
                                     status.progress() < 1.0f
                                 ) {
-                                    if (status.downloadRate() == 0 || status.numPeers() < 3) {
+                                    if (status.downloadRate() == 0 || status.numPeers() < 5) {
                                         hasStalled = true
                                         try { handle.forceDHTAnnounce() } catch (_: Throwable) {}
                                         try { handle.forceReannounce(0, -1) } catch (_: Throwable) { handle.forceReannounce() }
@@ -674,9 +686,9 @@ class LibtorrentEngineManager(
                         }
 
                         if (hasStalled) {
-                            stalledCycleCount += 15
-                            // If torrents remain stalled at 0 B/s for over 45 seconds, reopen network sockets
-                            if (stalledCycleCount >= 45) {
+                            stalledCycleCount += 5
+                            // If torrents remain stalled at 0 B/s for over 25 seconds, reopen network sockets
+                            if (stalledCycleCount >= 25) {
                                 stalledCycleCount = 0
                                 try {
                                     sessionManager.reopenNetworkSockets()
