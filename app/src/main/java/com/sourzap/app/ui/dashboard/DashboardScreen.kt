@@ -74,6 +74,8 @@ import androidx.compose.ui.unit.sp
 import com.sourzap.app.SourZapApp
 import com.sourzap.app.service.SourZapVpnService
 import com.sourzap.app.service.TrafficMonitor
+import com.sourzap.app.tunnel.WarpTunnelManager
+import com.sourzap.app.tunnel.WarpTunnelState
 import com.sourzap.app.ui.components.ExpressiveCard
 import com.sourzap.app.ui.components.ExpressiveChip
 import com.sourzap.app.ui.components.ExpressiveTrafficWave
@@ -89,6 +91,11 @@ import androidx.compose.ui.platform.LocalConfiguration
 import com.sourzap.app.data.model.TrafficStats
 import com.sourzap.app.ui.components.AdaptiveContentContainer
 
+enum class DashboardConnectionMode {
+    CLOUDFLARE_WARP,
+    ZAPRET_DPI
+}
+
 @Composable
 fun DashboardScreen(
     onNavigateToSpeedTest: () -> Unit,
@@ -99,11 +106,25 @@ fun DashboardScreen(
     val app = SourZapApp.instance
     val strategyRepo = app.strategyRepository
     val haptics = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
 
     val isConnected by TrafficMonitor.isVpnActive.collectAsStateWithLifecycle()
+    val warpState by WarpTunnelManager.tunnelState.collectAsStateWithLifecycle()
+    val isWarpConnected = warpState == WarpTunnelState.CONNECTED
+    val isAnyConnected = isConnected || isWarpConnected
+
     val stats by TrafficMonitor.stats.collectAsStateWithLifecycle()
     val currentStrategy by strategyRepo.currentStrategy.collectAsStateWithLifecycle()
     val recentLogs by TrafficMonitor.recentLogs.collectAsStateWithLifecycle()
+
+    var selectedMode by remember {
+        mutableStateOf(
+            if (context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE).getString("connection_mode", "WARP") == "ZAPRET")
+                DashboardConnectionMode.ZAPRET_DPI
+            else
+                DashboardConnectionMode.CLOUDFLARE_WARP
+        )
+    }
 
     val configuration = LocalConfiguration.current
     val isTablet = configuration.screenWidthDp >= 600
@@ -120,27 +141,11 @@ fun DashboardScreen(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            val startIntent = Intent(context, SourZapVpnService::class.java).apply {
-                action = SourZapVpnService.ACTION_START
-            }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                context.startForegroundService(startIntent)
-            } else {
-                context.startService(startIntent)
-            }
-        }
-    }
-
-    val toggleVpn = {
-        if (isConnected) {
-            val stopIntent = Intent(context, SourZapVpnService::class.java).apply {
-                action = SourZapVpnService.ACTION_STOP
-            }
-            context.startService(stopIntent)
-        } else {
-            val prepareIntent = VpnService.prepare(context)
-            if (prepareIntent != null) {
-                vpnPrepareLauncher.launch(prepareIntent)
+            if (selectedMode == DashboardConnectionMode.CLOUDFLARE_WARP) {
+                coroutineScope.launch {
+                    val ok = WarpTunnelManager.connect(context)
+                    if (ok) TrafficMonitor.startMonitoring()
+                }
             } else {
                 val startIntent = Intent(context, SourZapVpnService::class.java).apply {
                     action = SourZapVpnService.ACTION_START
@@ -149,6 +154,48 @@ fun DashboardScreen(
                     context.startForegroundService(startIntent)
                 } else {
                     context.startService(startIntent)
+                }
+            }
+        }
+    }
+
+    val toggleConnection = {
+        if (selectedMode == DashboardConnectionMode.CLOUDFLARE_WARP) {
+            if (isWarpConnected) {
+                coroutineScope.launch {
+                    WarpTunnelManager.disconnect(context)
+                    TrafficMonitor.stopMonitoring()
+                }
+            } else {
+                val prepareIntent = VpnService.prepare(context)
+                if (prepareIntent != null) {
+                    vpnPrepareLauncher.launch(prepareIntent)
+                } else {
+                    coroutineScope.launch {
+                        val ok = WarpTunnelManager.connect(context)
+                        if (ok) TrafficMonitor.startMonitoring()
+                    }
+                }
+            }
+        } else {
+            if (isConnected) {
+                val stopIntent = Intent(context, SourZapVpnService::class.java).apply {
+                    action = SourZapVpnService.ACTION_STOP
+                }
+                context.startService(stopIntent)
+            } else {
+                val prepareIntent = VpnService.prepare(context)
+                if (prepareIntent != null) {
+                    vpnPrepareLauncher.launch(prepareIntent)
+                } else {
+                    val startIntent = Intent(context, SourZapVpnService::class.java).apply {
+                        action = SourZapVpnService.ACTION_START
+                    }
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        context.startForegroundService(startIntent)
+                    } else {
+                        context.startService(startIntent)
+                    }
                 }
             }
         }
@@ -344,10 +391,84 @@ fun DashboardScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "DPI Bypass",
+                            text = if (selectedMode == DashboardConnectionMode.CLOUDFLARE_WARP) "Cloudflare WARP • Port 53 WireGuard" else "Zapret DPI Engine • Packet Splitting",
                             fontWeight = FontWeight.Medium,
                             fontSize = 14.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // Connection Mode Selector
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (selectedMode == DashboardConnectionMode.CLOUDFLARE_WARP)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                            )
+                            .clickable {
+                                if (!isAnyConnected) {
+                                    selectedMode = DashboardConnectionMode.CLOUDFLARE_WARP
+                                    context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                                        .edit().putString("connection_mode", "WARP").apply()
+                                }
+                            }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Cloudflare WARP (Port 53)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = if (selectedMode == DashboardConnectionMode.CLOUDFLARE_WARP)
+                                MaterialTheme.colorScheme.onPrimary
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (selectedMode == DashboardConnectionMode.ZAPRET_DPI)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                            )
+                            .clickable {
+                                if (!isAnyConnected) {
+                                    selectedMode = DashboardConnectionMode.ZAPRET_DPI
+                                    context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                                        .edit().putString("connection_mode", "ZAPRET").apply()
+                                }
+                            }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Zapret DPI Engine",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = if (selectedMode == DashboardConnectionMode.ZAPRET_DPI)
+                                MaterialTheme.colorScheme.onPrimary
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -363,8 +484,8 @@ fun DashboardScreen(
                     ) {
                         Box(modifier = Modifier.weight(1f)) {
                             HeroConnectButton(
-                                isConnected = isConnected,
-                                onToggle = { toggleVpn() }
+                                isConnected = isAnyConnected,
+                                onToggle = { toggleConnection() }
                             )
                         }
                         Box(modifier = Modifier.weight(1f)) {
@@ -378,8 +499,8 @@ fun DashboardScreen(
             } else {
                 item {
                     HeroConnectButton(
-                        isConnected = isConnected,
-                        onToggle = { toggleVpn() }
+                        isConnected = isAnyConnected,
+                        onToggle = { toggleConnection() }
                     )
                 }
 
@@ -453,7 +574,7 @@ fun DashboardScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = if (isConnected) "Listening for DPI packets on TUN interface..." else "Activate Zapret to bypass DPI",
+                                text = if (isWarpConnected) "Cloudflare WARP active on Port 53 • High-speed bypass active" else if (isConnected) "Listening for DPI packets on TUN interface..." else "Tap Hero button to connect",
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
