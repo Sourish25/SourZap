@@ -204,8 +204,8 @@ class LibtorrentEngineManager(
                 sessionManager.addListener(alertListener)
                 val settingsPack = config.createSettingsPack()
 
-                // 1. Single IPv4 interface
-                settingsPack.setString(settings_pack.string_types.listen_interfaces.swigValue(), "0.0.0.0:0")
+                // 1. Single IPv4 interface bound to standard BitTorrent port 6881
+                settingsPack.setString(settings_pack.string_types.listen_interfaces.swigValue(), "0.0.0.0:6881")
 
                 // 2. Dual Transport with TCP priority (prefer TCP for data pieces, retain UDP for DHT/uTP NAT traversal)
                 settingsPack.setBoolean(settings_pack.bool_types.enable_outgoing_utp.swigValue(), true)
@@ -677,6 +677,14 @@ class LibtorrentEngineManager(
                                     if (status.downloadRate() == 0 || status.numPeers() < 5) {
                                         try { handle.forceDHTAnnounce() } catch (_: Throwable) {}
                                         try { handle.forceReannounce(0, -1) } catch (_: Throwable) { handle.forceReannounce() }
+                                        engineScope.launch {
+                                            try {
+                                                val hashHex = try { handle.infoHash().toHex() } catch (_: Throwable) { "" }
+                                                if (hashHex.isNotEmpty()) {
+                                                    HttpsTrackerAnnouncer.announceAndInjectPeers(handle, hashHex)
+                                                }
+                                            } catch (_: Throwable) {}
+                                        }
                                     }
                                 }
                             } catch (_: Throwable) {}
@@ -735,10 +743,11 @@ class LibtorrentEngineManager(
                 setFilePriorities(id, pending)
             }
 
-            // Asynchronously pre-resolve tracker hostnames via DoH
+            // Asynchronously announce to Port-443 HTTPS trackers via Google DoH and inject discovered peers
             engineScope.launch {
                 try {
                     DohTrackerResolver.preResolveTrackers(TrackerInjector.HTTPS_PORT_443_TRACKERS)
+                    HttpsTrackerAnnouncer.announceAndInjectPeers(handle, id)
                 } catch (_: Throwable) {}
             }
 

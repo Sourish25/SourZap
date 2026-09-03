@@ -12,8 +12,8 @@ android {
         applicationId = "com.sourzap.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 42
-        versionName = "2.7.7"
+        versionCode = 43
+        versionName = "2.7.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
