@@ -107,16 +107,15 @@ object HttpsTrackerAnnouncer {
                             val bodyBytes = response.body?.bytes() ?: return@use 0
                             val peers = parseCompactPeers(bodyBytes)
                             var injectedCount = 0
-                            for ((ip, peerPort) in peers) {
+                            for ((ip, peerPort) in peers.take(35)) {
                                 if (NetworkIpHelper.isSelfOrLocal(ip)) {
                                     Log.d(TAG, "Skipping self/local peer $ip:$peerPort from $trackerUrl")
                                     continue
                                 }
                                 try {
+                                    if (!handle.isValid) break
                                     val ep = TcpEndpoint(ip, peerPort)
-                                    synchronized(handle) {
-                                        handle.swig().connect_peer(ep.swig())
-                                    }
+                                    handle.swig().connect_peer(ep.swig())
                                     injectedCount++
                                 } catch (_: Throwable) {}
                             }

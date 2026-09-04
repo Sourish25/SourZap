@@ -87,16 +87,17 @@ object UdpTrackerAnnouncer {
         val allDiscoveredPeers = deferredAnnounces.awaitAll().flatten().distinct()
         var injectedCount = 0
 
-        for ((ip, peerPort) in allDiscoveredPeers) {
+        if (!handle.isValid) return@withContext 0
+
+        for ((ip, peerPort) in allDiscoveredPeers.take(35)) {
             if (NetworkIpHelper.isSelfOrLocal(ip)) {
                 Log.d(TAG, "Skipping self/local peer $ip:$peerPort")
                 continue
             }
             try {
+                if (!handle.isValid) break
                 val ep = TcpEndpoint(ip, peerPort)
-                synchronized(handle) {
-                    handle.swig().connect_peer(ep.swig())
-                }
+                handle.swig().connect_peer(ep.swig())
                 injectedCount++
             } catch (_: Throwable) {}
         }

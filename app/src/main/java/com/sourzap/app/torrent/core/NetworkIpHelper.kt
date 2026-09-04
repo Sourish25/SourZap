@@ -1,10 +1,14 @@
 package com.sourzap.app.torrent.core
 
 import android.util.Log
+import com.sourzap.app.service.core.DohResolver
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.net.InetAddress
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.util.concurrent.ConcurrentHashMap
@@ -22,10 +26,28 @@ object NetworkIpHelper {
     private val cachedPublicIp = AtomicReference<String?>(null)
     private val localIps = ConcurrentHashMap.newKeySet<String>()
 
+    private val dohDns = object : Dns {
+        override fun lookup(hostname: String): List<InetAddress> {
+            return try {
+                val resolved = runBlocking(Dispatchers.IO) {
+                    DohResolver.resolve(hostname)
+                }
+                if (resolved.isNotEmpty()) resolved else Dns.SYSTEM.lookup(hostname)
+            } catch (_: Throwable) {
+                try {
+                    Dns.SYSTEM.lookup(hostname)
+                } catch (_: Throwable) {
+                    emptyList()
+                }
+            }
+        }
+    }
+
     private val httpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(3, TimeUnit.SECONDS)
-            .readTimeout(3, TimeUnit.SECONDS)
+            .dns(dohDns)
+            .connectTimeout(4, TimeUnit.SECONDS)
+            .readTimeout(4, TimeUnit.SECONDS)
             .followRedirects(true)
             .retryOnConnectionFailure(false)
             .build()

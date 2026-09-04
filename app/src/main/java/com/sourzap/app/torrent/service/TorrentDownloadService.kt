@@ -183,23 +183,28 @@ class TorrentDownloadService : Service() {
             val notification = buildNotification(stats)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 try {
-                    startForeground(
-                        NOTIFICATION_ID,
-                        notification,
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                    )
-                } catch (_: Throwable) {
-                    startForeground(NOTIFICATION_ID, notification)
+                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                } catch (e: Throwable) {
+                    Log.w(TAG, "startForeground with dataSync type failed: ${e.message}")
+                    try {
+                        startForeground(NOTIFICATION_ID, notification)
+                    } catch (fatal: Throwable) {
+                        Log.e(TAG, "Fatal startForeground error: ${fatal.message}")
+                    }
                 }
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
-        } catch (_: Throwable) {}
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error in startForegroundServiceNotification: ${e.message}")
+        }
     }
 
     private fun updateNotification(stats: TorrentSessionStats) {
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-        notificationManager?.notify(NOTIFICATION_ID, buildNotification(stats))
+        try {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            notificationManager?.notify(NOTIFICATION_ID, buildNotification(stats))
+        } catch (_: Throwable) {}
     }
 
     fun buildNotification(stats: TorrentSessionStats): Notification {
@@ -252,7 +257,7 @@ class TorrentDownloadService : Service() {
         val progressPercent = (stats.aggregateProgress * 100).toInt().coerceIn(0, 100)
 
         return NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(content)
             .setContentIntent(openAppPendingIntent)
@@ -260,9 +265,9 @@ class TorrentDownloadService : Service() {
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setProgress(100, progressPercent, false)
-            .addAction(0, "Pause All", pausePendingIntent)
-            .addAction(0, "Resume All", resumePendingIntent)
-            .addAction(0, "Dismiss", stopPendingIntent)
+            .addAction(android.R.drawable.ic_media_pause, "Pause All", pausePendingIntent)
+            .addAction(android.R.drawable.ic_media_play, "Resume All", resumePendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Dismiss", stopPendingIntent)
             .build()
     }
 
@@ -287,12 +292,17 @@ class TorrentDownloadService : Service() {
                     action = ACTION_START
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(intent)
+                    try {
+                        context.startForegroundService(intent)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "startForegroundService failed, falling back to startService: ${e.message}")
+                        context.startService(intent)
+                    }
                 } else {
                     context.startService(intent)
                 }
             } catch (e: Throwable) {
-                Log.w("TorrentDownloadService", "Unable to start foreground service: ${e.message}")
+                Log.w(TAG, "Unable to start service: ${e.message}")
             }
         }
 

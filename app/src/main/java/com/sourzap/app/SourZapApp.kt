@@ -49,6 +49,20 @@ class SourZapApp : Application() {
         super.onCreate()
         instance = this
 
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                val crashFile = java.io.File(filesDir, "crash_log.txt")
+                val sw = java.io.StringWriter()
+                val pw = java.io.PrintWriter(sw)
+                throwable.printStackTrace(pw)
+                val stackTrace = sw.toString()
+                crashFile.writeText("CRASH on thread [${thread.name}] at ${java.util.Date()}:\n$stackTrace")
+                android.util.Log.e("SourZapFatal", "UNCAUGHT CRASH: $stackTrace")
+            } catch (_: Throwable) {}
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+
         strategyRepository = StrategyRepository(this)
         settingsRepository = SettingsRepository(this)
         speedTestEngine = SpeedTestEngine(settingsRepository, strategyRepository)

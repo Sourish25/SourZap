@@ -167,7 +167,6 @@ class LibtorrentEngineManager(
                         }
                     }
                     AlertType.STATE_CHANGED,
-                    AlertType.PIECE_FINISHED,
                     AlertType.TORRENT_FINISHED,
                     AlertType.TORRENT_PAUSED,
                     AlertType.TORRENT_RESUMED,
@@ -854,7 +853,7 @@ class LibtorrentEngineManager(
     }
 
     private fun handleSessionStats(alert: SessionStatsAlert) {
-        triggerRefresh()
+        // Telemetry loop handles periodic updates every second
     }
 
     @Synchronized
@@ -874,6 +873,7 @@ class LibtorrentEngineManager(
         for (id in allIds) {
             try {
                 val handle = findHandle(id) ?: continue
+                if (!handle.isValid) continue
                 val status: TorrentStatus = try { handle.status() } catch (_: Throwable) { continue }
                 val state = mapTorrentState(handle, status)
                 val hasMeta = try { status.hasMetadata() } catch (_: Throwable) { false }
