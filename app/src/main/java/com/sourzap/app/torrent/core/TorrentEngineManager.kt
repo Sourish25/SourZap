@@ -6,6 +6,7 @@ import com.sourzap.app.torrent.model.Priority
 import com.sourzap.app.torrent.model.TorrentFileItem
 import com.sourzap.app.torrent.model.TorrentItem
 import com.sourzap.app.torrent.model.TorrentPieceInfo
+import com.sourzap.app.torrent.model.TorrentProxyConfig
 import com.sourzap.app.torrent.model.TorrentSessionStats
 import com.sourzap.app.torrent.model.TorrentSource
 import com.sourzap.app.torrent.model.TorrentState
@@ -25,6 +26,7 @@ import org.libtorrent4j.FileStorage
 import org.libtorrent4j.SessionHandle
 import org.libtorrent4j.SessionManager
 import org.libtorrent4j.SessionParams
+import org.libtorrent4j.SettingsPack
 import org.libtorrent4j.Sha1Hash
 import org.libtorrent4j.TorrentHandle
 import org.libtorrent4j.TorrentInfo
@@ -77,6 +79,8 @@ interface TorrentEngineManager {
 
     fun pauseAll()
     fun resumeAll()
+
+    fun updateProxySettings(proxyConfig: TorrentProxyConfig)
 
     fun observeTorrents(): StateFlow<List<TorrentItem>>
     fun observeStats(): StateFlow<TorrentSessionStats>
@@ -227,6 +231,14 @@ class LibtorrentEngineManager(
                 val directIpDhtNodes = "67.215.246.10:6881,87.98.162.88:6881,212.129.33.59:6881,185.157.221.247:25401,34.203.221.232:6881,82.221.103.244:6881,router.bittorrent.com:6881,dht.transmissionbt.com:6881,dht.libtorrent.org:25401"
                 settingsPack.setString(settings_pack.string_types.dht_bootstrap_nodes.swigValue(), directIpDhtNodes)
                 settingsPack.setBoolean(settings_pack.bool_types.enable_dht.swigValue(), true)
+
+                // 6. Apply current proxy configuration if enabled
+                context?.let { ctx ->
+                    try {
+                        val proxyConfig = TorrentProxyRepository(ctx).config.value
+                        TorrentSessionConfig.applyProxyTo(settingsPack, proxyConfig)
+                    } catch (_: Throwable) {}
+                }
 
                 val sessionParams = SessionParams(settingsPack)
                 sessionManager.start(sessionParams)
@@ -629,6 +641,25 @@ class LibtorrentEngineManager(
             } catch (_: Throwable) {}
         }
         triggerRefresh()
+    }
+
+    override fun updateProxySettings(proxyConfig: TorrentProxyConfig) {
+        val pack = SettingsPack()
+        TorrentSessionConfig.applyProxyTo(pack, proxyConfig)
+        if (isRunning.get()) {
+            try {
+                sessionManager.applySettings(pack)
+                val logMsg = if (proxyConfig.enabled) {
+                    "Applied proxy: ${proxyConfig.type} -> ${proxyConfig.host}:${proxyConfig.port} (Snowflake: ${proxyConfig.isSnowflakePreset})"
+                } else {
+                    "Proxy disabled: direct connection"
+                }
+                Log.i(TAG, logMsg)
+                synchronized(globalLogs) { globalLogs.add(logMsg) }
+            } catch (e: Throwable) {
+                Log.w(TAG, "Error applying proxy settings dynamically: ${e.message}")
+            }
+        }
     }
 
     private fun findHandle(id: String): TorrentHandle? {

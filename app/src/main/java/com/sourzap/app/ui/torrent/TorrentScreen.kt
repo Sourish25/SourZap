@@ -102,6 +102,7 @@ import com.sourzap.app.torrent.model.Priority
 import com.sourzap.app.torrent.model.TorrentFileItem
 import com.sourzap.app.torrent.model.TorrentFilter
 import com.sourzap.app.torrent.model.TorrentItem
+import com.sourzap.app.torrent.model.TorrentProxyConfig
 import com.sourzap.app.torrent.model.TorrentSessionStats
 import com.sourzap.app.torrent.model.TorrentSource
 import com.sourzap.app.torrent.model.TorrentState
@@ -133,10 +134,12 @@ fun TorrentScreen() {
     val torrents by torrentManager.observeTorrents().collectAsStateWithLifecycle()
     val stats by torrentManager.observeStats().collectAsStateWithLifecycle()
     val pendingTorrentIntent by app.pendingTorrentIntent.collectAsStateWithLifecycle()
+    val proxyConfig by app.torrentProxyRepository.config.collectAsStateWithLifecycle()
 
     var selectedFilter by remember { mutableStateOf(TorrentFilter.ALL) }
     var searchQuery by remember { mutableStateOf("") }
     var showAddDialog by remember { mutableStateOf(false) }
+    var showProxySheet by remember { mutableStateOf(false) }
 
     var prefilledMagnet by remember { mutableStateOf("") }
     var prefilledName by remember { mutableStateOf("") }
@@ -207,6 +210,11 @@ fun TorrentScreen() {
                 item {
                     TorrentHeader(
                         stats = stats,
+                        proxyConfig = proxyConfig,
+                        onOpenProxySettings = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            showProxySheet = true
+                        },
                         onPauseAll = {
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             torrentManager.pauseAll()
@@ -217,6 +225,77 @@ fun TorrentScreen() {
                             TorrentDownloadService.start(context)
                         }
                     )
+                }
+
+                if (proxyConfig.enabled) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    if (proxyConfig.isSnowflakePreset) MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f)
+                                    else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                                )
+                                .clickable {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    showProxySheet = true
+                                }
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                if (proxyConfig.isSnowflakePreset) {
+                                    Text("❄️", fontSize = 16.sp)
+                                    Column {
+                                        Text(
+                                            text = "Snowflake (Orbot) Proxy Active",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.5.sp,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                                        )
+                                        Text(
+                                            text = "Bypassing ISP port blocks via WebRTC on Port 443",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                                        )
+                                    }
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Shield,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "${proxyConfig.type} Proxy Active (${proxyConfig.host}:${proxyConfig.port})",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.5.sp,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                        Text(
+                                            text = "Routing peers and trackers through custom proxy",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Text(
+                                text = "Settings",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 }
 
                 item {
@@ -531,11 +610,19 @@ fun TorrentScreen() {
             }
         )
     }
+
+    if (showProxySheet) {
+        TorrentProxySheet(
+            onDismiss = { showProxySheet = false }
+        )
+    }
 }
 
 @Composable
 private fun TorrentHeader(
     stats: TorrentSessionStats,
+    proxyConfig: TorrentProxyConfig,
+    onOpenProxySettings: () -> Unit,
     onPauseAll: () -> Unit,
     onResumeAll: () -> Unit
 ) {
@@ -563,6 +650,32 @@ private fun TorrentHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(
+                onClick = onOpenProxySettings,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (proxyConfig.enabled) {
+                            if (proxyConfig.isSnowflakePreset) MaterialTheme.colorScheme.tertiaryContainer
+                            else MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHighest
+                        }
+                    )
+            ) {
+                if (proxyConfig.enabled && proxyConfig.isSnowflakePreset) {
+                    Text("❄️", fontSize = 16.sp)
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.Shield,
+                        contentDescription = "Proxy & Circumvention",
+                        tint = if (proxyConfig.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
             IconButton(
                 onClick = onPauseAll,
                 modifier = Modifier

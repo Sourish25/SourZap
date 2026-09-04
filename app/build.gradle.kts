@@ -12,8 +12,8 @@ android {
         applicationId = "com.sourzap.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 44
-        versionName = "2.7.9"
+        versionCode = 45
+        versionName = "2.8.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -100,7 +100,6 @@ dependencies {
     
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
-    implementation("com.wireguard.android:tunnel:1.0.20230706")
 
     // BitTorrent Engine Core + Native ABIs
     implementation(libs.libtorrent4j)
