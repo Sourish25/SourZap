@@ -6,6 +6,7 @@ import com.sourzap.app.torrent.model.Priority
 import com.sourzap.app.torrent.model.TorrentFileItem
 import com.sourzap.app.torrent.model.TorrentItem
 import com.sourzap.app.torrent.model.TorrentPieceInfo
+import com.sourzap.app.torrent.model.TorrentProxyConfig
 import com.sourzap.app.torrent.model.TorrentSessionStats
 import com.sourzap.app.torrent.model.TorrentSource
 import com.sourzap.app.torrent.model.TorrentState
@@ -63,6 +64,8 @@ interface TorrentEngineManager {
     fun startSession(context: Context? = null)
     fun stopSession()
     fun isSessionRunning(): Boolean
+
+    fun updateProxySettings(proxyConfig: TorrentProxyConfig)
 
     fun addTorrent(torrentSource: TorrentSource, saveDir: File, filePriorities: List<Priority>? = null): String
     fun pauseTorrent(id: String)
@@ -231,6 +234,17 @@ class LibtorrentEngineManager(
                 settingsPack.setString(settings_pack.string_types.dht_bootstrap_nodes.swigValue(), directIpDhtNodes)
                 settingsPack.setBoolean(settings_pack.bool_types.enable_dht.swigValue(), true)
 
+                // 6. Apply saved SOCKS5/HTTP Proxy Settings if configured
+                val appContext = context ?: try { com.sourzap.app.SourZapApp.instance } catch (_: Throwable) { null }
+                if (appContext != null) {
+                    try {
+                        val repo = TorrentProxyRepository(appContext)
+                        TorrentSessionConfig.applyProxyTo(settingsPack, repo.config.value)
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "Could not load saved proxy config", t)
+                    }
+                }
+
                 val sessionParams = SessionParams(settingsPack)
                 sessionManager.start(sessionParams)
                 startTelemetryLoop()
@@ -239,6 +253,19 @@ class LibtorrentEngineManager(
                 Log.e(TAG, "Failed to start BitTorrent session", e)
                 isRunning.set(false)
             }
+        }
+    }
+
+    override fun updateProxySettings(proxyConfig: TorrentProxyConfig) {
+        try {
+            val pack = SettingsPack()
+            TorrentSessionConfig.applyProxyTo(pack, proxyConfig)
+            if (isSessionRunning()) {
+                sessionManager.applySettings(pack)
+                Log.i(TAG, "Dynamic proxy settings applied: enabled=${proxyConfig.enabled}, type=${proxyConfig.type}, host=${proxyConfig.host}:${proxyConfig.port}")
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to update proxy settings in session", e)
         }
     }
 

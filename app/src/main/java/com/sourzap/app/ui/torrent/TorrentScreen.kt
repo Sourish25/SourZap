@@ -102,6 +102,7 @@ import com.sourzap.app.torrent.model.Priority
 import com.sourzap.app.torrent.model.TorrentFileItem
 import com.sourzap.app.torrent.model.TorrentFilter
 import com.sourzap.app.torrent.model.TorrentItem
+import com.sourzap.app.torrent.model.TorrentProxyConfig
 import com.sourzap.app.torrent.model.TorrentSessionStats
 import com.sourzap.app.torrent.model.TorrentSource
 import com.sourzap.app.torrent.model.TorrentState
@@ -133,10 +134,12 @@ fun TorrentScreen() {
     val torrents by torrentManager.observeTorrents().collectAsStateWithLifecycle()
     val stats by torrentManager.observeStats().collectAsStateWithLifecycle()
     val pendingTorrentIntent by app.pendingTorrentIntent.collectAsStateWithLifecycle()
+    val proxyConfig by app.torrentProxyRepository.config.collectAsStateWithLifecycle()
 
     var selectedFilter by remember { mutableStateOf(TorrentFilter.ALL) }
     var searchQuery by remember { mutableStateOf("") }
     var showAddDialog by remember { mutableStateOf(false) }
+    var showProxyDialog by remember { mutableStateOf(false) }
 
     var prefilledMagnet by remember { mutableStateOf("") }
     var prefilledName by remember { mutableStateOf("") }
@@ -207,6 +210,11 @@ fun TorrentScreen() {
                 item {
                     TorrentHeader(
                         stats = stats,
+                        proxyEnabled = proxyConfig.enabled,
+                        onOpenProxy = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            showProxyDialog = true
+                        },
                         onPauseAll = {
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             torrentManager.pauseAll()
@@ -532,11 +540,30 @@ fun TorrentScreen() {
         )
     }
 
+    if (showProxyDialog) {
+        TorrentProxyDialog(
+            initialConfig = proxyConfig,
+            onDismiss = { showProxyDialog = false },
+            onSave = { newConfig ->
+                app.torrentProxyRepository.saveConfig(newConfig)
+                torrentManager.updateProxySettings(newConfig)
+                showProxyDialog = false
+                Toast.makeText(
+                    context,
+                    if (newConfig.enabled) "Proxy enabled (${newConfig.type.name})" else "Proxy disabled",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        )
+    }
+
 }
 
 @Composable
 private fun TorrentHeader(
     stats: TorrentSessionStats,
+    proxyEnabled: Boolean,
+    onOpenProxy: () -> Unit,
     onPauseAll: () -> Unit,
     onResumeAll: () -> Unit
 ) {
@@ -564,6 +591,24 @@ private fun TorrentHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(
+                onClick = onOpenProxy,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (proxyEnabled) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceContainerHighest
+                    )
+            ) {
+                Icon(
+                    Icons.Rounded.Shield,
+                    contentDescription = "Torrent Proxy Settings",
+                    tint = if (proxyEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
             IconButton(
                 onClick = onPauseAll,
                 modifier = Modifier

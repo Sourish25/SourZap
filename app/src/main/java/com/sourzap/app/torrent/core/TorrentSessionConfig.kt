@@ -1,5 +1,7 @@
 package com.sourzap.app.torrent.core
 
+import com.sourzap.app.torrent.model.ProxyType
+import com.sourzap.app.torrent.model.TorrentProxyConfig
 import org.libtorrent4j.SettingsPack
 import org.libtorrent4j.swig.settings_pack
 
@@ -61,7 +63,10 @@ data class TorrentSessionConfig(
     val activeDownloads: Int = 20,
     val activeSeeds: Int = 20,
     val activeLimit: Int = 40,
-    val userAgent: String = "SourZap/2.8.1 libtorrent4j/2.1.0"
+    val userAgent: String = "SourZap/2.8.2 libtorrent4j/2.1.0",
+
+    // 8. SOCKS5 / HTTP Proxy Configuration
+    val proxyConfig: TorrentProxyConfig = TorrentProxyConfig.DEFAULT
 ) {
     /**
      * Builds and returns a new [SettingsPack] with all anti-censorship and throughput options applied.
@@ -124,6 +129,9 @@ data class TorrentSessionConfig(
 
         // Identity
         pack.setString(settings_pack.string_types.user_agent.swigValue(), userAgent)
+
+        // SOCKS5 / HTTP Proxy Routing
+        applyProxyTo(pack, proxyConfig)
     }
 
     companion object {
@@ -150,5 +158,40 @@ data class TorrentSessionConfig(
         const val PEER_PROPORTIONAL = MIXED_MODE_PEER_PROPORTIONAL
 
         val DEFAULT = TorrentSessionConfig()
+
+        /**
+         * Maps [TorrentProxyConfig] into libtorrent [SettingsPack].
+         * When enabled and configured, routes peer/tracker traffic through the designated SOCKS5 or HTTP proxy.
+         * When disabled, clears proxy settings and reverts to direct connectivity.
+         */
+        fun applyProxyTo(pack: SettingsPack, proxy: TorrentProxyConfig) {
+            if (!proxy.enabled || !proxy.isConfigured) {
+                pack.setInteger(settings_pack.int_types.proxy_type.swigValue(), settings_pack.proxy_type_t.none.swigValue())
+                pack.setString(settings_pack.string_types.proxy_hostname.swigValue(), "")
+                pack.setInteger(settings_pack.int_types.proxy_port.swigValue(), 0)
+                pack.setString(settings_pack.string_types.proxy_username.swigValue(), "")
+                pack.setString(settings_pack.string_types.proxy_password.swigValue(), "")
+                pack.setBoolean(settings_pack.bool_types.proxy_peer_connections.swigValue(), true)
+                pack.setBoolean(settings_pack.bool_types.proxy_tracker_connections.swigValue(), true)
+                pack.setBoolean(settings_pack.bool_types.proxy_hostnames.swigValue(), true)
+                return
+            }
+
+            val hasAuth = proxy.username.isNotBlank() || proxy.password.isNotBlank()
+            val swigType = when (proxy.type) {
+                ProxyType.SOCKS5 -> if (hasAuth) settings_pack.proxy_type_t.socks5_pw else settings_pack.proxy_type_t.socks5
+                ProxyType.HTTP -> if (hasAuth) settings_pack.proxy_type_t.http_pw else settings_pack.proxy_type_t.http
+                ProxyType.NONE -> settings_pack.proxy_type_t.none
+            }
+
+            pack.setInteger(settings_pack.int_types.proxy_type.swigValue(), swigType.swigValue())
+            pack.setString(settings_pack.string_types.proxy_hostname.swigValue(), proxy.host.trim())
+            pack.setInteger(settings_pack.int_types.proxy_port.swigValue(), proxy.port)
+            pack.setString(settings_pack.string_types.proxy_username.swigValue(), proxy.username.trim())
+            pack.setString(settings_pack.string_types.proxy_password.swigValue(), proxy.password)
+            pack.setBoolean(settings_pack.bool_types.proxy_peer_connections.swigValue(), proxy.proxyPeers)
+            pack.setBoolean(settings_pack.bool_types.proxy_tracker_connections.swigValue(), proxy.proxyTrackers)
+            pack.setBoolean(settings_pack.bool_types.proxy_hostnames.swigValue(), proxy.proxyHostnames)
+        }
     }
 }
