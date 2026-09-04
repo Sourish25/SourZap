@@ -3,6 +3,8 @@ package com.sourzap.app.torrent.core
 import android.util.Log
 import com.sourzap.app.service.core.DohResolver
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import okhttp3.Dns
@@ -15,10 +17,10 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /**
- * Encrypted DNS-over-HTTPS & Open-Port (443/80) BitTorrent Tracker Announcer.
+ * Encrypted DNS-over-HTTPS & Open-Port (443) BitTorrent Tracker Announcer.
  * Completely bypasses ISP port filtering, DNS hijacking, and DPI packet inspection
- * by resolving tracker domains over encrypted Google/Cloudflare DoH, communicating over HTTPS (port 443)
- * and HTTP (port 80), parsing compact peer responses, and directly injecting connected peers into the libtorrent swarm.
+ * by resolving tracker domains over encrypted Google/Cloudflare DoH, communicating over HTTPS (port 443),
+ * parsing compact peer responses, and directly injecting connected peers into the libtorrent swarm.
  */
 object HttpsTrackerAnnouncer {
 
@@ -31,19 +33,9 @@ object HttpsTrackerAnnouncer {
         // HTTPS Port 443 (Immune to DPI and Port blocks)
         "https://tracker.pmman.tech:443/announce",
         "https://tracker.nekomi.cn:443/announce",
-        "https://004430.xyz:443/announce",
         "https://tracker.leechshield.link:443/announce",
         "https://tracker.7471.top:443/announce",
-        "https://tr.nyacat.pw:443/announce",
-        "https://t.213891.xyz:443/announce",
-        "https://open.ftorrent.com:443/announce",
-        // HTTP Port 80 (Standard Web Port - Open on ISP firewalls)
-        "http://open.trackerlist.xyz:80/announce",
-        "http://tracker2.dler.org:80/announce",
-        "http://tracker.zhuqiy.com:80/announce",
-        "http://004430.xyz:80/announce",
-        "http://tr.nyacat.pw:80/announce",
-        "http://1337.abcvg.info:80/announce"
+        "https://open.ftorrent.com:443/announce"
     )
 
     private val dohDns = object : Dns {
@@ -94,40 +86,47 @@ object HttpsTrackerAnnouncer {
         if (hashBytes.size != 20) return@withContext 0
 
         val urlEncodedHash = urlEncodeBytes(hashBytes)
-        var totalInjected = 0
+        val port = kotlin.random.Random.nextInt(10000, 60001)
 
-        for (trackerUrl in WORKING_TRACKERS) {
-            try {
-                val announceUrl = "$trackerUrl?info_hash=$urlEncodedHash&peer_id=$peerId&port=6881&uploaded=0&downloaded=0&left=8948197785&compact=1"
-                val request = Request.Builder()
-                    .url(announceUrl)
-                    .header("User-Agent", "SourZap/2.8.1")
-                    .header("Accept", "*/*")
-                    .build()
+        val deferredAnnounces = WORKING_TRACKERS.map { trackerUrl ->
+            async {
+                try {
+                    val announceUrl = "$trackerUrl?info_hash=$urlEncodedHash&peer_id=$peerId&port=$port&uploaded=0&downloaded=0&left=8948197785&compact=1"
+                    val request = Request.Builder()
+                        .url(announceUrl)
+                        .header("User-Agent", "SourZap/2.8.1")
+                        .header("Accept", "*/*")
+                        .build()
 
-                httpClient.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val bodyBytes = response.body?.bytes() ?: return@use
-                        val peers = parseCompactPeers(bodyBytes)
-                        var injectedCount = 0
-                        for ((ip, port) in peers) {
-                            try {
-                                val ep = TcpEndpoint(ip, port)
-                                handle.swig().connect_peer(ep.swig())
-                                injectedCount++
-                            } catch (_: Throwable) {}
-                        }
-                        if (injectedCount > 0) {
-                            Log.i(TAG, "Successfully injected $injectedCount peers from $trackerUrl via DoH")
-                            totalInjected += injectedCount
+                    httpClient.newCall(request).execute().use { response ->
+                        if (response.isSuccessful) {
+                            val bodyBytes = response.body?.bytes() ?: return@use 0
+                            val peers = parseCompactPeers(bodyBytes)
+                            var injectedCount = 0
+                            for ((ip, peerPort) in peers) {
+                                try {
+                                    val ep = TcpEndpoint(ip, peerPort)
+                                    synchronized(handle) {
+                                        handle.swig().connect_peer(ep.swig())
+                                    }
+                                    injectedCount++
+                                } catch (_: Throwable) {}
+                            }
+                            if (injectedCount > 0) {
+                                Log.i(TAG, "Successfully injected $injectedCount peers from $trackerUrl via DoH")
+                            }
+                            injectedCount
+                        } else {
+                            0
                         }
                     }
+                } catch (e: Throwable) {
+                    Log.d(TAG, "Announce to $trackerUrl failed: ${e.message}")
+                    0
                 }
-            } catch (e: Throwable) {
-                Log.d(TAG, "Announce to $trackerUrl failed: ${e.message}")
             }
         }
-        totalInjected
+        deferredAnnounces.awaitAll().sum()
     }
 
     fun parseCompactPeers(responseBytes: ByteArray): List<Pair<String, Int>> {

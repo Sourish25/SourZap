@@ -651,7 +651,7 @@ class Tier1FeatureCoverageTest {
         val config = TorrentSessionConfig.DEFAULT
         assertTrue(config.enableIncomingUtp)
         assertTrue(config.enableOutgoingUtp)
-        assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, config.outEncPolicy)
+        assertEquals(TorrentSessionConfig.ENC_POLICY_FORCED, config.outEncPolicy)
         assertEquals(TorrentSessionConfig.ENC_LEVEL_BOTH, config.allowedEncLevel)
     }
 

@@ -87,18 +87,14 @@ class TorrentNetworkAndPriorityAdversarialChallengerTest {
     @Test
     fun probe_DefaultListenInterfaces_MatchesIPv4AndIPv6DynamicBindings() {
         val config = TorrentSessionConfig.DEFAULT
-        assertEquals("0.0.0.0:0,[::]:0", config.listenInterfaces)
+        assertEquals("0.0.0.0:0", config.listenInterfaces)
 
         val parsed = parseAndValidateListenInterfaces(config.listenInterfaces)
-        assertEquals(2, parsed.size)
+        assertEquals(1, parsed.size)
 
         // IPv4 dynamic all-interfaces
         assertEquals("0.0.0.0", parsed[0].first)
         assertEquals(0, parsed[0].second)
-
-        // IPv6 dynamic all-interfaces with bracket notation
-        assertEquals("[::]", parsed[1].first)
-        assertEquals(0, parsed[1].second)
     }
 
     @Test
@@ -169,16 +165,16 @@ class TorrentNetworkAndPriorityAdversarialChallengerTest {
         assertTrue("UPnP must be enabled", config.enableUpnp)
         assertTrue("NAT-PMP must be enabled", config.enableNatpmp)
 
-        // Transport: TCP prioritized to defeat LEDBAT 0 B/s stall
+        // Transport: Peer proportional mixed mode for uTP hole punching alongside TCP
         assertTrue("Incoming TCP enabled", config.enableIncomingTcp)
         assertTrue("Outgoing TCP enabled", config.enableOutgoingTcp)
         assertTrue("Incoming uTP enabled", config.enableIncomingUtp)
         assertTrue("Outgoing uTP enabled", config.enableOutgoingUtp)
-        assertEquals(TorrentSessionConfig.MIXED_MODE_PREFER_TCP, config.mixedModeAlgorithm)
-        assertEquals(0, TorrentSessionConfig.MIXED_MODE_PREFER_TCP)
+        assertEquals(TorrentSessionConfig.MIXED_MODE_PEER_PROPORTIONAL, config.mixedModeAlgorithm)
+        assertEquals(1, TorrentSessionConfig.MIXED_MODE_PEER_PROPORTIONAL)
 
         // Protocol Encryption (MSE / PE)
-        assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, config.outEncPolicy)
+        assertEquals(TorrentSessionConfig.ENC_POLICY_FORCED, config.outEncPolicy)
         assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, config.inEncPolicy)
         assertEquals(TorrentSessionConfig.ENC_LEVEL_BOTH, config.allowedEncLevel)
         assertTrue("Prefer RC4 must be enabled", config.preferRc4)
@@ -194,10 +190,10 @@ class TorrentNetworkAndPriorityAdversarialChallengerTest {
         assertEquals(500, config.connectionsLimit)
         assertEquals(4000, config.maxPeerlistSize)
         assertEquals(100, config.torrentConnectBoost)
-        assertEquals(80, config.connectionSpeed)
-        assertEquals(5, config.peerConnectTimeout)
+        assertEquals(30, config.connectionSpeed)
+        assertEquals(15, config.peerConnectTimeout)
         assertEquals(1500, config.maxOutRequestQueue)
-        assertEquals(8, config.requestTimeout)
+        assertEquals(20, config.requestTimeout)
         assertEquals(20, config.wholePiecesThreshold)
         assertEquals(64 * 1024 * 1024, config.cacheSize)
         assertEquals(1048576, config.sendSocketBufferSize) // 1 MB

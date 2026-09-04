@@ -38,8 +38,8 @@ class TorrentEngineLifecycleE2ETest {
         assertTrue("Incoming TCP must be enabled", config.enableIncomingTcp)
         assertTrue("Outgoing TCP must be enabled", config.enableOutgoingTcp)
 
-        // Protocol Encryption: PE enabled with BOTH levels to allow connecting to 100% of swarm peers while evading DPI
-        assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, config.outEncPolicy)
+        // Protocol Encryption: PE forced outbound to bypass BSNL DPI, enabled inbound with BOTH levels
+        assertEquals(TorrentSessionConfig.ENC_POLICY_FORCED, config.outEncPolicy)
         assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, config.inEncPolicy)
         assertEquals(TorrentSessionConfig.ENC_LEVEL_BOTH, config.allowedEncLevel)
         assertTrue("RC4 preference must be active", config.preferRc4)

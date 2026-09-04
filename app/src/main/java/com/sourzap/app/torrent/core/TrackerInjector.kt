@@ -37,6 +37,13 @@ object TrackerInjector {
         "https://tracker.leechshield.link:443/announce"
     )
 
+    val VERIFIED_NON_6881_UDP_TRACKERS = listOf(
+        "udp://tracker.opentrackr.org:1337/announce",
+        "udp://open.demonii.com:1337/announce",
+        "udp://explodie.org:6969/announce",
+        "udp://tracker.torrent.eu.org:451/announce"
+    )
+
     val EXTRA_PUBLIC_TRACKERS = listOf(
         "udp://tracker.opentrackr.org:1337/announce",
         "udp://open.stealth.si:80/announce",
@@ -83,7 +90,8 @@ object TrackerInjector {
         }
 
         val sb = StringBuilder(trimmed)
-        for (tracker in HTTPS_PORT_443_TRACKERS) {
+        val trackersToInject = HTTPS_PORT_443_TRACKERS + VERIFIED_NON_6881_UDP_TRACKERS
+        for (tracker in trackersToInject) {
             val norm = normalizeTrackerUrl(tracker)
             if (!existingTrackers.contains(norm)) {
                 val encoded = URLEncoder.encode(tracker, StandardCharsets.UTF_8.name())

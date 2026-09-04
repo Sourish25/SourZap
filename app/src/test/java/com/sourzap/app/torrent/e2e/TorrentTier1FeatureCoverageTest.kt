@@ -181,9 +181,9 @@ class TorrentTier1FeatureCoverageTest {
     // =========================================================================
 
     @Test
-    fun testF2_1_NativeMSE_OutEncPolicyEnabledByDefault() {
+    fun testF2_1_NativeMSE_OutEncPolicyForcedByDefault() {
         val config = TorrentSessionConfig.DEFAULT
-        assertEquals("Outbound encryption policy must be ENABLED (1)", TorrentSessionConfig.ENC_POLICY_ENABLED, config.outEncPolicy)
+        assertEquals("Outbound encryption policy must be FORCED (0)", TorrentSessionConfig.ENC_POLICY_FORCED, config.outEncPolicy)
     }
 
     @Test

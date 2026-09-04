@@ -15,19 +15,19 @@ import org.libtorrent4j.swig.settings_pack
  */
 data class TorrentSessionConfig(
     // 1. Dynamic Listen Interfaces & NAT Traversal (UPnP / NAT-PMP)
-    val listenInterfaces: String = "0.0.0.0:0,[::]:0",
+    val listenInterfaces: String = "0.0.0.0:0",
     val enableUpnp: Boolean = true,
     val enableNatpmp: Boolean = true,
 
-    // 2. Dual Transport & Mixed Mode Algorithm (TCP Priority over uTP to defeat LEDBAT 0 B/s stall)
+    // 2. Dual Transport & Mixed Mode Algorithm (Peer Proportional to enable uTP hole punching alongside TCP)
     val enableIncomingUtp: Boolean = true,
     val enableOutgoingUtp: Boolean = true,
     val enableIncomingTcp: Boolean = true,
     val enableOutgoingTcp: Boolean = true,
-    val mixedModeAlgorithm: Int = PREFER_TCP,
+    val mixedModeAlgorithm: Int = PEER_PROPORTIONAL,
 
     // 3. Message Stream Encryption (MSE / PE) & Anti-DPI Protocol Obfuscation
-    val outEncPolicy: Int = ENC_POLICY_ENABLED,
+    val outEncPolicy: Int = ENC_POLICY_FORCED,
     val inEncPolicy: Int = ENC_POLICY_ENABLED,
     val allowedEncLevel: Int = ENC_LEVEL_BOTH,
     val preferRc4: Boolean = true,
@@ -36,10 +36,10 @@ data class TorrentSessionConfig(
     val connectionsLimit: Int = 500,
     val maxPeerlistSize: Int = 4000,
     val torrentConnectBoost: Int = 100,
-    val connectionSpeed: Int = 80,
-    val peerConnectTimeout: Int = 5,
+    val connectionSpeed: Int = 30,
+    val peerConnectTimeout: Int = 15,
     val maxOutRequestQueue: Int = 1500,
-    val requestTimeout: Int = 8,
+    val requestTimeout: Int = 20,
     val wholePiecesThreshold: Int = 20,
     val cacheSize: Int = 64 * 1024 * 1024,
     val sendSocketBufferSize: Int = 1048576, // 1 MB
@@ -63,7 +63,7 @@ data class TorrentSessionConfig(
     val activeDownloads: Int = 20,
     val activeSeeds: Int = 20,
     val activeLimit: Int = 40,
-    val userAgent: String = "SourZap/2.8.2 libtorrent4j/2.1.0",
+    val userAgent: String = "SourZap/2.8.3 libtorrent4j/2.1.0",
 
     // 8. SOCKS5 / HTTP Proxy Configuration
     val proxyConfig: TorrentProxyConfig = TorrentProxyConfig.DEFAULT
@@ -135,13 +135,13 @@ data class TorrentSessionConfig(
     }
 
     companion object {
-        const val ENC_POLICY_DISABLED = 0
+        const val ENC_POLICY_FORCED = 0
         const val ENC_POLICY_ENABLED = 1
-        const val ENC_POLICY_FORCED = 2
+        const val ENC_POLICY_DISABLED = 2
 
-        const val PE_DISABLED = ENC_POLICY_DISABLED
-        const val PE_ENABLED = ENC_POLICY_ENABLED
         const val PE_FORCED = ENC_POLICY_FORCED
+        const val PE_ENABLED = ENC_POLICY_ENABLED
+        const val PE_DISABLED = ENC_POLICY_DISABLED
 
         const val ENC_LEVEL_PLAINTEXT = 1
         const val ENC_LEVEL_RC4 = 2

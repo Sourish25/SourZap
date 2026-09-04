@@ -23,8 +23,8 @@ class TorrentSessionConfigTest {
     fun testDynamicListenInterfacesAndNatTraversal() {
         val config = TorrentSessionConfig.DEFAULT
 
-        // Dynamic listen interface binding across all IPv4 and IPv6 interfaces with ephemeral ports
-        assertEquals("0.0.0.0:0,[::]:0", config.listenInterfaces)
+        // Dynamic listen interface binding across all IPv4 interfaces with ephemeral ports
+        assertEquals("0.0.0.0:0", config.listenInterfaces)
 
         // Active NAT traversal flags
         assertTrue("UPnP must be enabled by default for NAT traversal", config.enableUpnp)
@@ -32,7 +32,7 @@ class TorrentSessionConfigTest {
     }
 
     @Test
-    fun testDualTransportAndPreferTcpMixedMode() {
+    fun testDualTransportAndPeerProportionalMixedMode() {
         val config = TorrentSessionConfig.DEFAULT
 
         // Dual transport guarantees: uTP and TCP enabled for maximum swarm connectivity
@@ -41,8 +41,8 @@ class TorrentSessionConfigTest {
         assertTrue("Incoming TCP must be enabled", config.enableIncomingTcp)
         assertTrue("Outgoing TCP must be enabled", config.enableOutgoingTcp)
 
-        // mixed_mode_algorithm = prefer_tcp (0) to defeat uTP LEDBAT stalling on UDP-shaped ISPs
-        assertEquals(TorrentSessionConfig.MIXED_MODE_PREFER_TCP, config.mixedModeAlgorithm)
+        // mixed_mode_algorithm = peer_proportional (1) to enable uTP hole punching alongside TCP
+        assertEquals(TorrentSessionConfig.MIXED_MODE_PEER_PROPORTIONAL, config.mixedModeAlgorithm)
         assertEquals(0, TorrentSessionConfig.MIXED_MODE_PREFER_TCP)
         assertEquals(1, TorrentSessionConfig.MIXED_MODE_PEER_PROPORTIONAL)
     }
@@ -51,20 +51,20 @@ class TorrentSessionConfigTest {
     fun testFullRc4ProtocolEncryptionEnforcement() {
         val config = TorrentSessionConfig.DEFAULT
 
-        // Protocol Encryption: PE enabled with BOTH levels to allow connecting to 100% of swarm peers while evading DPI
-        assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, config.outEncPolicy)
+        // Protocol Encryption: PE forced outbound to bypass BSNL DPI, enabled inbound with BOTH levels
+        assertEquals(TorrentSessionConfig.ENC_POLICY_FORCED, config.outEncPolicy)
         assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, config.inEncPolicy)
         assertEquals(TorrentSessionConfig.ENC_LEVEL_BOTH, config.allowedEncLevel)
         assertTrue("Prefer RC4 stream cipher must be enabled", config.preferRc4)
 
-        // Verify constant integer encodings and PE_* aliases
-        assertEquals(0, TorrentSessionConfig.ENC_POLICY_DISABLED)
+        // Verify constant integer encodings and PE_* aliases (pe_forced = 0, pe_enabled = 1, pe_disabled = 2)
+        assertEquals(0, TorrentSessionConfig.ENC_POLICY_FORCED)
         assertEquals(1, TorrentSessionConfig.ENC_POLICY_ENABLED)
-        assertEquals(2, TorrentSessionConfig.ENC_POLICY_FORCED)
+        assertEquals(2, TorrentSessionConfig.ENC_POLICY_DISABLED)
 
-        assertEquals(TorrentSessionConfig.ENC_POLICY_DISABLED, TorrentSessionConfig.PE_DISABLED)
-        assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, TorrentSessionConfig.PE_ENABLED)
         assertEquals(TorrentSessionConfig.ENC_POLICY_FORCED, TorrentSessionConfig.PE_FORCED)
+        assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, TorrentSessionConfig.PE_ENABLED)
+        assertEquals(TorrentSessionConfig.ENC_POLICY_DISABLED, TorrentSessionConfig.PE_DISABLED)
 
         assertEquals(1, TorrentSessionConfig.ENC_LEVEL_PLAINTEXT)
         assertEquals(2, TorrentSessionConfig.ENC_LEVEL_RC4)
@@ -87,8 +87,8 @@ class TorrentSessionConfigTest {
             preferRc4 = true
         )
 
-        assertEquals(2, forcedConfig.outEncPolicy)
-        assertEquals(2, forcedConfig.inEncPolicy)
+        assertEquals(0, forcedConfig.outEncPolicy)
+        assertEquals(0, forcedConfig.inEncPolicy)
         assertEquals(2, forcedConfig.allowedEncLevel)
         assertTrue(forcedConfig.preferRc4)
     }
@@ -100,10 +100,10 @@ class TorrentSessionConfigTest {
         assertEquals(500, config.connectionsLimit)
         assertEquals(4000, config.maxPeerlistSize)
         assertEquals(100, config.torrentConnectBoost)
-        assertEquals(80, config.connectionSpeed)
-        assertEquals(5, config.peerConnectTimeout)
+        assertEquals(30, config.connectionSpeed)
+        assertEquals(15, config.peerConnectTimeout)
         assertEquals(1500, config.maxOutRequestQueue)
-        assertEquals(8, config.requestTimeout)
+        assertEquals(20, config.requestTimeout)
         assertEquals(20, config.wholePiecesThreshold)
         assertEquals(64 * 1024 * 1024, config.cacheSize)
         assertEquals(1048576, config.sendSocketBufferSize) // 1 MB

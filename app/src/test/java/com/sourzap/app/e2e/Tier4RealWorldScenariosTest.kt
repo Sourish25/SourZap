@@ -165,7 +165,7 @@ class Tier4RealWorldScenariosTest {
         val config = TorrentSessionConfig.DEFAULT
         assertTrue("Dual transport uTP enabled", config.enableIncomingUtp)
         assertTrue("Dual transport uTP enabled", config.enableOutgoingUtp)
-        assertEquals("PE protocol encryption enabled", TorrentSessionConfig.ENC_POLICY_ENABLED, config.outEncPolicy)
+        assertEquals("PE protocol encryption forced", TorrentSessionConfig.ENC_POLICY_FORCED, config.outEncPolicy)
 
         // Step 2: Auto-inject 22 port-443 HTTPS trackers
         val initialMagnet = "magnet:?xt=urn:btih:4a2f8b9c1d3e5f7a9b1c3d5e7f9a1b3c5d7e9f1a"

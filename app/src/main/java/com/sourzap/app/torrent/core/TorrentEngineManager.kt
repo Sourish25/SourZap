@@ -208,23 +208,23 @@ class LibtorrentEngineManager(
                 sessionManager.addListener(alertListener)
                 val settingsPack = config.createSettingsPack()
 
-                // 1. Dynamic IPv4/IPv6 listen interface with UPnP and NAT-PMP port forwarding
-                settingsPack.setString(settings_pack.string_types.listen_interfaces.swigValue(), "0.0.0.0:0,[::]:0")
+                // 1. Dynamic IPv4 listen interface with UPnP and NAT-PMP port forwarding
+                settingsPack.setString(settings_pack.string_types.listen_interfaces.swigValue(), "0.0.0.0:0")
                 settingsPack.setBoolean(settings_pack.bool_types.enable_upnp.swigValue(), true)
                 settingsPack.setBoolean(settings_pack.bool_types.enable_natpmp.swigValue(), true)
 
-                // 2. Dual Transport with TCP priority (prefer TCP for data pieces, retain UDP for DHT/uTP NAT traversal)
+                // 2. Dual Transport with uTP hole punching alongside TCP
                 settingsPack.setBoolean(settings_pack.bool_types.enable_outgoing_utp.swigValue(), true)
                 settingsPack.setBoolean(settings_pack.bool_types.enable_incoming_utp.swigValue(), true)
                 settingsPack.setBoolean(settings_pack.bool_types.enable_outgoing_tcp.swigValue(), true)
                 settingsPack.setBoolean(settings_pack.bool_types.enable_incoming_tcp.swigValue(), true)
-                settingsPack.setInteger(settings_pack.int_types.mixed_mode_algorithm.swigValue(), settings_pack.bandwidth_mixed_algo_t.prefer_tcp.swigValue())
+                settingsPack.setInteger(settings_pack.int_types.mixed_mode_algorithm.swigValue(), TorrentSessionConfig.PEER_PROPORTIONAL)
 
                 // 3. Disable Local Service Discovery (LSD) so the engine never connects to itself on LAN
                 settingsPack.setBoolean(settings_pack.bool_types.enable_lsd.swigValue(), false)
 
-                // 4. Message Stream Encryption (MSE / PE) - Prefer RC4, allow fallback so non-forced peers aren't rejected with EOF
-                settingsPack.setInteger(settings_pack.int_types.out_enc_policy.swigValue(), TorrentSessionConfig.ENC_POLICY_ENABLED)
+                // 4. Message Stream Encryption (MSE / PE) - Force RC4 on outgoing connections to evade DPI
+                settingsPack.setInteger(settings_pack.int_types.out_enc_policy.swigValue(), TorrentSessionConfig.ENC_POLICY_FORCED)
                 settingsPack.setInteger(settings_pack.int_types.in_enc_policy.swigValue(), TorrentSessionConfig.ENC_POLICY_ENABLED)
                 settingsPack.setInteger(settings_pack.int_types.allowed_enc_level.swigValue(), TorrentSessionConfig.ENC_LEVEL_BOTH)
                 settingsPack.setBoolean(settings_pack.bool_types.prefer_rc4.swigValue(), true)

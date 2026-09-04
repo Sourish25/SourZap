@@ -54,29 +54,29 @@ class AdversarialGen2StressVerificationTest {
     fun r1_sessionConfig_defaultEvasionSettings_areOptimalForHarshNetworks() {
         val config = TorrentSessionConfig.DEFAULT
 
-        // Dynamic listen interfaces on IPv4 and IPv6 to bypass port filtering
-        assertEquals("0.0.0.0:0,[::]:0", config.listenInterfaces)
+        // Dynamic listen interfaces on IPv4 to bypass port filtering
+        assertEquals("0.0.0.0:0", config.listenInterfaces)
 
         // UPnP and NAT-PMP enabled for NAT traversal
         assertTrue("UPnP must be enabled for NAT traversal", config.enableUpnp)
         assertTrue("NAT-PMP must be enabled for NAT traversal", config.enableNatpmp)
 
-        // Mixed mode: PREFER_TCP to defeat LEDBAT 0 B/s congestion collapse
-        assertEquals(TorrentSessionConfig.MIXED_MODE_PREFER_TCP, config.mixedModeAlgorithm)
+        // Mixed mode: PEER_PROPORTIONAL
+        assertEquals(TorrentSessionConfig.MIXED_MODE_PEER_PROPORTIONAL, config.mixedModeAlgorithm)
         assertTrue(config.enableIncomingTcp)
         assertTrue(config.enableOutgoingTcp)
         assertTrue(config.enableIncomingUtp)
         assertTrue(config.enableOutgoingUtp)
 
         // Protocol encryption (MSE / PE) with RC4 cipher preference
-        assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, config.outEncPolicy)
+        assertEquals(TorrentSessionConfig.ENC_POLICY_FORCED, config.outEncPolicy)
         assertEquals(TorrentSessionConfig.ENC_POLICY_ENABLED, config.inEncPolicy)
         assertEquals(TorrentSessionConfig.ENC_LEVEL_BOTH, config.allowedEncLevel)
         assertTrue("RC4 cipher must be preferred to obfuscate BT wire headers", config.preferRc4)
 
         // Aggressive Swarm Saturation
         assertTrue("Connections limit must be >= 200", config.connectionsLimit >= 200)
-        assertTrue("Connection speed must be >= 50", config.connectionSpeed >= 50)
+        assertTrue("Connection speed must be >= 30", config.connectionSpeed >= 30)
         assertTrue("AIO threads must be >= 2", config.aioThreads >= 2)
         assertTrue("Announce to all trackers must be true", config.announceToAllTrackers)
         assertTrue("Announce to all tiers must be true", config.announceToAllTiers)
@@ -106,8 +106,8 @@ class AdversarialGen2StressVerificationTest {
         assertTrue(config.enableUpnp)
         assertTrue(config.enableNatpmp)
         assertEquals(0, config.mixedModeAlgorithm)
-        assertEquals(2, config.outEncPolicy)
-        assertEquals(2, config.inEncPolicy)
+        assertEquals(0, config.outEncPolicy)
+        assertEquals(0, config.inEncPolicy)
         assertEquals(2, config.allowedEncLevel)
         assertTrue(config.preferRc4)
         assertTrue(config.announceToAllTrackers)

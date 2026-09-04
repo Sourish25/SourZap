@@ -131,4 +131,20 @@ class TrackerInjectorTest {
             assertTrue("Tracker must use https scheme", tracker.startsWith("https://"))
         }
     }
+
+    @Test
+    fun `test injectTrackers injects verified non-6881 UDP trackers alongside HTTPS trackers`() {
+        val bareMagnet = "magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f519b335de7ece74f6d2&dn=Ubuntu+24.04"
+        val injected = TrackerInjector.injectTrackers(bareMagnet)
+
+        for (tracker in TrackerInjector.VERIFIED_NON_6881_UDP_TRACKERS) {
+            val encodedTracker = URLEncoder.encode(tracker, StandardCharsets.UTF_8.name())
+            assertTrue("Injected magnet must contain UDP tracker $tracker", injected.contains("&tr=$encodedTracker"))
+        }
+
+        assertTrue("Verified UDP trackers list must contain opentrackr", TrackerInjector.VERIFIED_NON_6881_UDP_TRACKERS.contains("udp://tracker.opentrackr.org:1337/announce"))
+        assertTrue("Verified UDP trackers list must contain open.demonii", TrackerInjector.VERIFIED_NON_6881_UDP_TRACKERS.contains("udp://open.demonii.com:1337/announce"))
+        assertTrue("Verified UDP trackers list must contain explodie", TrackerInjector.VERIFIED_NON_6881_UDP_TRACKERS.contains("udp://explodie.org:6969/announce"))
+        assertTrue("Verified UDP trackers list must contain torrent.eu.org", TrackerInjector.VERIFIED_NON_6881_UDP_TRACKERS.contains("udp://tracker.torrent.eu.org:451/announce"))
+    }
 }
