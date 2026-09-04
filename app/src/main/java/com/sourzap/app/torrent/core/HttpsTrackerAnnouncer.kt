@@ -68,7 +68,7 @@ object HttpsTrackerAnnouncer {
     suspend fun announceAndInjectPeers(
         handle: TorrentHandle,
         hexInfoHash: String,
-        peerId: String = "-SZ2810-012345678901",
+        peerId: String = "-SZ2840-012345678901",
         force: Boolean = false
     ): Int = withContext(Dispatchers.IO) {
         val hashLower = hexInfoHash.lowercase()
@@ -86,7 +86,11 @@ object HttpsTrackerAnnouncer {
         if (hashBytes.size != 20) return@withContext 0
 
         val urlEncodedHash = urlEncodeBytes(hashBytes)
-        val port = kotlin.random.Random.nextInt(10000, 60001)
+        val port = 6881
+
+        try {
+            NetworkIpHelper.refreshPublicIp()
+        } catch (_: Throwable) {}
 
         val deferredAnnounces = WORKING_TRACKERS.map { trackerUrl ->
             async {
@@ -94,7 +98,7 @@ object HttpsTrackerAnnouncer {
                     val announceUrl = "$trackerUrl?info_hash=$urlEncodedHash&peer_id=$peerId&port=$port&uploaded=0&downloaded=0&left=8948197785&compact=1"
                     val request = Request.Builder()
                         .url(announceUrl)
-                        .header("User-Agent", "SourZap/2.8.1")
+                        .header("User-Agent", "SourZap/2.8.4")
                         .header("Accept", "*/*")
                         .build()
 
@@ -104,6 +108,10 @@ object HttpsTrackerAnnouncer {
                             val peers = parseCompactPeers(bodyBytes)
                             var injectedCount = 0
                             for ((ip, peerPort) in peers) {
+                                if (NetworkIpHelper.isSelfOrLocal(ip)) {
+                                    Log.d(TAG, "Skipping self/local peer $ip:$peerPort from $trackerUrl")
+                                    continue
+                                }
                                 try {
                                     val ep = TcpEndpoint(ip, peerPort)
                                     synchronized(handle) {

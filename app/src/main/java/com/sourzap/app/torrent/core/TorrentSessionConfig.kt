@@ -63,7 +63,7 @@ data class TorrentSessionConfig(
     val activeDownloads: Int = 20,
     val activeSeeds: Int = 20,
     val activeLimit: Int = 40,
-    val userAgent: String = "SourZap/2.8.3 libtorrent4j/2.1.0",
+    val userAgent: String = "SourZap/2.8.4 libtorrent4j/2.1.0",
 
     // 8. SOCKS5 / HTTP Proxy Configuration
     val proxyConfig: TorrentProxyConfig = TorrentProxyConfig.DEFAULT

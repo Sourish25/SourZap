@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -711,6 +712,7 @@ class LibtorrentEngineManager(
                                             try {
                                                 val hashHex = try { handle.infoHash().toHex() } catch (_: Throwable) { "" }
                                                 if (hashHex.isNotEmpty()) {
+                                                    UdpTrackerAnnouncer.announceAndInjectPeers(handle, hashHex)
                                                     HttpsTrackerAnnouncer.announceAndInjectPeers(handle, hashHex)
                                                 }
                                             } catch (_: Throwable) {}
@@ -773,11 +775,27 @@ class LibtorrentEngineManager(
                 setFilePriorities(id, pending)
             }
 
-            // Asynchronously announce to Port-443 HTTPS trackers via Google DoH and inject discovered peers
+            // Asynchronously resolve trackers to direct IPs and announce via UDP & HTTPS DoH announcers
             engineScope.launch {
                 try {
-                    DohTrackerResolver.preResolveTrackers(TrackerInjector.HTTPS_PORT_443_TRACKERS)
-                    HttpsTrackerAnnouncer.announceAndInjectPeers(handle, id, force = true)
+                    // 1. Pre-resolve trackers into direct IP URLs so libtorrent bypasses Asio DNS
+                    val resolvedUrls = DohTrackerResolver.resolveTrackersToDirectIpUrls(PRIORITY_LIVE_TRACKERS)
+                    for (rUrl in resolvedUrls) {
+                        try {
+                            handle.addTracker(AnnounceEntry(rUrl))
+                        } catch (_: Throwable) {}
+                    }
+
+                    // 2. Announce to high-capacity UDP trackers and HTTPS trackers in parallel
+                    val udpJob = async {
+                        UdpTrackerAnnouncer.announceAndInjectPeers(handle, id, force = true)
+                    }
+                    val httpsJob = async {
+                        DohTrackerResolver.preResolveTrackers(TrackerInjector.HTTPS_PORT_443_TRACKERS)
+                        HttpsTrackerAnnouncer.announceAndInjectPeers(handle, id, force = true)
+                    }
+                    udpJob.await()
+                    httpsJob.await()
                 } catch (_: Throwable) {}
             }
 

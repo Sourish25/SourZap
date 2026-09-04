@@ -1,4 +1,4 @@
-﻿package com.sourzap.app.torrent.core
+package com.sourzap.app.torrent.core
 
 import com.sourzap.app.service.core.DohResolver
 import kotlinx.coroutines.Deferred
@@ -100,6 +100,32 @@ object DohTrackerResolver {
 
         tasks.awaitAll()
         resultMap
+    }
+
+    suspend fun resolveTrackersToDirectIpUrls(trackers: List<String>): List<String> = coroutineScope {
+        preResolveTrackers(trackers)
+        val result = mutableListOf<String>()
+        for (tr in trackers) {
+            val host = extractHost(tr)
+            if (host == null) {
+                result.add(tr)
+                continue
+            }
+            if (isIpLiteral(host)) {
+                result.add(tr)
+                continue
+            }
+            val ips = getCachedIps(host) ?: resolveHost(host)
+            if (ips.isNotEmpty()) {
+                val ipStr = ips.first().hostAddress
+                if (!ipStr.isNullOrBlank()) {
+                    val replaced = tr.replace(host, ipStr)
+                    result.add(replaced)
+                }
+            }
+            result.add(tr) // keep original as fallback
+        }
+        result.distinct()
     }
 
     fun getCachedIps(host: String): List<InetAddress>? {
