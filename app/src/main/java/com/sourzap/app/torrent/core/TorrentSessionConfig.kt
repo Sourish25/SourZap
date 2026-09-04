@@ -1,7 +1,5 @@
 package com.sourzap.app.torrent.core
 
-import com.sourzap.app.torrent.model.ProxyType
-import com.sourzap.app.torrent.model.TorrentProxyConfig
 import org.libtorrent4j.SettingsPack
 import org.libtorrent4j.swig.settings_pack
 
@@ -63,10 +61,7 @@ data class TorrentSessionConfig(
     val activeDownloads: Int = 20,
     val activeSeeds: Int = 20,
     val activeLimit: Int = 40,
-    val userAgent: String = "SourZap/2.8.0 libtorrent4j/2.1.0",
-
-    // 8. Proxy & Snowflake / Tor Circumvention
-    val proxyConfig: TorrentProxyConfig = TorrentProxyConfig.DEFAULT
+    val userAgent: String = "SourZap/2.8.1 libtorrent4j/2.1.0"
 ) {
     /**
      * Builds and returns a new [SettingsPack] with all anti-censorship and throughput options applied.
@@ -129,35 +124,9 @@ data class TorrentSessionConfig(
 
         // Identity
         pack.setString(settings_pack.string_types.user_agent.swigValue(), userAgent)
-
-        // Proxy & Tor / Snowflake Circumvention
-        applyProxyTo(pack, proxyConfig)
     }
 
     companion object {
-        fun applyProxyTo(pack: SettingsPack, proxyConfig: TorrentProxyConfig) {
-            if (proxyConfig.enabled && proxyConfig.host.isNotBlank() && proxyConfig.port > 0) {
-                val swigType = when (proxyConfig.type) {
-                    ProxyType.SOCKS5 -> settings_pack.proxy_type_t.socks5.swigValue()
-                    ProxyType.HTTP -> settings_pack.proxy_type_t.http.swigValue()
-                    ProxyType.NONE -> settings_pack.proxy_type_t.none.swigValue()
-                }
-                pack.setInteger(settings_pack.int_types.proxy_type.swigValue(), swigType)
-                pack.setString(settings_pack.string_types.proxy_hostname.swigValue(), proxyConfig.host.trim())
-                pack.setInteger(settings_pack.int_types.proxy_port.swigValue(), proxyConfig.port)
-                if (proxyConfig.username.isNotBlank()) {
-                    pack.setString(settings_pack.string_types.proxy_username.swigValue(), proxyConfig.username)
-                    pack.setString(settings_pack.string_types.proxy_password.swigValue(), proxyConfig.password)
-                }
-                pack.setBoolean(settings_pack.bool_types.proxy_peer_connections.swigValue(), proxyConfig.proxyPeers)
-                pack.setBoolean(settings_pack.bool_types.proxy_tracker_connections.swigValue(), proxyConfig.proxyTrackers)
-                pack.setBoolean(settings_pack.bool_types.proxy_hostnames.swigValue(), proxyConfig.proxyHostnames)
-            } else {
-                pack.setInteger(settings_pack.int_types.proxy_type.swigValue(), settings_pack.proxy_type_t.none.swigValue())
-                pack.setString(settings_pack.string_types.proxy_hostname.swigValue(), "")
-                pack.setInteger(settings_pack.int_types.proxy_port.swigValue(), 0)
-            }
-        }
         const val ENC_POLICY_DISABLED = 0
         const val ENC_POLICY_ENABLED = 1
         const val ENC_POLICY_FORCED = 2

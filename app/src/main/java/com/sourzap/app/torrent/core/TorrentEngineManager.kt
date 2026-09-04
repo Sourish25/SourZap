@@ -6,7 +6,6 @@ import com.sourzap.app.torrent.model.Priority
 import com.sourzap.app.torrent.model.TorrentFileItem
 import com.sourzap.app.torrent.model.TorrentItem
 import com.sourzap.app.torrent.model.TorrentPieceInfo
-import com.sourzap.app.torrent.model.TorrentProxyConfig
 import com.sourzap.app.torrent.model.TorrentSessionStats
 import com.sourzap.app.torrent.model.TorrentSource
 import com.sourzap.app.torrent.model.TorrentState
@@ -79,8 +78,6 @@ interface TorrentEngineManager {
 
     fun pauseAll()
     fun resumeAll()
-
-    fun updateProxySettings(proxyConfig: TorrentProxyConfig)
 
     fun observeTorrents(): StateFlow<List<TorrentItem>>
     fun observeStats(): StateFlow<TorrentSessionStats>
@@ -208,8 +205,10 @@ class LibtorrentEngineManager(
                 sessionManager.addListener(alertListener)
                 val settingsPack = config.createSettingsPack()
 
-                // 1. Single IPv4 interface bound to standard BitTorrent port 6881
-                settingsPack.setString(settings_pack.string_types.listen_interfaces.swigValue(), "0.0.0.0:6881")
+                // 1. Dynamic IPv4/IPv6 listen interface with UPnP and NAT-PMP port forwarding
+                settingsPack.setString(settings_pack.string_types.listen_interfaces.swigValue(), "0.0.0.0:0,[::]:0")
+                settingsPack.setBoolean(settings_pack.bool_types.enable_upnp.swigValue(), true)
+                settingsPack.setBoolean(settings_pack.bool_types.enable_natpmp.swigValue(), true)
 
                 // 2. Dual Transport with TCP priority (prefer TCP for data pieces, retain UDP for DHT/uTP NAT traversal)
                 settingsPack.setBoolean(settings_pack.bool_types.enable_outgoing_utp.swigValue(), true)
@@ -231,14 +230,6 @@ class LibtorrentEngineManager(
                 val directIpDhtNodes = "67.215.246.10:6881,87.98.162.88:6881,212.129.33.59:6881,185.157.221.247:25401,34.203.221.232:6881,82.221.103.244:6881,router.bittorrent.com:6881,dht.transmissionbt.com:6881,dht.libtorrent.org:25401"
                 settingsPack.setString(settings_pack.string_types.dht_bootstrap_nodes.swigValue(), directIpDhtNodes)
                 settingsPack.setBoolean(settings_pack.bool_types.enable_dht.swigValue(), true)
-
-                // 6. Apply current proxy configuration if enabled
-                context?.let { ctx ->
-                    try {
-                        val proxyConfig = TorrentProxyRepository(ctx).config.value
-                        TorrentSessionConfig.applyProxyTo(settingsPack, proxyConfig)
-                    } catch (_: Throwable) {}
-                }
 
                 val sessionParams = SessionParams(settingsPack)
                 sessionManager.start(sessionParams)
@@ -643,25 +634,6 @@ class LibtorrentEngineManager(
         triggerRefresh()
     }
 
-    override fun updateProxySettings(proxyConfig: TorrentProxyConfig) {
-        val pack = SettingsPack()
-        TorrentSessionConfig.applyProxyTo(pack, proxyConfig)
-        if (isRunning.get()) {
-            try {
-                sessionManager.applySettings(pack)
-                val logMsg = if (proxyConfig.enabled) {
-                    "Applied proxy: ${proxyConfig.type} -> ${proxyConfig.host}:${proxyConfig.port} (Snowflake: ${proxyConfig.isSnowflakePreset})"
-                } else {
-                    "Proxy disabled: direct connection"
-                }
-                Log.i(TAG, logMsg)
-                synchronized(globalLogs) { globalLogs.add(logMsg) }
-            } catch (e: Throwable) {
-                Log.w(TAG, "Error applying proxy settings dynamically: ${e.message}")
-            }
-        }
-    }
-
     private fun findHandle(id: String): TorrentHandle? {
         val sha1 = try {
             Sha1Hash(sha1_hash.from_hex(id))
@@ -778,7 +750,7 @@ class LibtorrentEngineManager(
             engineScope.launch {
                 try {
                     DohTrackerResolver.preResolveTrackers(TrackerInjector.HTTPS_PORT_443_TRACKERS)
-                    HttpsTrackerAnnouncer.announceAndInjectPeers(handle, id)
+                    HttpsTrackerAnnouncer.announceAndInjectPeers(handle, id, force = true)
                 } catch (_: Throwable) {}
             }
 

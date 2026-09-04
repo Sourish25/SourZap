@@ -42,9 +42,6 @@ class SourZapApp : Application() {
     lateinit var torrentEngineManager: com.sourzap.app.torrent.core.TorrentEngineManager
         private set
 
-    lateinit var torrentProxyRepository: com.sourzap.app.torrent.core.TorrentProxyRepository
-        private set
-
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -53,10 +50,7 @@ class SourZapApp : Application() {
         settingsRepository = SettingsRepository(this)
         speedTestEngine = SpeedTestEngine(settingsRepository, strategyRepository)
         updateManager = UpdateManager(this)
-        torrentProxyRepository = com.sourzap.app.torrent.core.TorrentProxyRepository(this)
-        val initialProxyConfig = torrentProxyRepository.config.value
-        val initialTorrentConfig = com.sourzap.app.torrent.core.TorrentSessionConfig(proxyConfig = initialProxyConfig)
-        torrentEngineManager = com.sourzap.app.torrent.core.TorrentEngineManager.create(initialTorrentConfig)
+        torrentEngineManager = com.sourzap.app.torrent.core.TorrentEngineManager.create(com.sourzap.app.torrent.core.TorrentSessionConfig.DEFAULT)
 
         createNotificationChannels()
     }
