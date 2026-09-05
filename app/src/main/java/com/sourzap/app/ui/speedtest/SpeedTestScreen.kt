@@ -252,7 +252,7 @@ fun SpeedTestScreen(
                                     unit = if (animatedPing > 0) "ms" else null,
                                     icon = Icons.Rounded.Timer,
                                     iconTint = MaterialTheme.colorScheme.primary,
-                                    subtitle = "Edge Server Round-Trip",
+                                    subtitle = "Server latency",
                                     modifier = Modifier.weight(1f)
                                 )
 
@@ -262,7 +262,7 @@ fun SpeedTestScreen(
                                     unit = if (animatedJitter > 0) "ms" else null,
                                     icon = Icons.Rounded.Timeline,
                                     iconTint = MaterialTheme.colorScheme.secondary,
-                                    subtitle = "Packet Delay Variance",
+                                    subtitle = "Network stability",
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -277,7 +277,7 @@ fun SpeedTestScreen(
                                     unit = if (animatedDownload > 0) "Mbps" else null,
                                     icon = Icons.Rounded.ArrowDownward,
                                     iconTint = MaterialTheme.colorScheme.primary,
-                                    subtitle = "4-Stream Parallel Pipe",
+                                    subtitle = "Download bandwidth",
                                     modifier = Modifier.weight(1f)
                                 )
 
@@ -287,7 +287,7 @@ fun SpeedTestScreen(
                                     unit = if (animatedUpload > 0) "Mbps" else null,
                                     icon = Icons.Rounded.ArrowUpward,
                                     iconTint = MaterialTheme.colorScheme.secondary,
-                                    subtitle = "Upstream Throughput",
+                                    subtitle = "Upload bandwidth",
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -387,7 +387,7 @@ fun SpeedTestScreen(
                             unit = if (animatedPing > 0) "ms" else null,
                             icon = Icons.Rounded.Timer,
                             iconTint = MaterialTheme.colorScheme.primary,
-                            subtitle = "Edge Server Round-Trip",
+                            subtitle = "Server latency",
                             modifier = Modifier.weight(1f)
                         )
 
@@ -397,7 +397,7 @@ fun SpeedTestScreen(
                             unit = if (animatedJitter > 0) "ms" else null,
                             icon = Icons.Rounded.Timeline,
                             iconTint = MaterialTheme.colorScheme.secondary,
-                            subtitle = "Packet Delay Variance",
+                            subtitle = "Network stability",
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -415,7 +415,7 @@ fun SpeedTestScreen(
                             unit = if (animatedDownload > 0) "Mbps" else null,
                             icon = Icons.Rounded.ArrowDownward,
                             iconTint = MaterialTheme.colorScheme.primary,
-                            subtitle = "4-Stream Parallel Pipe",
+                            subtitle = "Download bandwidth",
                             modifier = Modifier.weight(1f)
                         )
 
@@ -425,7 +425,7 @@ fun SpeedTestScreen(
                             unit = if (animatedUpload > 0) "Mbps" else null,
                             icon = Icons.Rounded.ArrowUpward,
                             iconTint = MaterialTheme.colorScheme.secondary,
-                            subtitle = "Upstream Throughput",
+                            subtitle = "Upload bandwidth",
                             modifier = Modifier.weight(1f)
                         )
                     }

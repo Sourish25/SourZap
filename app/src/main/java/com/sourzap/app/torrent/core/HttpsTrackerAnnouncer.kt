@@ -98,42 +98,51 @@ object HttpsTrackerAnnouncer {
                     val announceUrl = "$trackerUrl?info_hash=$urlEncodedHash&peer_id=$peerId&port=$port&uploaded=0&downloaded=0&left=8948197785&compact=1"
                     val request = Request.Builder()
                         .url(announceUrl)
-                        .header("User-Agent", "SourZap/2.8.4")
+                        .header("User-Agent", "SourZap/2.8.6")
                         .header("Accept", "*/*")
                         .build()
 
                     httpClient.newCall(request).execute().use { response ->
                         if (response.isSuccessful) {
-                            val bodyBytes = response.body?.bytes() ?: return@use 0
-                            val peers = parseCompactPeers(bodyBytes)
-                            var injectedCount = 0
-                            for ((ip, peerPort) in peers.take(35)) {
-                                if (NetworkIpHelper.isSelfOrLocal(ip)) {
-                                    Log.d(TAG, "Skipping self/local peer $ip:$peerPort from $trackerUrl")
-                                    continue
-                                }
-                                try {
-                                    if (!handle.isValid) break
-                                    val ep = TcpEndpoint(ip, peerPort)
-                                    handle.swig().connect_peer(ep.swig())
-                                    injectedCount++
-                                } catch (_: Throwable) {}
-                            }
-                            if (injectedCount > 0) {
-                                Log.i(TAG, "Successfully injected $injectedCount peers from $trackerUrl via DoH")
-                            }
-                            injectedCount
+                            val bodyBytes = response.body?.bytes() ?: return@use emptyList<Pair<String, Int>>()
+                            parseCompactPeers(bodyBytes)
                         } else {
-                            0
+                            emptyList()
                         }
                     }
                 } catch (e: Throwable) {
                     Log.d(TAG, "Announce to $trackerUrl failed: ${e.message}")
-                    0
+                    emptyList()
                 }
             }
         }
-        deferredAnnounces.awaitAll().sum()
+
+        val allDiscoveredPeers = deferredAnnounces.awaitAll().flatten().distinct()
+        var injectedCount = 0
+
+        if (!handle.isValid) return@withContext 0
+
+        for ((ip, peerPort) in allDiscoveredPeers.take(35)) {
+            if (NetworkIpHelper.isSelfOrLocal(ip)) {
+                Log.d(TAG, "Skipping self/local peer $ip:$peerPort")
+                continue
+            }
+            try {
+                if (!handle.isValid) break
+                val ep = TcpEndpoint(ip, peerPort)
+                synchronized(handle) {
+                    if (handle.isValid) {
+                        handle.swig().connect_peer(ep.swig())
+                        injectedCount++
+                    }
+                }
+            } catch (_: Throwable) {}
+        }
+
+        if (injectedCount > 0) {
+            Log.i(TAG, "Successfully injected $injectedCount peers via DoH HTTPS trackers into $hashLower")
+        }
+        injectedCount
     }
 
     fun parseCompactPeers(responseBytes: ByteArray): List<Pair<String, Int>> {

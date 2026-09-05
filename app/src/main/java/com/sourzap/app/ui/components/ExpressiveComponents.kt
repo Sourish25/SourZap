@@ -2,7 +2,9 @@ package com.sourzap.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -157,6 +159,26 @@ fun HeroConnectButton(
         label = "HeroSubtext"
     )
 
+    val infiniteTransition = rememberInfiniteTransition(label = "HeroPulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "HeroPulseAlpha"
+    )
+    val pulseElevation by infiniteTransition.animateFloat(
+        initialValue = 8f,
+        targetValue = 16f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "HeroPulseElevation"
+    )
+
     val heroShape = RoundedCornerShape(36.dp)
 
     val accessibilityDescription = if (isConnected) {
@@ -171,13 +193,17 @@ fun HeroConnectButton(
             .height(168.dp)
             .scale(scaleAnim.value)
             .shadow(
-                elevation = if (isConnected) 12.dp else 2.dp,
+                elevation = if (isConnected) pulseElevation.dp else 2.dp,
                 shape = heroShape,
                 spotColor = containerColor,
                 ambientColor = containerColor
             )
             .clip(heroShape)
-            .border(2.dp, borderColor, heroShape)
+            .border(
+                width = 2.dp,
+                color = if (isConnected) borderColor.copy(alpha = pulseAlpha) else borderColor,
+                shape = heroShape
+            )
             .background(containerColor)
             .semantics(mergeDescendants = true) {
                 role = Role.Switch

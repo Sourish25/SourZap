@@ -97,8 +97,12 @@ object UdpTrackerAnnouncer {
             try {
                 if (!handle.isValid) break
                 val ep = TcpEndpoint(ip, peerPort)
-                handle.swig().connect_peer(ep.swig())
-                injectedCount++
+                synchronized(handle) {
+                    if (handle.isValid) {
+                        handle.swig().connect_peer(ep.swig())
+                        injectedCount++
+                    }
+                }
             } catch (_: Throwable) {}
         }
 

@@ -142,7 +142,10 @@ class LibtorrentEngineManager(
                 }
 
                 val tAlert = alert as? TorrentAlert
-                val alertInfoHash = try { tAlert?.handle()?.infoHash()?.toHex() } catch (_: Throwable) { null }
+                val alertInfoHash = try {
+                    val h = tAlert?.handle()
+                    if (h != null && h.isValid) h.infoHash()?.toHex() else null
+                } catch (_: Throwable) { null }
                 if (alertInfoHash != null) {
                     val list = torrentLogs.getOrPut(alertInfoHash) { Collections.synchronizedList(mutableListOf()) }
                     synchronized(list) {
@@ -154,14 +157,20 @@ class LibtorrentEngineManager(
                 when (alert.type()) {
                     AlertType.ADD_TORRENT -> {
                         val a = alert as? AddTorrentAlert ?: return
-                        val id = try { a.handle()?.infoHash()?.toHex() } catch (_: Throwable) { null }
+                        val id = try {
+                            val h = a.handle()
+                            if (h != null && h.isValid) h.infoHash()?.toHex() else null
+                        } catch (_: Throwable) { null }
                         if (id != null) {
                             handleTorrentAdded(id)
                         }
                     }
                     AlertType.METADATA_RECEIVED -> {
                         val a = alert as? MetadataReceivedAlert ?: return
-                        val id = try { a.handle()?.infoHash()?.toHex() } catch (_: Throwable) { null }
+                        val id = try {
+                            val h = a.handle()
+                            if (h != null && h.isValid) h.infoHash()?.toHex() else null
+                        } catch (_: Throwable) { null }
                         if (id != null) {
                             handleMetadataReceived(id)
                         }
@@ -175,14 +184,24 @@ class LibtorrentEngineManager(
                     }
                     AlertType.TORRENT_REMOVED -> {
                         val a = alert as? TorrentRemovedAlert ?: return
-                        val hashHex = try { a.handle()?.infoHash()?.toHex() } catch (_: Throwable) { null }
+                        val hashHex = try {
+                            a.infoHashes?.best?.toHex() ?: a.infoHashes?.v1?.toHex()
+                        } catch (_: Throwable) {
+                            try {
+                                val h = a.handle()
+                                if (h != null && h.isValid) h.infoHash()?.toHex() else null
+                            } catch (_: Throwable) { null }
+                        }
                         if (hashHex != null) {
                             handleTorrentRemoved(hashHex)
                         }
                     }
                     AlertType.TORRENT_ERROR -> {
                         val a = alert as? TorrentErrorAlert ?: return
-                        val id = try { a.handle()?.infoHash()?.toHex() } catch (_: Throwable) { null }
+                        val id = try {
+                            val h = a.handle()
+                            if (h != null && h.isValid) h.infoHash()?.toHex() else null
+                        } catch (_: Throwable) { null }
                         val msg = try { a.message() ?: "Torrent error" } catch (_: Throwable) { "Torrent error" }
                         if (id != null) {
                             handleTorrentError(id, msg)
@@ -333,7 +352,7 @@ class LibtorrentEngineManager(
                 }
 
                 try {
-                    sessionManager.download(uri, saveDir, null)
+                    sessionManager.download(uri, saveDir, org.libtorrent4j.swig.torrent_flags_t())
                 } catch (e: LinkageError) {
                     throw e
                 } catch (e: Throwable) {
@@ -400,7 +419,7 @@ class LibtorrentEngineManager(
 
                 try {
                     if (prioritiesArray != null && prioritiesArray.size == totalFiles) {
-                        sessionManager.download(torrentInfo, saveDir, null, prioritiesArray, null, null)
+                        sessionManager.download(torrentInfo, saveDir, null, prioritiesArray, null, org.libtorrent4j.swig.torrent_flags_t())
                     } else {
                         sessionManager.download(torrentInfo, saveDir)
                     }
@@ -697,7 +716,8 @@ class LibtorrentEngineManager(
                     if (cycleCount % 10 == 0) {
                         for ((_, handle) in torrentHandles) {
                             try {
-                                val status = handle.status()
+                                if (!handle.isValid) continue
+                                val status = try { handle.status() } catch (_: Throwable) { null } ?: continue
                                 val isPaused = isTorrentPaused(status)
                                 val state = status.state()
                                 if (!isPaused && state != TorrentStatus.State.CHECKING_FILES &&
@@ -709,6 +729,7 @@ class LibtorrentEngineManager(
                                         try { handle.forceReannounce(0, -1) } catch (_: Throwable) { handle.forceReannounce() }
                                         engineScope.launch {
                                             try {
+                                                if (!handle.isValid) return@launch
                                                 val hashHex = try { handle.infoHash().toHex() } catch (_: Throwable) { "" }
                                                 if (hashHex.isNotEmpty()) {
                                                     UdpTrackerAnnouncer.announceAndInjectPeers(handle, hashHex)
@@ -931,6 +952,7 @@ class LibtorrentEngineManager(
                         val numFiles = fileStorage.numFiles()
                         val fileProgress: LongArray? = try { handle.fileProgress() } catch (_: Throwable) { null }
                         for (i in 0 until numFiles) {
+                            if (!handle.isValid) break
                             val p = try { Priority.fromLibtorrent(handle.filePriority(i)) } catch (_: Throwable) { Priority.NORMAL }
                             val bytes: Long = if (fileProgress != null && i < fileProgress.size) fileProgress[i] else 0L
                             val fileSize: Long = try { fileStorage.fileSize(i) } catch (_: Throwable) { 0L }

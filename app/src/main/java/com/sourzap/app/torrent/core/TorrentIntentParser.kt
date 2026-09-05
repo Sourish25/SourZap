@@ -24,8 +24,12 @@ object TorrentIntentParser {
             return null
         }
 
+        val extraText = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()
+            ?: intent.getStringExtra("magnet")?.trim()
+            ?: intent.getStringExtra("url")?.trim()
+
         val dataUri = intent.data
-        val dataUriString = dataUri?.toString()?.trim() ?: intent.dataString?.trim()
+        val dataUriString = if (!extraText.isNullOrBlank()) extraText else (dataUri?.toString()?.trim() ?: intent.dataString?.trim())
         val mimeType = intent.type
 
         return parseData(
@@ -69,10 +73,25 @@ object TorrentIntentParser {
             return PendingTorrentIntent.TorrentFile(bytes = streamBytes, fileName = fileName)
         }
 
-        // 3. Read from ContentResolver via dataUri if available
-        if (dataUri != null && contentResolver != null) {
+        // 3. Read from ContentResolver or direct File via dataUri if available
+        if (dataUri != null) {
             val scheme = dataUri.scheme
-            if (scheme.equals("content", ignoreCase = true) || scheme.equals("file", ignoreCase = true)) {
+            if (scheme.equals("file", ignoreCase = true) && dataUri.path != null) {
+                try {
+                    val file = java.io.File(dataUri.path!!)
+                    if (file.exists() && file.canRead()) {
+                        val bytes = file.readBytes()
+                        if (bytes.isNotEmpty()) {
+                            val fileName = displayNameFallback ?: file.name
+                            return PendingTorrentIntent.TorrentFile(
+                                bytes = bytes,
+                                fileName = fileName
+                            )
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+            if (contentResolver != null && (scheme.equals("content", ignoreCase = true) || scheme.equals("file", ignoreCase = true))) {
                 try {
                     val bytes = contentResolver.openInputStream(dataUri)?.use { it.readBytes() }
                     if (bytes != null && bytes.isNotEmpty()) {

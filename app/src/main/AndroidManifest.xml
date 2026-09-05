@@ -107,6 +107,16 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".torrent.core.TorrentActionReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.sourzap.app.torrent.ADD_TEST_TORRENT" />
+                <action android:name="com.sourzap.app.torrent.PAUSE_ALL" />
+                <action android:name="com.sourzap.app.torrent.RESUME_ALL" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

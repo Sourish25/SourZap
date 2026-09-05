@@ -281,11 +281,11 @@ fun SettingsScreen(
                             )
                         }
 
-                        // Category 5: About & Diagnostics
+                        // Category 5: About
                         item {
                             SettingsCategoryTile(
                                 icon = Icons.Rounded.Info,
-                                title = "About & Diagnostics",
+                                title = "About",
                                 subtitle = "App info, license & source code",
                                 iconContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                                 iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -632,7 +632,7 @@ fun SettingsScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Encrypted DNS queries bypass ISP DNS poisoning and censorship with 0ms in-memory LRU caching.",
+                                    text = "Encrypted DNS prevents your ISP from seeing or blocking the websites and trackers you connect to.",
                                     fontWeight = FontWeight.Normal,
                                     fontSize = 12.5.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -709,44 +709,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    // TLS Desynchronization Details Card
-                    item {
-                        ExpressiveCard(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(24.dp),
-                            backgroundColor = MaterialTheme.colorScheme.surfaceContainer
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(18.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "TLS Desync Architecture",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    ExpressiveChip(
-                                        text = "SPLIT2 ACTIVE",
-                                        icon = Icons.Rounded.Shield,
-                                        backgroundColor = MaterialTheme.colorScheme.primaryContainer,
-                                        textColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                                Text(
-                                    text = "Segments TLS ClientHello packets at the 2-byte SNI record header boundary to foil middlebox packet inspection without server-side disruption.",
-                                    fontWeight = FontWeight.Normal,
-                                    fontSize = 12.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
+
                 }
 
                 SettingsPage.UPDATES -> {
@@ -1025,88 +988,10 @@ fun SettingsScreen(
                     // Sub-Page Header with Back Button
                     item {
                         SettingsSubPageHeader(
-                            title = "About & Diagnostics",
-                            subtitle = "Architecture & Open Source Information",
+                            title = "About",
+                            subtitle = "App Information & Source Code",
                             onBackClick = { currentPage = SettingsPage.MAIN }
                         )
-                    }
-
-                    // System Architecture Diagnostics Card
-                    item {
-                        ExpressiveCard(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(28.dp),
-                            backgroundColor = MaterialTheme.colorScheme.surfaceContainer
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(20.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Text(
-                                    text = "System Diagnostics",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Engine Architecture",
-                                        fontWeight = FontWeight.Medium,
-                                        fontSize = 13.5.sp,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "Rootless TUN (${Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"})",
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 13.sp,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Android OS",
-                                        fontWeight = FontWeight.Medium,
-                                        fontSize = 13.5.sp,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
-                                        fontWeight = FontWeight.Normal,
-                                        fontSize = 13.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Virtual Interface",
-                                        fontWeight = FontWeight.Medium,
-                                        fontSize = 13.5.sp,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "tun0 • 1500 MTU • Dual-Stack",
-                                        fontWeight = FontWeight.Normal,
-                                        fontSize = 13.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
                     }
 
                     // Open Source Repository Card

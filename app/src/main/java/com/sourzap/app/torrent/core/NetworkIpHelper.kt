@@ -99,7 +99,7 @@ object NetworkIpHelper {
             try {
                 val request = Request.Builder()
                     .url(url)
-                    .header("User-Agent", "SourZap/2.8.4")
+                    .header("User-Agent", "SourZap/2.8.6")
                     .build()
 
                 httpClient.newCall(request).execute().use { response ->
