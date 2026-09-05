@@ -988,9 +988,11 @@ private fun TorrentItemCard(
                 }
             }
 
+            val safeProgress = if (item.progress.isNaN()) 0f else item.progress.coerceIn(0f, 1f)
+
             if (item.state == TorrentState.DOWNLOADING) {
                 ExpressiveWavyProgressIndicator(
-                    progress = item.progress,
+                    progress = safeProgress,
                     color = MaterialTheme.colorScheme.primary,
                     trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                     modifier = Modifier.fillMaxWidth()
@@ -1005,7 +1007,7 @@ private fun TorrentItemCard(
                 ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(item.progress.coerceIn(0f, 1f))
+                            .fillMaxWidth(safeProgress)
                             .background(
                                 if (item.state == TorrentState.FINISHED || item.state == TorrentState.SEEDING) {
                                     MaterialTheme.colorScheme.tertiary

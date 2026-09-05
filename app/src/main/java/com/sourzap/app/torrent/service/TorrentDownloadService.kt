@@ -197,6 +197,8 @@ class TorrentDownloadService : Service() {
                         startForeground(NOTIFICATION_ID, notification)
                     } catch (fatal: Throwable) {
                         Log.e(TAG, "Fatal startForeground error: ${fatal.message}")
+                        // Must call stopSelf() to prevent Android 14 killing app after 5s
+                        stopSelf()
                     }
                 }
             } else {
@@ -204,6 +206,7 @@ class TorrentDownloadService : Service() {
             }
         } catch (e: Throwable) {
             Log.e(TAG, "Error in startForegroundServiceNotification: ${e.message}")
+            stopSelf()
         }
     }
 
@@ -264,7 +267,7 @@ class TorrentDownloadService : Service() {
         val progressPercent = (stats.aggregateProgress * 100).toInt().coerceIn(0, 100)
 
         return NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(content)
             .setContentIntent(openAppPendingIntent)
@@ -302,8 +305,7 @@ class TorrentDownloadService : Service() {
                     try {
                         context.startForegroundService(intent)
                     } catch (e: Exception) {
-                        Log.w(TAG, "startForegroundService failed, falling back to startService: ${e.message}")
-                        context.startService(intent)
+                        Log.w(TAG, "startForegroundService failed (app in background or restricted): ${e.message}")
                     }
                 } else {
                     context.startService(intent)

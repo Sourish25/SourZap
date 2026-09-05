@@ -857,9 +857,9 @@ fun ExpressiveWavyProgressIndicator(
         val h = size.height
         val centerY = h * 0.5f
 
-        val isDeterminate = (progress != null)
-        val clampedProgress = if (progress != null) progress.coerceIn(0f, 1f) else 1f
-        val activeWidth = if (isDeterminate) w * clampedProgress else w
+        val isDeterminate = (progress != null && !progress.isNaN())
+        val clampedProgress = if (progress != null && !progress.isNaN()) progress.coerceIn(0f, 1f) else 1f
+        val activeWidth = if (isDeterminate) (w * clampedProgress).coerceIn(0f, w) else w
 
         // 1. Background Track
         if (isDeterminate && activeWidth < w) {

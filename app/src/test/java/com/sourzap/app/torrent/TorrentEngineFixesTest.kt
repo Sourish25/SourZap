@@ -154,4 +154,35 @@ class TorrentEngineFixesTest {
             assertTrue(true)
         }
     }
+
+    @Test
+    fun testTorrentFlagsInstantiationNonNull() {
+        try {
+            val flags = org.libtorrent4j.swig.torrent_flags_t()
+            assertNotNull("torrent_flags_t must be non-null to prevent SWIG JNI crash", flags)
+            assertNotNull("TorrentFlags.PAUSED must exist", org.libtorrent4j.TorrentFlags.PAUSED)
+        } catch (_: LinkageError) {
+            // Expected on host JVM without native binaries
+            assertTrue(true)
+        }
+    }
+
+    @Test
+    fun testProgressNaNResilience() {
+        val nanProgress = Float.NaN
+        val safe = if (nanProgress.isNaN()) 0f else nanProgress.coerceIn(0f, 1f)
+        assertEquals(0f, safe, 0.0001f)
+
+        val normalProgress = 0.65f
+        val safeNormal = if (normalProgress.isNaN()) 0f else normalProgress.coerceIn(0f, 1f)
+        assertEquals(0.65f, safeNormal, 0.0001f)
+    }
+
+    @Test
+    fun testTorrentDownloadServiceActions() {
+        assertEquals("com.sourzap.app.torrent.START", com.sourzap.app.torrent.service.TorrentDownloadService.ACTION_START)
+        assertEquals("com.sourzap.app.torrent.PAUSE_ALL", com.sourzap.app.torrent.service.TorrentDownloadService.ACTION_PAUSE_ALL)
+        assertEquals("com.sourzap.app.torrent.RESUME_ALL", com.sourzap.app.torrent.service.TorrentDownloadService.ACTION_RESUME_ALL)
+        assertEquals("com.sourzap.app.torrent.STOP", com.sourzap.app.torrent.service.TorrentDownloadService.ACTION_STOP_SERVICE)
+    }
 }

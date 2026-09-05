@@ -35,10 +35,12 @@ import org.libtorrent4j.TorrentStatus
 import org.libtorrent4j.alerts.AddTorrentAlert
 import org.libtorrent4j.alerts.Alert
 import org.libtorrent4j.alerts.AlertType
+import org.libtorrent4j.alerts.FileErrorAlert
 import org.libtorrent4j.alerts.MetadataReceivedAlert
 import org.libtorrent4j.alerts.PieceFinishedAlert
 import org.libtorrent4j.alerts.SessionStatsAlert
 import org.libtorrent4j.alerts.StateChangedAlert
+import org.libtorrent4j.alerts.StorageMovedFailedAlert
 import org.libtorrent4j.alerts.TorrentAlert
 import org.libtorrent4j.alerts.TorrentCheckedAlert
 import org.libtorrent4j.alerts.TorrentErrorAlert
@@ -205,6 +207,27 @@ class LibtorrentEngineManager(
                         val msg = try { a.message() ?: "Torrent error" } catch (_: Throwable) { "Torrent error" }
                         if (id != null) {
                             handleTorrentError(id, msg)
+                        }
+                    }
+                    AlertType.FILE_ERROR -> {
+                        val a = alert as? FileErrorAlert ?: return
+                        val id = try {
+                            val h = a.handle()
+                            if (h != null && h.isValid) h.infoHash()?.toHex() else null
+                        } catch (_: Throwable) { null }
+                        val msg = try { a.message() ?: "Disk storage error" } catch (_: Throwable) { "Disk storage error" }
+                        if (id != null) {
+                            handleTorrentError(id, msg)
+                        }
+                    }
+                    AlertType.STORAGE_MOVED_FAILED -> {
+                        val a = alert as? StorageMovedFailedAlert ?: return
+                        val id = try {
+                            val h = a.handle()
+                            if (h != null && h.isValid) h.infoHash()?.toHex() else null
+                        } catch (_: Throwable) { null }
+                        if (id != null) {
+                            handleTorrentError(id, "Failed to move files to storage path")
                         }
                     }
                     AlertType.SESSION_STATS -> {
@@ -505,7 +528,7 @@ class LibtorrentEngineManager(
 
                 try {
                     if (prioritiesArray != null && prioritiesArray.size == totalFiles) {
-                        sessionManager.download(torrentInfo, saveDir, null, prioritiesArray, null, null)
+                        sessionManager.download(torrentInfo, saveDir, null, prioritiesArray, null, org.libtorrent4j.swig.torrent_flags_t())
                     } else {
                         sessionManager.download(torrentInfo, saveDir)
                     }
@@ -951,12 +974,17 @@ class LibtorrentEngineManager(
                         val fileStorage: FileStorage = info.files()
                         val numFiles = fileStorage.numFiles()
                         val fileProgress: LongArray? = try { handle.fileProgress() } catch (_: Throwable) { null }
+                        val priorities: Array<org.libtorrent4j.Priority>? = try { handle.filePriorities() } catch (_: Throwable) { null }
                         for (i in 0 until numFiles) {
                             if (!handle.isValid) break
-                            val p = try { Priority.fromLibtorrent(handle.filePriority(i)) } catch (_: Throwable) { Priority.NORMAL }
+                            val p = if (priorities != null && i < priorities.size) {
+                                Priority.fromLibtorrent(priorities[i])
+                            } else {
+                                try { Priority.fromLibtorrent(handle.filePriority(i)) } catch (_: Throwable) { Priority.NORMAL }
+                            }
                             val bytes: Long = if (fileProgress != null && i < fileProgress.size) fileProgress[i] else 0L
                             val fileSize: Long = try { fileStorage.fileSize(i) } catch (_: Throwable) { 0L }
-                            val fileProg: Float = if (fileSize > 0L) (bytes.toFloat() / fileSize.toFloat()).coerceIn(0.0f, 1.0f) else 0.0f
+                            val fileProg: Float = if (fileSize > 0L) (bytes.toFloat() / fileSize.toFloat()).let { if (it.isNaN()) 0f else it.coerceIn(0.0f, 1.0f) } else 0.0f
                             files.add(
                                 TorrentFileItem(
                                     index = i,
@@ -1005,11 +1033,13 @@ class LibtorrentEngineManager(
         _torrents.value = items
         val dhtNodes = sessionManager.stats()?.dhtNodes() ?: 0L
         val aggProgress = if (totalAllBytes > 0L) {
-            (totalDownloaded.toFloat() / totalAllBytes.toFloat()).coerceIn(0.0f, 1.0f)
+            val ratio = (totalDownloaded.toFloat() / totalAllBytes.toFloat())
+            if (ratio.isNaN()) 0.0f else ratio.coerceIn(0.0f, 1.0f)
         } else if (items.isNotEmpty()) {
             val valid = items.filter { it.totalBytes > 0L }
             if (valid.isNotEmpty()) {
-                valid.map { it.progress }.average().toFloat().coerceIn(0.0f, 1.0f)
+                val avg = valid.map { it.progress }.average().toFloat()
+                if (avg.isNaN()) 0.0f else avg.coerceIn(0.0f, 1.0f)
             } else 0.0f
         } else 0.0f
 
@@ -1045,19 +1075,8 @@ class LibtorrentEngineManager(
     private fun isTorrentPaused(status: TorrentStatus): Boolean {
         return try {
             val flags = status.flags()
-            val tfClass = try {
-                Class.forName("org.libtorrent4j.TorrentFlags")
-            } catch (_: Throwable) {
-                Class.forName("org.libtorrent4j.swig.torrent_flags_t")
-            }
-            val pausedFlag = tfClass.fields.firstOrNull {
-                it.name.equals("PAUSED", ignoreCase = true) || it.name.equals("paused", ignoreCase = true)
-            }?.get(null)
-            if (pausedFlag != null) {
-                val andMethod = flags.javaClass.methods.firstOrNull { it.name.equals("and_", ignoreCase = true) || it.name.equals("and", ignoreCase = true) }
-                val res = andMethod?.invoke(flags, pausedFlag)
-                val nonZeroMethod = res?.javaClass?.methods?.firstOrNull { it.name.equals("non_zero", ignoreCase = true) || it.name.equals("nonZero", ignoreCase = true) }
-                nonZeroMethod?.invoke(res) as? Boolean ?: false
+            if (flags != null) {
+                flags.and_(org.libtorrent4j.TorrentFlags.PAUSED).non_zero()
             } else {
                 false
             }
