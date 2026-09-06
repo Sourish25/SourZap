@@ -114,7 +114,7 @@ object HttpParser {
 
         // Modify Host header casing and spacing within header section
         val modifiedHeader = headerText.replace(Regex("(?im)^Host:\\s*")) {
-            "hOst:  "
+            "hOst: "
         }
 
         val modifiedHeaderBytes = modifiedHeader.toByteArray(Charsets.ISO_8859_1)

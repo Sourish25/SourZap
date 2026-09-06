@@ -408,7 +408,7 @@ class SourZapVpnService : VpnService() {
         )
 
         return NotificationCompat.Builder(this, getString(R.string.vpn_channel_id))
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(content)
             .setContentIntent(pendingIntent)

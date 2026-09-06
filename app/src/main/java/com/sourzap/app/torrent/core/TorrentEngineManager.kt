@@ -265,10 +265,10 @@ class LibtorrentEngineManager(
                 // 3. Disable Local Service Discovery (LSD) so the engine never connects to itself on LAN
                 settingsPack.setBoolean(settings_pack.bool_types.enable_lsd.swigValue(), false)
 
-                // 4. Message Stream Encryption (MSE / PE) - Force RC4 on outgoing connections to evade DPI
+                // 4. Message Stream Encryption (MSE / PE) - Force RC4 payload encryption to evade ISP DPI resets
                 settingsPack.setInteger(settings_pack.int_types.out_enc_policy.swigValue(), TorrentSessionConfig.ENC_POLICY_FORCED)
                 settingsPack.setInteger(settings_pack.int_types.in_enc_policy.swigValue(), TorrentSessionConfig.ENC_POLICY_ENABLED)
-                settingsPack.setInteger(settings_pack.int_types.allowed_enc_level.swigValue(), TorrentSessionConfig.ENC_LEVEL_BOTH)
+                settingsPack.setInteger(settings_pack.int_types.allowed_enc_level.swigValue(), TorrentSessionConfig.ENC_LEVEL_RC4)
                 settingsPack.setBoolean(settings_pack.bool_types.prefer_rc4.swigValue(), true)
 
                 // 5. Direct IP DHT bootstrap routers (immune to ISP DNS poisoning)
@@ -799,7 +799,12 @@ class LibtorrentEngineManager(
                 torrentMetadataMap[id] = meta
             }
 
-            // 1. Auto-inject verified high-capacity live public trackers (IP & domain)
+            // 1. Auto-inject verified Port-443 HTTPS trackers and high-capacity public trackers
+            for (tr in TrackerInjector.HTTPS_PORT_443_TRACKERS) {
+                try {
+                    handle.addTracker(AnnounceEntry(tr))
+                } catch (_: Throwable) {}
+            }
             for (tr in PRIORITY_LIVE_TRACKERS) {
                 try {
                     handle.addTracker(AnnounceEntry(tr))
@@ -822,7 +827,8 @@ class LibtorrentEngineManager(
             engineScope.launch {
                 try {
                     // 1. Pre-resolve trackers into direct IP URLs so libtorrent bypasses Asio DNS
-                    val resolvedUrls = DohTrackerResolver.resolveTrackersToDirectIpUrls(PRIORITY_LIVE_TRACKERS)
+                    val allTrackers = PRIORITY_LIVE_TRACKERS + TrackerInjector.HTTPS_PORT_443_TRACKERS
+                    val resolvedUrls = DohTrackerResolver.resolveTrackersToDirectIpUrls(allTrackers)
                     for (rUrl in resolvedUrls) {
                         try {
                             handle.addTracker(AnnounceEntry(rUrl))
@@ -851,6 +857,24 @@ class LibtorrentEngineManager(
     private fun handleMetadataReceived(id: String) {
         try {
             val handle = findHandle(id) ?: return
+
+            // Auto-inject Port-443 HTTPS trackers when metadata arrives for magnet downloads
+            for (tr in TrackerInjector.HTTPS_PORT_443_TRACKERS) {
+                try {
+                    handle.addTracker(AnnounceEntry(tr))
+                } catch (_: Throwable) {}
+            }
+            try { handle.forceReannounce(0, -1) } catch (_: Throwable) {
+                try { handle.forceReannounce() } catch (_: Throwable) {}
+            }
+            try { handle.forceDHTAnnounce() } catch (_: Throwable) {}
+
+            engineScope.launch {
+                try {
+                    HttpsTrackerAnnouncer.announceAndInjectPeers(handle, id, force = true)
+                } catch (_: Throwable) {}
+            }
+
             val info: TorrentInfo? = try {
                 val hasMeta = try { handle.status().hasMetadata() } catch (_: Throwable) { false }
                 if (hasMeta) handle.torrentFile() else null

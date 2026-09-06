@@ -120,9 +120,9 @@ object DpiEngine {
     ) {
         val hostname = (sniResult.hostname ?: "").lowercase()
 
-        // 1. Critical Cloud, Authentication, Captcha & Banking Passthrough
+        // 1. Critical Cloud, Authentication, Captcha, CDN & Banking Passthrough
         val isPassthroughDomain = isCriticalPassthrough(hostname)
-        if (strategy.id == "auto_pilot" && isPassthroughDomain) {
+        if (isPassthroughDomain) {
             outputStream.write(payload, 0, length)
             outputStream.flush()
             onTechniqueApplied("CLEAN_PASSTHROUGH")
@@ -194,8 +194,36 @@ object DpiEngine {
             hostname.endsWith(".windowsupdate.com") || hostname.endsWith(".office.com")
         ) return true
 
-        // Cloudflare Captcha / Turnstile Verification
-        if (hostname.contains("challenges.cloudflare.com")) return true
+        // Cloudflare Protection, Captcha & Infrastructure
+        if (hostname.contains("cloudflare.com") || hostname.contains("cloudflare.net") ||
+            hostname.contains("cloudflare-dns.com") || hostname.contains("cf-ipfs.com") ||
+            hostname.contains("challenges.cloudflare.com") || hostname.contains("turnstile.cloudflare.com") ||
+            hostname.contains("hcaptcha.com") || hostname.contains("recaptcha.net") ||
+            hostname.contains("arkoselabs.com") || hostname.contains("funcaptcha.com") ||
+            hostname.contains("datadome.co") || hostname.contains("perimeterx.net") ||
+            hostname.contains("humansecurity.com") || hostname.contains("kasada.io") ||
+            hostname.contains("incapsula.com") || hostname.contains("imperva.com")
+        ) return true
+
+        // Major AI & Modern Services with strict JA3/JA4 Bot Mitigation
+        if (hostname.endsWith(".openai.com") || hostname.endsWith(".chatgpt.com") ||
+            hostname.endsWith(".anthropic.com") || hostname.endsWith(".claude.ai") ||
+            hostname.endsWith(".discord.com") || hostname.endsWith(".discord.gg") ||
+            hostname.endsWith(".telegram.org") || hostname.endsWith(".whatsapp.net")
+        ) return true
+
+        // Gaming (Supercell, Steam, Riot, Epic)
+        if (hostname.contains("supercell.com") || hostname.contains("supercellgames.com") ||
+            hostname.contains("clashofclans.com") || hostname.contains("brawlstars.com") ||
+            hostname.contains("clashroyale.com") ||
+            hostname.contains("steampowered.com") || hostname.contains("steamcommunity.com") ||
+            hostname.contains("riotgames.com") || hostname.contains("epicgames.com")
+        ) return true
+
+        // Major CDN Infrastructure
+        if (hostname.endsWith(".akamaized.net") || hostname.endsWith(".akamai.net") ||
+            hostname.endsWith(".fastly.net") || hostname.endsWith(".cloudfront.net")
+        ) return true
 
         // Banking & Secure Payment Gateways
         if (hostname.contains("paypal.com") || hostname.contains("stripe.com") ||
@@ -215,18 +243,28 @@ object DpiEngine {
         strategy: BypassStrategy,
         onTechniqueApplied: (String) -> Unit
     ) {
+        val httpResult = HttpParser.parseHttpRequest(payload, length)
+        val host = (httpResult.host ?: "").lowercase()
+        if (isCriticalPassthrough(host)) {
+            outputStream.write(payload, 0, length)
+            outputStream.flush()
+            onTechniqueApplied("CLEAN_PASSTHROUGH")
+            return
+        }
+
         if (strategy.httpHostMod) {
-            val desynced = HttpParser.desyncHttpPayload(payload, length)
-            val splitPos = (desynced.size / 2).coerceIn(1, desynced.size - 1)
-            val c1 = desynced.copyOfRange(0, splitPos)
-            val c2 = desynced.copyOfRange(splitPos, desynced.size)
+            // Zapret clean method split: split method at byte 2 ('GE' | 'T / ...')
+            // This blinds ISP DPI without modifying Host casing or triggering WAF bot protections
+            val splitPos = if (length > 2) 2 else 1
+            val c1 = payload.copyOfRange(0, splitPos)
+            val c2 = payload.copyOfRange(splitPos, length)
 
             outputStream.write(c1)
             outputStream.flush()
 
             outputStream.write(c2)
             outputStream.flush()
-            onTechniqueApplied("HTTP_SPLIT+CASE_MOD")
+            onTechniqueApplied("HTTP_METHOD_SPLIT")
         } else {
             outputStream.write(payload, 0, length)
             outputStream.flush()

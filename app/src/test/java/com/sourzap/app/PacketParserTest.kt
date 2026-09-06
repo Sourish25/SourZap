@@ -682,7 +682,7 @@ class PacketParserTest {
         assertTrue(parsedSynAck.isAck)
         assertFalse(parsedSynAck.isFin)
         assertFalse(parsedSynAck.isRst)
-        assertEquals(24, parsedSynAck.dataOffset) // 24 bytes with MSS
+        assertEquals(28, parsedSynAck.dataOffset) // 28 bytes with MSS and RFC 7323 Window Scale
 
         // 2. FIN | ACK (Teardown)
         val finAck = PacketParser.buildTcpPacket(srcIp, dstIp, 80, 50000, 1001L, 2001L, 0x11)
@@ -951,12 +951,12 @@ class PacketParserTest {
 
         // 2. buildSynAckPacket
         val synAck = PacketParser.buildSynAckPacket(src4, dst4, 80, 54321, seqNum = 1000L, ackNum = 500L)
-        assertEquals(44, synAck.size) // 20 IP + 24 TCP (with MSS option)
+        assertEquals(48, synAck.size) // 20 IP + 28 TCP (with MSS + Window Scale options)
         val parsedSynAck = PacketParser.parseTcpHeader(synAck, 20, synAck.size)
         assertNotNull(parsedSynAck)
         assertTrue(parsedSynAck!!.isSyn)
         assertTrue(parsedSynAck.isAck)
-        assertEquals(24, parsedSynAck.dataOffset)
+        assertEquals(28, parsedSynAck.dataOffset)
 
         // 3. buildRstPacket
         val rstAck = PacketParser.buildRstPacket(src4, dst4, 80, 54321, seqNum = 1001L, ackNum = 501L, isAck = true)

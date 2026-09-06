@@ -40,6 +40,9 @@ class TunUdpRelay(
     companion object {
         private const val MAX_NAT_ENTRIES = 4096
         private const val NAT_IDLE_TIMEOUT_MS = 60_000L // 60 seconds NAT entry timeout
+
+        fun isGamingPort(port: Int): Boolean =
+            port == 9339 || port == 30000 || port in 27015..27030 || port in 7777..7780 || port == 10012
     }
 
     private data class ClientMapping(
@@ -56,7 +59,7 @@ class TunUdpRelay(
     )
 
     private val sendChannel = Channel<OutgoingUdpPacket>(
-        capacity = 1024,
+        capacity = 4096,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
 
@@ -64,6 +67,8 @@ class TunUdpRelay(
     private val exactNatTable = ConcurrentHashMap<String, ClientMapping>()
     // Secondary host match: "RemoteHost#SocketIndex" -> ClientMapping
     private val hostNatTable = ConcurrentHashMap<String, ClientMapping>()
+    // Dedicated gaming NAT table for Supercell (Port 9339) and low-latency gaming
+    private val gamingNatTable = ConcurrentHashMap<String, ClientMapping>()
 
     private var cleanerJob: Job? = null
     private var senderJob: Job? = null
@@ -117,6 +122,13 @@ class TunUdpRelay(
                         hostIter.remove()
                     }
                 }
+                val gamingIter = gamingNatTable.entries.iterator()
+                while (gamingIter.hasNext()) {
+                    val entry = gamingIter.next()
+                    if (now - entry.value.lastSeen > NAT_IDLE_TIMEOUT_MS) {
+                        gamingIter.remove()
+                    }
+                }
             }
         }
     }
@@ -135,6 +147,11 @@ class TunUdpRelay(
         val mapping = ClientMapping(srcIp, srcPort, System.currentTimeMillis())
         val natKeyExact = "${dstIp.hostAddress}:$dstPort#$socketIndex"
         val natKeyHost = "${dstIp.hostAddress}#$socketIndex"
+
+        if (isGamingPort(dstPort)) {
+            val gamingKey = "${dstIp.hostAddress}:$dstPort"
+            gamingNatTable[gamingKey] = mapping
+        }
 
         // Guard NAT table against unbounded memory growth during massive torrent DHT swarms
         if (exactNatTable.size >= MAX_NAT_ENTRIES) {
@@ -167,6 +184,16 @@ class TunUdpRelay(
                 hostIter.remove()
             }
         }
+        // Fallback eviction if table is still saturated to prevent dropping new UDP connections
+        if (exactNatTable.size >= MAX_NAT_ENTRIES - 64) {
+            val forceIter = exactNatTable.entries.iterator()
+            var forceRemoved = 0
+            while (forceIter.hasNext() && forceRemoved < 256) {
+                forceIter.next()
+                forceIter.remove()
+                forceRemoved++
+            }
+        }
     }
 
     private fun runReceiverLoop(socket: DatagramSocket, socketIndex: Int) {
@@ -186,9 +213,13 @@ class TunUdpRelay(
                     if (len > 0) {
                         val natKeyExact = "${remoteAddress.hostAddress}:$remotePort#$socketIndex"
                         val natKeyHost = "${remoteAddress.hostAddress}#$socketIndex"
+                        val gamingKey = "${remoteAddress.hostAddress}:$remotePort"
 
-                        // O(1) Collision-Free Lookups (Exact port match -> Host IP fallback)
-                        val client = exactNatTable[natKeyExact] ?: hostNatTable[natKeyHost]
+                        // O(1) Collision-Free Lookups (Gaming priority -> Exact port match -> Host IP fallback)
+                        val isGaming = isGamingPort(remotePort)
+                        val client = (if (isGaming) gamingNatTable[gamingKey] else null)
+                            ?: exactNatTable[natKeyExact]
+                            ?: hostNatTable[natKeyHost]
 
                         if (client != null) {
                             client.lastSeen = System.currentTimeMillis()

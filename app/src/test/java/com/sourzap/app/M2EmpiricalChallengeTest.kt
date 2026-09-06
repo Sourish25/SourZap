@@ -186,7 +186,7 @@ class M2EmpiricalChallengeTest {
         val desynced = HttpParser.desyncHttpPayload(fullRequest, fullRequest.size)
         val desyncedHeaderStr = String(desynced, 0, desynced.size - 1024, Charsets.ISO_8859_1)
 
-        assertTrue("Host header must be case-modified", desyncedHeaderStr.contains("hOst:  tracker.opentrackr.org:1337"))
+        assertTrue("Host header must be case-modified", desyncedHeaderStr.contains("hOst: tracker.opentrackr.org:1337"))
         assertFalse("Original Host header must be replaced", desyncedHeaderStr.contains("Host: tracker.opentrackr.org:1337"))
 
         val preservedBody = desynced.copyOfRange(desynced.size - 1024, desynced.size)
@@ -280,12 +280,12 @@ class M2EmpiricalChallengeTest {
 
         // 2. buildSynAckPacket
         val synAck = PacketParser.buildSynAckPacket(srcIp, dstIp, srcPort = 443, dstPort = 50000, seqNum = 1000L, ackNum = 500L)
-        assertEquals(44, synAck.size) // 20 IP + 24 TCP (MSS option)
+        assertEquals(48, synAck.size) // 20 IP + 28 TCP (MSS 4 bytes + NOP 1 byte + WScale 3 bytes)
         val tcp = PacketParser.parseTcpHeader(synAck, 20, synAck.size)
         assertNotNull(tcp)
         assertTrue(tcp!!.isSyn)
         assertTrue(tcp.isAck)
-        assertEquals(24, tcp.dataOffset)
+        assertEquals(28, tcp.dataOffset)
 
         // 3. buildRstPacket
         val rstAck = PacketParser.buildRstPacket(srcIp, dstIp, srcPort = 443, dstPort = 50000, seqNum = 1001L, ackNum = 501L, isAck = true)

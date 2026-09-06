@@ -220,7 +220,7 @@ class ChallengerM2StressTest {
 
             // Verify header has modified host
             val headerSlice = String(desynced, 0, desynced.size - 256, Charsets.ISO_8859_1)
-            assertTrue("Header must contain 'hOst:  '", headerSlice.contains("hOst:  ", ignoreCase = false))
+            assertTrue("Header must contain 'hOst: '", headerSlice.contains("hOst: ", ignoreCase = false))
         }
     }
 

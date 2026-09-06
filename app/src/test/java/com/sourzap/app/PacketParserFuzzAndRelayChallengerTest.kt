@@ -351,7 +351,7 @@ class PacketParserFuzzAndRelayChallengerTest {
             assertEquals(flag, tcpHeader.flags)
 
             if (flag == 0x12) {
-                assertEquals("SYN-ACK must include 4-byte MSS option (total 24 bytes)", 24, tcpHeader.dataOffset)
+                assertEquals("SYN-ACK must include MSS and Window Scale options (total 28 bytes)", 28, tcpHeader.dataOffset)
             } else {
                 assertEquals("Standard TCP header must be 20 bytes", 20, tcpHeader.dataOffset)
             }
@@ -365,7 +365,7 @@ class PacketParserFuzzAndRelayChallengerTest {
 
         // 1. buildSynAckPacket
         val synAck = PacketParser.buildSynAckPacket(srcIp, dstIp, 80, 49152, 1000L, 500L)
-        assertEquals(44, synAck.size)
+        assertEquals(48, synAck.size)
         val parsedSynAck = PacketParser.parseTcpHeader(synAck, 20, synAck.size)
         assertNotNull(parsedSynAck)
         assertTrue(parsedSynAck!!.isSyn)

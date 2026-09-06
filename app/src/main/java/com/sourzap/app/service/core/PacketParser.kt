@@ -484,7 +484,7 @@ object PacketParser {
 
             val ipHeaderLen = 20
             val isSynAck = (flags and 0x12) == 0x12 || (flags == 0x12)
-            val tcpHeaderLen = if (isSynAck) 24 else 20
+            val tcpHeaderLen = if (isSynAck) 28 else 20
             val totalLength = ipHeaderLen + tcpHeaderLen + safePayloadLen
             if (totalLength > 65535) return EMPTY_BYTE_ARRAY
 
@@ -510,7 +510,7 @@ object PacketParser {
             packet[10] = ((ipChecksum.toInt() shr 8) and 0xFF).toByte()
             packet[11] = (ipChecksum.toInt() and 0xFF).toByte()
 
-            // --- TCP Header (20 or 24 bytes) ---
+            // --- TCP Header (20 or 28 bytes) ---
             val tcpOffset = ipHeaderLen
             packet[tcpOffset] = ((srcPort shr 8) and 0xFF).toByte()
             packet[tcpOffset + 1] = (srcPort and 0xFF).toByte()
@@ -545,12 +545,16 @@ object PacketParser {
             packet[tcpOffset + 18] = 0x00.toByte()
             packet[tcpOffset + 19] = 0x00.toByte()
 
-            // TCP Options: MSS 1400 (Kind 2, Length 4, Value 1400 = 0x0578) for SYN-ACK
+            // TCP Options: MSS 1400 (Kind 2, Length 4, Value 1400 = 0x0578) + NOP (Kind 1) + Window Scale (Kind 3, Length 3, Shift 4 = x16) for SYN-ACK
             if (isSynAck) {
                 packet[tcpOffset + 20] = 0x02.toByte()
                 packet[tcpOffset + 21] = 0x04.toByte()
                 packet[tcpOffset + 22] = 0x05.toByte()
                 packet[tcpOffset + 23] = 0x78.toByte()
+                packet[tcpOffset + 24] = 0x01.toByte() // NOP
+                packet[tcpOffset + 25] = 0x03.toByte() // Window Scale
+                packet[tcpOffset + 26] = 0x03.toByte() // Length
+                packet[tcpOffset + 27] = 0x04.toByte() // Shift count 4 (x16 multiplier)
             }
 
             // --- Payload ---

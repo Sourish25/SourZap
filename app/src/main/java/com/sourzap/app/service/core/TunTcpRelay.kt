@@ -39,16 +39,22 @@ class TunTcpRelay(
     private val isRunning = AtomicBoolean(true)
     private val activeConnectingCount = AtomicInteger(0)
 
-    private val tcpDispatcher = Dispatchers.IO.limitedParallelism(64)
+    private val tcpDispatcher = Dispatchers.IO.limitedParallelism(512)
     private var scavengerJob: Job? = null
 
     companion object {
         val EMPTY_BYTE_ARRAY = ByteArray(0)
         const val MAX_SEGMENT_SIZE = 1400 // Fits comfortably in standard 1500 MTU
         const val IDLE_TIMEOUT_MS = 120_000L // 2 minutes idle timeout
-        const val LINGER_TIMEOUT_MS = 15_000L // 15 seconds TIME_WAIT / CLOSED linger
-        const val MAX_CONCURRENT_CONNECTING = 64
-        const val MAX_SESSIONS = 4096
+        const val LINGER_TIMEOUT_MS = 3_000L // 3 seconds TIME_WAIT / CLOSED linger
+        const val MAX_CONCURRENT_CONNECTING = 256
+        const val MAX_SESSIONS = 8192
+
+        fun isGamingPort(port: Int): Boolean =
+            port == 9339 || port == 30000 || port in 27015..27030 || port in 7777..7780 || port == 10012
+
+        fun isPriorityPort(port: Int): Boolean =
+            isGamingPort(port) || port == 80 || port == 443 || port == 853 || port == 53
 
         const val MAX_HANDSHAKE_BUFFER_SIZE = 4096
         const val HANDSHAKE_BUFFER_TIMEOUT_MS = 150L
@@ -147,9 +153,9 @@ class TunTcpRelay(
     )
 
     init {
-        scavengerJob = scope.launch(tcpDispatcher) {
+        scavengerJob = scope.launch(Dispatchers.Default) {
             while (isActive && isRunning.get()) {
-                delay(15000)
+                delay(5000)
                 val now = System.currentTimeMillis()
                 val iterator = sessions.entries.iterator()
                 while (iterator.hasNext()) {
@@ -224,7 +230,41 @@ class TunTcpRelay(
                 }
             }
 
-            if (sessions.size >= MAX_SESSIONS || activeConnectingCount.get() >= MAX_CONCURRENT_CONNECTING) {
+            val isPriority = isPriorityPort(dstPort)
+
+            if (sessions.size >= MAX_SESSIONS) {
+                // First pass: Evict closed/lingering sessions
+                val iter = sessions.entries.iterator()
+                while (iter.hasNext()) {
+                    val s = iter.next().value
+                    if (s.isClosed.get() || s.state == TcpState.CLOSED || s.state == TcpState.SERVER_FIN_SENT) {
+                        iter.remove()
+                    }
+                }
+                // Second pass: If still near capacity, evict oldest idle non-priority sessions
+                if (sessions.size >= MAX_SESSIONS - 64) {
+                    val now = System.currentTimeMillis()
+                    val idleThreshold = now - 20_000L // Idle for 20s
+                    val evictIter = sessions.entries.iterator()
+                    var evicted = 0
+                    while (evictIter.hasNext() && evicted < 256) {
+                        val s = evictIter.next().value
+                        if (!isPriorityPort(s.dstPort) && (s.lastActivity < idleThreshold || s.state != TcpState.ESTABLISHED)) {
+                            closeSessionInternal(s, forceRemove = true)
+                            evicted++
+                        }
+                    }
+                }
+            }
+
+            // For priority ports (gaming, web browsing, DNS), never reject due to background connection saturation
+            val rejectDueToLoad = if (isPriority) {
+                sessions.size >= MAX_SESSIONS && activeConnectingCount.get() >= (MAX_CONCURRENT_CONNECTING * 2)
+            } else {
+                sessions.size >= MAX_SESSIONS || activeConnectingCount.get() >= MAX_CONCURRENT_CONNECTING
+            }
+
+            if (rejectDueToLoad) {
                 val rstPacket = PacketParser.buildTcpPacket(
                     srcIp = dstIp,
                     dstIp = srcIp,
@@ -385,9 +425,9 @@ class TunTcpRelay(
 
     private fun startUpstreamConnection(session: TcpSession) {
         session.streamJob = scope.launch(tcpDispatcher) {
+            val wasConnecting = AtomicBoolean(true)
             activeConnectingCount.incrementAndGet()
             TrafficMonitor.onConnectionOpened()
-            var socketConnected = false
             var localSocket: Socket? = null
             try {
                 val socket = Socket().apply {
@@ -395,7 +435,7 @@ class TunTcpRelay(
                     sendBufferSize = 1048576    // 1MB Send Buffer
                     tcpNoDelay = true           // Disable Nagle's algorithm
                     keepAlive = true
-                    soTimeout = 0               // Persistent keepalive
+                    soTimeout = 45000           // 45s read timeout to prune zombie sockets
                     trafficClass = 0x08         // IPTOS_THROUGHPUT
                     setPerformancePreferences(0, 1, 2)
                 }
@@ -419,8 +459,9 @@ class TunTcpRelay(
                 session.upstreamOut = upstreamOut
                 session.isConnected.set(true)
                 session.state = TcpState.ESTABLISHED
-                socketConnected = true
-                activeConnectingCount.decrementAndGet()
+                if (wasConnecting.compareAndSet(true, false)) {
+                    activeConnectingCount.decrementAndGet()
+                }
 
                 // Dedicated sequential sender loop (FIFO order) with Multi-Chunk Handshake Buffering
                 session.senderJob = launch(tcpDispatcher) {
@@ -477,14 +518,21 @@ class TunTcpRelay(
                                         else -> session.dstIp.hostAddress ?: "Socket"
                                     }
 
-                                    DpiEngine.desyncAndSend(
-                                        socket = socket,
-                                        outputStream = upstreamOut,
-                                        payload = currentBuf,
-                                        length = currentBuf.size,
-                                        strategy = strategy,
-                                        onTechniqueApplied = { appliedTechnique = it }
-                                    )
+                                    val isGaming = isGamingPort(session.dstPort)
+                                    if (isGaming) {
+                                        upstreamOut.write(currentBuf)
+                                        upstreamOut.flush()
+                                        appliedTechnique = "GAMING_PASSTHROUGH"
+                                    } else {
+                                        DpiEngine.desyncAndSend(
+                                            socket = socket,
+                                            outputStream = upstreamOut,
+                                            payload = currentBuf,
+                                            length = currentBuf.size,
+                                            strategy = strategy,
+                                            onTechniqueApplied = { appliedTechnique = it }
+                                        )
+                                    }
 
                                     TrafficMonitor.addConnectionLog(
                                         ConnectionLog(
@@ -528,7 +576,7 @@ class TunTcpRelay(
                             var offset = 0
                             while (offset < bytesRead) {
                                 val chunkLen = minOf(bytesRead - offset, MAX_SEGMENT_SIZE)
-                                val currentSeq = session.serverSeq.get()
+                                val currentSeq = session.serverSeq.getAndUpdate { (it + chunkLen) and 0xFFFFFFFFL }
                                 val dataPacket = PacketParser.buildTcpPacket(
                                     srcIp = session.dstIp,
                                     dstIp = session.srcIp,
@@ -541,12 +589,19 @@ class TunTcpRelay(
                                     payloadOffset = offset,
                                     payloadLen = chunkLen
                                 )
-                                session.serverSeq.updateAndGet { (it + chunkLen) and 0xFFFFFFFFL }
                                 writeTunPacket(dataPacket)
                                 offset += chunkLen
                             }
                         }
-                        bytesRead = input.read(readBuffer)
+                        bytesRead = try {
+                            input.read(readBuffer)
+                        } catch (_: java.net.SocketTimeoutException) {
+                            if (!session.isConnected.get() || System.currentTimeMillis() - session.lastActivity > IDLE_TIMEOUT_MS) {
+                                -1
+                            } else {
+                                0
+                            }
+                        }
                     }
                 } finally {
                     ByteArrayPool.recycleStreamBuffer(readBuffer)
@@ -570,7 +625,7 @@ class TunTcpRelay(
                 }
             } catch (_: Exception) {
                 try { localSocket?.close() } catch (_: Exception) {}
-                if (!socketConnected) {
+                if (wasConnecting.compareAndSet(true, false)) {
                     activeConnectingCount.decrementAndGet()
                 }
                 // Send RST | ACK on upstream connect or runtime socket failures so client apps never hang in CLOSE_WAIT
@@ -586,6 +641,9 @@ class TunTcpRelay(
                 )
                 writeTunPacket(rstPacket)
             } finally {
+                if (wasConnecting.compareAndSet(true, false)) {
+                    activeConnectingCount.decrementAndGet()
+                }
                 closeSessionInternal(session, forceRemove = false)
                 TrafficMonitor.onConnectionClosed()
             }

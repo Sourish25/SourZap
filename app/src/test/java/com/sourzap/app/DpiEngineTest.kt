@@ -206,7 +206,7 @@ class DpiEngineTest {
 
         // Verify header was desynced
         val desyncedStr = String(desynced, Charsets.ISO_8859_1)
-        assertTrue(desyncedStr.contains("hOst:  tracker.example.com"))
+        assertTrue(desyncedStr.contains("hOst: tracker.example.com"))
 
         // Verify binary body is intact byte-for-byte at the end
         val extractedBody = desynced.copyOfRange(desynced.size - 128, desynced.size)
