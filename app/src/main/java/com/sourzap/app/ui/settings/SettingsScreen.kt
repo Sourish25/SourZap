@@ -47,9 +47,15 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.BrightnessAuto
+import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lan
+import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.NightlightRound
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Refresh
@@ -57,8 +63,11 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.platform.LocalClipboardManager
+import com.sourzap.app.ui.theme.ContrastEngine
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -1609,11 +1618,18 @@ private fun SettingsSubPageHeader(
         }
     }
 }
+private data class CanvasSelectorOption(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector
+)
 
 /**
- * Interactive Material 3 Custom Theme Customizer Bottom Sheet.
- * Enables users to customize their primary accent color (curated swatches, hue slider, hex input)
- * and choose their canvas background (OLED pitch black, dark slate, clean light, or system auto).
+ * Studio-Grade Executive Custom Theme Designer Bottom Sheet.
+ * Completely emoji-free Material 3 customizer with vector canvas selector,
+ * realistic interactive mock preview card, and precision color engine
+ * (curated swatches, continuous 360° hue spectrum, saturation/luminance tuning, validated hex & clipboard paste).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1625,6 +1641,7 @@ private fun CustomThemeBottomSheet(
     onDismiss: () -> Unit
 ) {
     val haptics = LocalHapticFeedback.current
+    val clipboardManager = LocalClipboardManager.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val systemInDark = isSystemInDarkTheme()
 
@@ -1649,21 +1666,73 @@ private fun CustomThemeBottomSheet(
         )
     }
 
-    var hexText by remember(customPrimary) {
+    val initialHsv = remember {
+        val arr = FloatArray(3)
+        android.graphics.Color.colorToHSV(Color(customPrimary).toArgb(), arr)
+        arr
+    }
+    var currentHue by remember { mutableStateOf(initialHsv[0]) }
+    var currentSat by remember { mutableStateOf(initialHsv[1]) }
+    var currentVal by remember { mutableStateOf(initialHsv[2]) }
+
+    var hexText by remember {
         mutableStateOf(String.format("%06X", customPrimary and 0xFFFFFFL))
     }
     var hexError by remember { mutableStateOf(false) }
 
-    val currentColor = Color(customPrimary)
-    val hsv = remember(customPrimary) {
-        val arr = FloatArray(3)
-        android.graphics.Color.colorToHSV(currentColor.toArgb(), arr)
-        arr
+    // Synchronize HSV state and hexText when customPrimary changes externally (e.g. swatch tap or hex input)
+    LaunchedEffect(customPrimary) {
+        val targetRgb = customPrimary and 0xFFFFFFL
+        val currentRgb = android.graphics.Color.HSVToColor(floatArrayOf(currentHue, currentSat, currentVal)).toLong() and 0xFFFFFFL
+        if (targetRgb != currentRgb) {
+            val arr = FloatArray(3)
+            android.graphics.Color.colorToHSV(Color(customPrimary).toArgb(), arr)
+            // Preserve current hue if incoming color is neutral/grayscale
+            if (arr[1] > 0.001f && arr[2] > 0.001f) {
+                currentHue = arr[0]
+            }
+            currentSat = arr[1]
+            currentVal = arr[2]
+            hexText = String.format("%06X", targetRgb)
+            hexError = false
+        }
     }
-    var currentHue by remember(customPrimary) { mutableStateOf(hsv[0]) }
 
-    val previewScheme = remember(customPrimary, customBgMode, systemInDark) {
+    val currentColor = remember(currentHue, currentSat, currentVal) {
+        Color(android.graphics.Color.HSVToColor(floatArrayOf(currentHue, currentSat, currentVal)))
+    }
+    val previewScheme = remember(currentColor, customBgMode, systemInDark) {
         com.sourzap.app.ui.theme.buildCustomColorScheme(currentColor, customBgMode, systemInDark)
+    }
+
+    val primaryLum = remember(currentColor) { ContrastEngine.calculatePerceptualLuminance(currentColor) }
+    val primaryContrastRatio = remember(currentColor, previewScheme) {
+        ContrastEngine.calculateWcagContrastRatio(previewScheme.onPrimary, previewScheme.primary)
+    }
+    val isContrastCompliant = remember(primaryContrastRatio) {
+        primaryContrastRatio >= 3.0f
+    }
+
+    val canvasOptions = remember {
+        listOf(
+            CanvasSelectorOption("OLED", "OLED Pitch Black", "Pure Pitch Black #000000", Icons.Rounded.Contrast),
+            CanvasSelectorOption("DARK_SLATE", "Dark Slate", "Deep Slate #101216", Icons.Rounded.NightlightRound),
+            CanvasSelectorOption("LIGHT", "Clean Light", "Bright Off-White #F8F9FA", Icons.Rounded.LightMode),
+            CanvasSelectorOption("SYSTEM", "System Default", "Follow Device Mode", Icons.Rounded.BrightnessAuto)
+        )
+    }
+
+    val satStartColor = remember(currentHue, currentVal) {
+        Color(android.graphics.Color.HSVToColor(floatArrayOf(currentHue, 0f, currentVal)))
+    }
+    val satEndColor = remember(currentHue, currentVal) {
+        Color(android.graphics.Color.HSVToColor(floatArrayOf(currentHue, 1f, currentVal)))
+    }
+    val valStartColor = remember(currentHue, currentSat) {
+        Color(android.graphics.Color.HSVToColor(floatArrayOf(currentHue, currentSat, 0.1f)))
+    }
+    val valEndColor = remember(currentHue, currentSat) {
+        Color(android.graphics.Color.HSVToColor(floatArrayOf(currentHue, currentSat, 1f)))
     }
 
     ModalBottomSheet(
@@ -1688,13 +1757,13 @@ private fun CustomThemeBottomSheet(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Customize Theme",
+                            text = "Executive Theme Designer",
                             fontWeight = FontWeight.Black,
                             fontSize = 22.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Personalize accent color and background canvas",
+                            text = "Precision color tuning, contrast legibility & canvas styles",
                             fontWeight = FontWeight.Normal,
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1710,170 +1779,355 @@ private fun CustomThemeBottomSheet(
                 }
             }
 
-            // Live Interactive Preview Card
+            // Realistic Interactive Preview Card
             item {
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(22.dp))
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), RoundedCornerShape(22.dp)),
+                        .clip(RoundedCornerShape(24.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), RoundedCornerShape(24.dp)),
                     color = previewScheme.background,
-                    shape = RoundedCornerShape(22.dp)
+                    shape = RoundedCornerShape(24.dp)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
+                        // Mock App Bar & Canvas Style Badge
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "Live Theme Preview",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = previewScheme.onBackground
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(previewScheme.primary)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "SourZap Executive Studio",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    color = previewScheme.onBackground
+                                )
+                            }
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
-                                color = previewScheme.primaryContainer
+                                color = previewScheme.surfaceVariant
                             ) {
                                 Text(
-                                    text = customBgMode,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = previewScheme.onPrimaryContainer,
+                                    text = when (customBgMode) {
+                                        "OLED" -> "OLED Pitch Black"
+                                        "DARK_SLATE" -> "Dark Slate"
+                                        "LIGHT" -> "Clean Light"
+                                        else -> "System Mode"
+                                    },
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = previewScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                 )
                             }
                         }
 
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = previewScheme.surfaceContainerHigh,
-                            modifier = Modifier.fillMaxWidth()
+                        // Mathematical Contrast Badges
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = previewScheme.primaryContainer,
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(38.dp)
-                                        .clip(CircleShape)
-                                        .background(previewScheme.primary),
-                                    contentAlignment = Alignment.Center
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.Palette,
+                                        imageVector = if (isContrastCompliant) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
                                         contentDescription = null,
-                                        tint = previewScheme.onPrimary,
-                                        modifier = Modifier.size(20.dp)
+                                        tint = if (isContrastCompliant) previewScheme.primary else MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "${if (isContrastCompliant) "WCAG AA" else "Contrast"} ${String.format(java.util.Locale.US, "%.1f", primaryContrastRatio)}:1",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = previewScheme.onPrimaryContainer
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "High-Contrast UI Text",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        color = previewScheme.onSurface
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = previewScheme.surfaceContainerHighest,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Contrast,
+                                        contentDescription = null,
+                                        tint = previewScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(14.dp)
                                     )
-                                    val bgLum = 0.299f * previewScheme.background.red + 0.587f * previewScheme.background.green + 0.114f * previewScheme.background.blue
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "Optimized legibility on ${if (bgLum > 0.5f) "light" else "dark"} canvas",
-                                        fontWeight = FontWeight.Normal,
-                                        fontSize = 12.sp,
+                                        text = "Lum ${(primaryLum * 100).toInt()}% • ${if (primaryLum > 0.5f) "Dark Text" else "White Text"}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
                                         color = previewScheme.onSurfaceVariant
                                     )
                                 }
                             }
                         }
 
-                        Button(
-                            onClick = {},
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = previewScheme.primary,
-                                contentColor = previewScheme.onPrimary
-                            )
+                        // Mock App Surface Container Card
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = previewScheme.surfaceContainerHigh,
+                            border = BorderStroke(1.dp, previewScheme.outlineVariant.copy(alpha = 0.25f)),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(
-                                text = "Accent Button (${String.format("#%06X", customPrimary and 0xFFFFFFL)})",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.5.sp
-                            )
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(CircleShape)
+                                            .background(previewScheme.primaryContainer),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Shield,
+                                            contentDescription = null,
+                                            tint = previewScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "DPI Bypass Core",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = previewScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "Adaptive fragmentation • 0ms latency",
+                                            fontWeight = FontWeight.Normal,
+                                            fontSize = 11.5.sp,
+                                            color = previewScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = previewScheme.primary
+                                    ) {
+                                        Text(
+                                            text = "ACTIVE",
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 9.5.sp,
+                                            color = previewScheme.onPrimary,
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                }
+
+                                // Micro accent track
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(3.dp)
+                                        .clip(RoundedCornerShape(1.5.dp))
+                                        .background(previewScheme.outlineVariant.copy(alpha = 0.3f))
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(0.72f)
+                                            .fillMaxHeight()
+                                            .clip(RoundedCornerShape(1.5.dp))
+                                            .background(previewScheme.primary)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Mock App Buttons Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = previewScheme.primary,
+                                    contentColor = previewScheme.onPrimary
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Bolt,
+                                    contentDescription = null,
+                                    tint = previewScheme.onPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Primary Action",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.5.sp,
+                                    color = previewScheme.onPrimary
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, previewScheme.outlineVariant.copy(alpha = 0.6f)),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = previewScheme.onSurface
+                                )
+                            ) {
+                                Text(
+                                    text = "Secondary",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.5.sp,
+                                    color = previewScheme.onSurface
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            // Section 1: Background Style
+            // Section 1: Professional Vector Canvas Selector
             item {
                 Text(
-                    text = "Background Style",
+                    text = "Canvas Background",
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Choose pure pitch black for AMOLED, dark slate, or clean light",
+                    text = "True OLED pitch black, dark slate, clean light, or system default",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                val bgModes = listOf(
-                    "OLED" to "🖤 OLED Black",
-                    "DARK_SLATE" to "🌑 Dark Slate",
-                    "LIGHT" to "☀️ Clean Light",
-                    "SYSTEM" to "🌗 System Auto"
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    bgModes.forEach { (modeKey, label) ->
-                        val isSelected = customBgMode == modeKey
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(14.dp))
-                                .border(
-                                    width = if (isSelected) 2.dp else 1.dp,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                                    shape = RoundedCornerShape(14.dp)
-                                )
-                                .clickable {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onBgModeChange(modeKey)
-                                },
-                            color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainer,
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Box(
+
+                canvasOptions.chunked(2).forEach { rowOptions ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        rowOptions.forEach { option ->
+                            val isSelected = customBgMode == option.id
+                            Surface(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 12.dp, horizontal = 4.dp),
-                                contentAlignment = Alignment.Center
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .border(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                                    .clickable {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onBgModeChange(option.id)
+                                    },
+                                color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainer,
+                                shape = RoundedCornerShape(16.dp)
                             ) {
-                                Text(
-                                    text = label,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    fontSize = 11.5.sp,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                                    else MaterialTheme.colorScheme.surfaceContainerHigh
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = option.icon,
+                                                contentDescription = option.title,
+                                                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.CheckCircle,
+                                                contentDescription = "Active",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = option.title,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                        fontSize = 13.5.sp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = option.subtitle,
+                                        fontWeight = FontWeight.Normal,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
 
@@ -1901,7 +2155,7 @@ private fun CustomThemeBottomSheet(
                         rowColors.forEach { (colorVal, _) ->
                             val isColorSelected = (customPrimary and 0xFFFFFFL) == (colorVal and 0xFFFFFFL)
                             val c = Color(colorVal)
-                            val isLight = (0.299f * c.red + 0.587f * c.green + 0.114f * c.blue) > 0.5f
+                            val onSwatchColor = ContrastEngine.getHighContrastContentColor(c)
 
                             Box(
                                 modifier = Modifier
@@ -1923,7 +2177,7 @@ private fun CustomThemeBottomSheet(
                                     Icon(
                                         imageVector = Icons.Rounded.Check,
                                         contentDescription = "Selected",
-                                        tint = if (isLight) Color(0xFF121214) else Color(0xFFFFFFFF),
+                                        tint = onSwatchColor,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
@@ -1934,14 +2188,47 @@ private fun CustomThemeBottomSheet(
                 }
             }
 
-            // Section 3: Continuous Hue Rainbow Slider
+            // Section 3: Precision Color Tuning (Hue, Saturation, Luminance)
             item {
                 Text(
-                    text = "Hue Spectrum Slider",
+                    text = "Precision Color Engine",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
+                    fontSize = 15.sp,
                     color = MaterialTheme.colorScheme.onSurface
                 )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Continuous 360° hue spectrum, saturation, and luminance tuning",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 1. Continuous 360° Hue Slider
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Hue Spectrum",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.5.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest
+                    ) {
+                        Text(
+                            text = "${currentHue.toInt()}°",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.5.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(6.dp))
                 Box(
                     modifier = Modifier
@@ -1962,9 +2249,14 @@ private fun CustomThemeBottomSheet(
                     value = currentHue,
                     onValueChange = { newHue ->
                         currentHue = newHue
-                        val newColorInt = android.graphics.Color.HSVToColor(floatArrayOf(newHue, 0.90f, 0.98f))
+                        val newColorInt = android.graphics.Color.HSVToColor(floatArrayOf(newHue, currentSat, currentVal))
                         val newColorLong = (newColorInt.toLong() and 0xFFFFFFFFL)
+                        hexText = String.format("%06X", newColorLong and 0xFFFFFFL)
+                        hexError = false
                         onPrimaryChange(newColorLong)
+                    },
+                    onValueChangeFinished = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     },
                     valueRange = 0f..360f,
                     colors = SliderDefaults.colors(
@@ -1974,9 +2266,133 @@ private fun CustomThemeBottomSheet(
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // 2. Saturation Slider
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Saturation",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.5.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest
+                    ) {
+                        Text(
+                            text = "${(currentSat * 100).toInt()}%",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.5.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(16.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(satStartColor, satEndColor)
+                            )
+                        )
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Slider(
+                    value = currentSat,
+                    onValueChange = { newSat ->
+                        currentSat = newSat
+                        val newColorInt = android.graphics.Color.HSVToColor(floatArrayOf(currentHue, newSat, currentVal))
+                        val newColorLong = (newColorInt.toLong() and 0xFFFFFFFFL)
+                        hexText = String.format("%06X", newColorLong and 0xFFFFFFL)
+                        hexError = false
+                        onPrimaryChange(newColorLong)
+                    },
+                    onValueChangeFinished = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    },
+                    valueRange = 0f..1f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = currentColor,
+                        activeTrackColor = Color.Transparent,
+                        inactiveTrackColor = Color.Transparent
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // 3. Luminance / Brightness Slider
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Luminance",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.5.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest
+                    ) {
+                        Text(
+                            text = "${(currentVal * 100).toInt()}%",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.5.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(16.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(valStartColor, valEndColor)
+                            )
+                        )
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Slider(
+                    value = currentVal,
+                    onValueChange = { newVal ->
+                        currentVal = newVal
+                        val newColorInt = android.graphics.Color.HSVToColor(floatArrayOf(currentHue, currentSat, newVal))
+                        val newColorLong = (newColorInt.toLong() and 0xFFFFFFFFL)
+                        hexText = String.format("%06X", newColorLong and 0xFFFFFFL)
+                        hexError = false
+                        onPrimaryChange(newColorLong)
+                    },
+                    onValueChangeFinished = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    },
+                    valueRange = 0.1f..1f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = currentColor,
+                        activeTrackColor = Color.Transparent,
+                        inactiveTrackColor = Color.Transparent
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
-            // Section 4: Custom Hex Code Input
+            // Section 4: Validated Custom Hex Code Input with Clipboard Paste Support
             item {
                 Text(
                     text = "Hex Color Code",
@@ -1993,35 +2409,79 @@ private fun CustomThemeBottomSheet(
                     OutlinedTextField(
                         value = hexText,
                         onValueChange = { text ->
-                            val clean = text.filter { it.isLetterOrDigit() }.take(6).uppercase()
-                            hexText = clean
-                            if (clean.length == 6) {
-                                try {
-                                    val parsed = ("FF" + clean).toLong(16)
-                                    hexError = false
+                            val normalized = ContrastEngine.normalizeHexColor(text)
+                            if (normalized != null) {
+                                hexText = normalized
+                                hexError = false
+                                val parsed = ContrastEngine.parseHexColor(normalized)
+                                if (parsed != null) {
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onPrimaryChange(parsed)
-                                } catch (_: Throwable) {
-                                    hexError = true
                                 }
                             } else {
-                                hexError = false
+                                val clean = text.removePrefix("#").filter { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }.take(6).uppercase()
+                                hexText = clean
+                                if (clean.length == 6) {
+                                    val parsed = ContrastEngine.parseHexColor(clean)
+                                    if (parsed != null) {
+                                        hexError = false
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onPrimaryChange(parsed)
+                                    } else {
+                                        hexError = true
+                                    }
+                                } else {
+                                    hexError = false
+                                }
                             }
                         },
-                        prefix = { Text("#", fontWeight = FontWeight.Bold) },
+                        prefix = { Text("#", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
                         placeholder = { Text("RRGGBB") },
                         isError = hexError,
                         singleLine = true,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(14.dp),
                         trailingIcon = {
-                            Box(
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .clip(CircleShape)
-                                    .background(currentColor)
-                                    .border(1.dp, Color.Gray.copy(alpha = 0.5f), CircleShape)
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(end = 8.dp)
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        val clip = try {
+                                            clipboardManager.getText()?.text?.toString() ?: ""
+                                        } catch (_: Throwable) {
+                                            ""
+                                        }
+                                        val parsed = ContrastEngine.parseHexColor(clip)
+                                        val normalized = ContrastEngine.normalizeHexColor(clip)
+                                        if (parsed != null && normalized != null) {
+                                            hexText = normalized
+                                            hexError = false
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onPrimaryChange(parsed)
+                                        } else {
+                                            hexError = true
+                                        }
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ContentPaste,
+                                        contentDescription = "Paste Hex",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .clip(CircleShape)
+                                        .background(currentColor)
+                                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                                )
+                            }
                         }
                     )
 
@@ -2032,6 +2492,14 @@ private fun CustomThemeBottomSheet(
                     ) {
                         Text("Done", fontWeight = FontWeight.Bold)
                     }
+                }
+                if (hexError) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Invalid hex code. Please enter 6 hex characters (#RRGGBB).",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 11.5.sp
+                    )
                 }
             }
         }
