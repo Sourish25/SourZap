@@ -14,7 +14,9 @@ import com.sourzap.app.ui.components.MarkdownText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -56,6 +58,7 @@ import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -63,14 +66,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.toArgb
+
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -132,11 +140,15 @@ fun SettingsScreen(
     val autoConnect by settingsRepo.autoConnectOnBoot.collectAsStateWithLifecycle()
     val themePreset by settingsRepo.themePreset.collectAsStateWithLifecycle()
     val darkModePref by settingsRepo.darkModePref.collectAsStateWithLifecycle()
+    val customPrimary by settingsRepo.customThemePrimary.collectAsStateWithLifecycle()
+    val customBgMode by settingsRepo.customThemeBackground.collectAsStateWithLifecycle()
     val disallowedPackages by settingsRepo.disallowedPackages.collectAsStateWithLifecycle()
     val currentStrategy by strategyRepo.currentStrategy.collectAsStateWithLifecycle()
 
     var currentPage by remember { mutableStateOf(SettingsPage.MAIN) }
     var showAppSheet by remember { mutableStateOf(false) }
+    var showCustomThemeSheet by remember { mutableStateOf(false) }
+
     var installedApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     var appSearchQuery by remember { mutableStateOf("") }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -385,9 +397,19 @@ fun SettingsScreen(
                                                         ThemeSwatchCard(
                                                             preset = preset,
                                                             isSelected = preset.id == themePreset,
+                                                            customPrimary = customPrimary,
+                                                            customBgMode = customBgMode,
                                                             onClick = {
                                                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                                 settingsRepo.setThemePreset(preset.id)
+                                                                if (preset == AppThemePreset.CUSTOM) {
+                                                                    showCustomThemeSheet = true
+                                                                }
+                                                            },
+                                                            onCustomizeClick = {
+                                                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                                settingsRepo.setThemePreset(preset.id)
+                                                                showCustomThemeSheet = true
                                                             }
                                                         )
                                                     }
@@ -402,13 +424,24 @@ fun SettingsScreen(
                                             ThemeSwatchCard(
                                                 preset = preset,
                                                 isSelected = preset.id == themePreset,
+                                                customPrimary = customPrimary,
+                                                customBgMode = customBgMode,
                                                 onClick = {
                                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                     settingsRepo.setThemePreset(preset.id)
+                                                    if (preset == AppThemePreset.CUSTOM) {
+                                                        showCustomThemeSheet = true
+                                                    }
+                                                },
+                                                onCustomizeClick = {
+                                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    settingsRepo.setThemePreset(preset.id)
+                                                    showCustomThemeSheet = true
                                                 }
                                             )
                                         }
                                     }
+
                                 }
                             }
                         }
@@ -1098,8 +1131,24 @@ fun SettingsScreen(
         }
     }
 
+    // Modal Bottom Sheet for Custom Theme Editor
+    if (showCustomThemeSheet) {
+        CustomThemeBottomSheet(
+            customPrimary = customPrimary,
+            customBgMode = customBgMode,
+            onPrimaryChange = { newPrimary ->
+                settingsRepo.setCustomThemePrimary(newPrimary)
+            },
+            onBgModeChange = { newBgMode ->
+                settingsRepo.setCustomThemeBackground(newBgMode)
+            },
+            onDismiss = { showCustomThemeSheet = false }
+        )
+    }
+
     // Modal Bottom Sheet for Split Tunneling App Selection
     if (showAppSheet) {
+
         ModalBottomSheet(
             onDismissRequest = { showAppSheet = false },
             sheetState = sheetState,
@@ -1281,14 +1330,17 @@ fun SettingsScreen(
 private fun ThemeSwatchCard(
     preset: AppThemePreset,
     isSelected: Boolean,
+    customPrimary: Long = 0xFFFFD600L,
+    customBgMode: String = "OLED",
     onClick: () -> Unit,
+    onCustomizeClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
 
-    val targetScheme = remember(preset, isDark) {
-        com.sourzap.app.ui.theme.getThemeColorScheme(preset, isDark, context)
+    val targetScheme = remember(preset, isDark, customPrimary, customBgMode) {
+        com.sourzap.app.ui.theme.getThemeColorScheme(preset, isDark, context, customPrimary, customBgMode)
     }
 
     Surface(
@@ -1354,6 +1406,32 @@ private fun ThemeSwatchCard(
                     }
                 }
             }
+
+            // If Custom Preset: show prominent Customize Button
+            if (preset == AppThemePreset.CUSTOM) {
+                OutlinedButton(
+                    onClick = { onCustomizeClick?.invoke() },
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Palette,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Customize Palette & Canvas",
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
 
             // Visual 4-Color Swatch Strip (Primary, Secondary, Surface, Background)
             Row(
@@ -1528,6 +1606,434 @@ private fun SettingsSubPageHeader(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+    }
+}
+
+/**
+ * Interactive Material 3 Custom Theme Customizer Bottom Sheet.
+ * Enables users to customize their primary accent color (curated swatches, hue slider, hex input)
+ * and choose their canvas background (OLED pitch black, dark slate, clean light, or system auto).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CustomThemeBottomSheet(
+    customPrimary: Long,
+    customBgMode: String,
+    onPrimaryChange: (Long) -> Unit,
+    onBgModeChange: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val haptics = LocalHapticFeedback.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val systemInDark = isSystemInDarkTheme()
+
+    val curatedColors = remember {
+        listOf(
+            0xFFFFD600L to "Electric Lemon",
+            0xFF00E5FFL to "Neon Cyan",
+            0xFF00E676L to "Cyber Mint",
+            0xFFFF007FL to "Hot Magenta",
+            0xFF7C4DFFL to "Electric Violet",
+            0xFFFF6D00L to "Sunset Flame",
+            0xFFFF4081L to "Coral Rose",
+            0xFF00FF66L to "Matrix Emerald",
+            0xFF2979FFL to "Royal Blue",
+            0xFF80D8FFL to "Ice Glacier",
+            0xFFFFAB00L to "Golden Amber",
+            0xFFFF1744L to "Crimson Ruby",
+            0xFF1DE9B6L to "Arctic Teal",
+            0xFFAA00FFL to "Deep Orchid",
+            0xFFEEEEEEL to "Silver White",
+            0xFFA1887FL to "Caramel Mocha"
+        )
+    }
+
+    var hexText by remember(customPrimary) {
+        mutableStateOf(String.format("%06X", customPrimary and 0xFFFFFFL))
+    }
+    var hexError by remember { mutableStateOf(false) }
+
+    val currentColor = Color(customPrimary)
+    val hsv = remember(customPrimary) {
+        val arr = FloatArray(3)
+        android.graphics.Color.colorToHSV(currentColor.toArgb(), arr)
+        arr
+    }
+    var currentHue by remember(customPrimary) { mutableStateOf(hsv[0]) }
+
+    val previewScheme = remember(customPrimary, customBgMode, systemInDark) {
+        com.sourzap.app.ui.theme.buildCustomColorScheme(currentColor, customBgMode, systemInDark)
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
+    ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(bottom = 36.dp)
+        ) {
+            // Header
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Customize Theme",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 22.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Personalize accent color and background canvas",
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Close",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // Live Interactive Preview Card
+            item {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(22.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), RoundedCornerShape(22.dp)),
+                    color = previewScheme.background,
+                    shape = RoundedCornerShape(22.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Live Theme Preview",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = previewScheme.onBackground
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = previewScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = customBgMode,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = previewScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = previewScheme.surfaceContainerHigh,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(previewScheme.primary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Palette,
+                                        contentDescription = null,
+                                        tint = previewScheme.onPrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "High-Contrast UI Text",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = previewScheme.onSurface
+                                    )
+                                    val bgLum = 0.299f * previewScheme.background.red + 0.587f * previewScheme.background.green + 0.114f * previewScheme.background.blue
+                                    Text(
+                                        text = "Optimized legibility on ${if (bgLum > 0.5f) "light" else "dark"} canvas",
+                                        fontWeight = FontWeight.Normal,
+                                        fontSize = 12.sp,
+                                        color = previewScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        Button(
+                            onClick = {},
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = previewScheme.primary,
+                                contentColor = previewScheme.onPrimary
+                            )
+                        ) {
+                            Text(
+                                text = "Accent Button (${String.format("#%06X", customPrimary and 0xFFFFFFL)})",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Section 1: Background Style
+            item {
+                Text(
+                    text = "Background Style",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Choose pure pitch black for AMOLED, dark slate, or clean light",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                val bgModes = listOf(
+                    "OLED" to "🖤 OLED Black",
+                    "DARK_SLATE" to "🌑 Dark Slate",
+                    "LIGHT" to "☀️ Clean Light",
+                    "SYSTEM" to "🌗 System Auto"
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    bgModes.forEach { (modeKey, label) ->
+                        val isSelected = customBgMode == modeKey
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(14.dp))
+                                .border(
+                                    width = if (isSelected) 2.dp else 1.dp,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                .clickable {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onBgModeChange(modeKey)
+                                },
+                            color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainer,
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 12.dp, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 11.5.sp,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Section 2: Preset Accent Color Swatches
+            item {
+                Text(
+                    text = "Accent Color Palette",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Pick a curated vibrant accent or customize below",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                curatedColors.chunked(8).forEach { rowColors ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        rowColors.forEach { (colorVal, _) ->
+                            val isColorSelected = (customPrimary and 0xFFFFFFL) == (colorVal and 0xFFFFFFL)
+                            val c = Color(colorVal)
+                            val isLight = (0.299f * c.red + 0.587f * c.green + 0.114f * c.blue) > 0.5f
+
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(c)
+                                    .border(
+                                        width = if (isColorSelected) 3.dp else 1.dp,
+                                        color = if (isColorSelected) MaterialTheme.colorScheme.onSurface else Color.Black.copy(alpha = 0.25f),
+                                        shape = CircleShape
+                                    )
+                                    .clickable {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onPrimaryChange(colorVal)
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isColorSelected) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Check,
+                                        contentDescription = "Selected",
+                                        tint = if (isLight) Color(0xFF121214) else Color(0xFFFFFFFF),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+            }
+
+            // Section 3: Continuous Hue Rainbow Slider
+            item {
+                Text(
+                    text = "Hue Spectrum Slider",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(16.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    Color.Red, Color.Yellow, Color.Green, Color.Cyan,
+                                    Color.Blue, Color.Magenta, Color.Red
+                                )
+                            )
+                        )
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Slider(
+                    value = currentHue,
+                    onValueChange = { newHue ->
+                        currentHue = newHue
+                        val newColorInt = android.graphics.Color.HSVToColor(floatArrayOf(newHue, 0.90f, 0.98f))
+                        val newColorLong = (newColorInt.toLong() and 0xFFFFFFFFL)
+                        onPrimaryChange(newColorLong)
+                    },
+                    valueRange = 0f..360f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = currentColor,
+                        activeTrackColor = Color.Transparent,
+                        inactiveTrackColor = Color.Transparent
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // Section 4: Custom Hex Code Input
+            item {
+                Text(
+                    text = "Hex Color Code",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = hexText,
+                        onValueChange = { text ->
+                            val clean = text.filter { it.isLetterOrDigit() }.take(6).uppercase()
+                            hexText = clean
+                            if (clean.length == 6) {
+                                try {
+                                    val parsed = ("FF" + clean).toLong(16)
+                                    hexError = false
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onPrimaryChange(parsed)
+                                } catch (_: Throwable) {
+                                    hexError = true
+                                }
+                            } else {
+                                hexError = false
+                            }
+                        },
+                        prefix = { Text("#", fontWeight = FontWeight.Bold) },
+                        placeholder = { Text("RRGGBB") },
+                        isError = hexError,
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp),
+                        trailingIcon = {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(currentColor)
+                                    .border(1.dp, Color.Gray.copy(alpha = 0.5f), CircleShape)
+                            )
+                        }
+                    )
+
+                    Button(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.height(54.dp)
+                    ) {
+                        Text("Done", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
     }
 }

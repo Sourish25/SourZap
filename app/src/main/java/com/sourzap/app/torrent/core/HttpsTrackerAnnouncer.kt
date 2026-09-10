@@ -107,7 +107,7 @@ object HttpsTrackerAnnouncer {
                     val announceUrl = "$trackerUrl?info_hash=$urlEncodedHash&peer_id=$peerId&port=$port&uploaded=$uploadedBytes&downloaded=$downloadedBytes&left=$leftBytes&compact=1"
                     val request = Request.Builder()
                         .url(announceUrl)
-                        .header("User-Agent", "SourZap/2.9.0")
+                        .header("User-Agent", "SourZap/2.9.1")
                         .header("Accept", "*/*")
                         .build()
 

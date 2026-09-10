@@ -140,6 +140,12 @@ class SettingsRepository(private val context: Context) {
     private val _themePreset = MutableStateFlow(prefs.getString("theme_preset", "DYNAMIC") ?: "DYNAMIC")
     val themePreset: StateFlow<String> = _themePreset.asStateFlow()
 
+    private val _customThemePrimary = MutableStateFlow(prefs.getLong("custom_theme_primary", 0xFFFFD600L))
+    val customThemePrimary: StateFlow<Long> = _customThemePrimary.asStateFlow()
+
+    private val _customThemeBackground = MutableStateFlow(prefs.getString("custom_theme_bg", "OLED") ?: "OLED")
+    val customThemeBackground: StateFlow<String> = _customThemeBackground.asStateFlow()
+
     private val _darkModePref = MutableStateFlow(prefs.getString("dark_mode_pref", "SYSTEM") ?: "SYSTEM")
     val darkModePref: StateFlow<String> = _darkModePref.asStateFlow()
 
@@ -159,6 +165,26 @@ class SettingsRepository(private val context: Context) {
         prefs.edit().putString("theme_preset", preset).apply()
         _themePreset.value = preset
     }
+
+    fun setCustomThemePrimary(colorValue: Long) {
+        prefs.edit().putLong("custom_theme_primary", colorValue).apply()
+        _customThemePrimary.value = colorValue
+    }
+
+    fun setCustomThemeBackground(bgMode: String) {
+        prefs.edit().putString("custom_theme_bg", bgMode).apply()
+        _customThemeBackground.value = bgMode
+    }
+
+    fun setCustomTheme(primary: Long, bgMode: String) {
+        prefs.edit()
+            .putLong("custom_theme_primary", primary)
+            .putString("custom_theme_bg", bgMode)
+            .apply()
+        _customThemePrimary.value = primary
+        _customThemeBackground.value = bgMode
+    }
+
 
     fun setDarkModePref(pref: String) {
         prefs.edit().putString("dark_mode_pref", pref).apply()

@@ -78,6 +78,8 @@ class MainActivity : ComponentActivity() {
 
             val themePreset by settingsRepo.themePreset.collectAsStateWithLifecycle()
             val darkModePref by settingsRepo.darkModePref.collectAsStateWithLifecycle()
+            val customPrimary by settingsRepo.customThemePrimary.collectAsStateWithLifecycle()
+            val customBgMode by settingsRepo.customThemeBackground.collectAsStateWithLifecycle()
             val systemInDark = isSystemInDarkTheme()
 
             val isDark = when (darkModePref) {
@@ -88,10 +90,13 @@ class MainActivity : ComponentActivity() {
 
             SourZapTheme(
                 themePreset = themePreset,
-                darkTheme = isDark
+                darkTheme = isDark,
+                customPrimary = customPrimary,
+                customBgMode = customBgMode
             ) {
                 MainAppScreen()
             }
+
         }
     }
 

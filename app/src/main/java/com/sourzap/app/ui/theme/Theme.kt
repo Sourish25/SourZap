@@ -5,10 +5,13 @@ import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -45,12 +48,131 @@ enum class AppThemePreset(
 }
 
 /**
+ * Mathematically builds a harmonious Material 3 ColorScheme from custom user selections.
+ * Guarantees contrast on all surfaces, backgrounds, buttons, and text.
+ */
+fun buildCustomColorScheme(
+    primaryColor: Color,
+    bgMode: String,
+    systemInDark: Boolean
+): ColorScheme {
+    val isDark = when (bgMode) {
+        "LIGHT" -> false
+        "DARK_SLATE", "OLED" -> true
+        else -> systemInDark
+    }
+    val isOled = bgMode == "OLED" || (bgMode == "SYSTEM" && isDark)
+
+    val r = primaryColor.red
+    val g = primaryColor.green
+    val b = primaryColor.blue
+    val primaryLum = 0.299f * r + 0.587f * g + 0.114f * b
+
+    // High-contrast text on primary: light colors get dark text, dark colors get white text
+    val onPrimaryColor = if (primaryLum > 0.5f) Color(0xFF121214) else Color(0xFFFFFFFF)
+
+    return if (isDark) {
+        val bgColor = if (isOled) Color(0xFF000000) else Color(0xFF101216)
+        val surfaceColor = if (isOled) Color(0xFF000000) else Color(0xFF101216)
+        val surfaceVariantColor = if (isOled) Color(0xFF14171A) else Color(0xFF262B34)
+        val surfaceContainerColor = if (isOled) Color(0xFF0A0C0E) else Color(0xFF181B22)
+        val surfaceContainerHighColor = if (isOled) Color(0xFF121518) else Color(0xFF20242D)
+        val surfaceContainerHighestColor = if (isOled) Color(0xFF1A1E22) else Color(0xFF282D37)
+
+        val primaryContainerColor = primaryColor.copy(alpha = 0.25f)
+        val onPrimaryContainerColor = if (primaryLum > 0.6f) primaryColor else Color(0xFFFFFFFF)
+
+        val secondaryColor = Color(
+            red = (r * 0.7f + 0.25f).coerceIn(0f, 1f),
+            green = (g * 0.7f + 0.25f).coerceIn(0f, 1f),
+            blue = (b * 0.7f + 0.25f).coerceIn(0f, 1f)
+        )
+        val secLum = 0.299f * secondaryColor.red + 0.587f * secondaryColor.green + 0.114f * secondaryColor.blue
+        val onSecondaryColor = if (secLum > 0.5f) Color(0xFF121214) else Color(0xFFFFFFFF)
+
+        darkColorScheme(
+            primary = primaryColor,
+            onPrimary = onPrimaryColor,
+            primaryContainer = primaryContainerColor,
+            onPrimaryContainer = onPrimaryContainerColor,
+            secondary = secondaryColor,
+            onSecondary = onSecondaryColor,
+            secondaryContainer = secondaryColor.copy(alpha = 0.22f),
+            onSecondaryContainer = Color(0xFFFFFFFF),
+            tertiary = primaryColor,
+            onTertiary = onPrimaryColor,
+            tertiaryContainer = primaryContainerColor,
+            onTertiaryContainer = onPrimaryContainerColor,
+            background = bgColor,
+            onBackground = Color(0xFFFFFFFF),
+            surface = surfaceColor,
+            onSurface = Color(0xFFFFFFFF),
+            surfaceVariant = surfaceVariantColor,
+            onSurfaceVariant = Color(0xFFC4C7D0),
+            surfaceContainer = surfaceContainerColor,
+            surfaceContainerHigh = surfaceContainerHighColor,
+            surfaceContainerHighest = surfaceContainerHighestColor,
+            outline = Color(0xFF8C9199),
+            outlineVariant = Color(0xFF3F444D)
+        )
+    } else {
+        // Light Mode: ensure text is dark and background is bright
+        val bgColor = Color(0xFFF8F9FA)
+        val surfaceColor = Color(0xFFFFFFFF)
+        val surfaceVariantColor = Color(0xFFE2E4E8)
+        val surfaceContainerColor = Color(0xFFF1F3F6)
+        val surfaceContainerHighColor = Color(0xFFE9EBEF)
+        val surfaceContainerHighestColor = Color(0xFFE1E4E9)
+
+        val lightModePrimary = if (primaryLum > 0.65f) {
+            Color(
+                red = (r * 0.84f).coerceIn(0f, 1f),
+                green = (g * 0.84f).coerceIn(0f, 1f),
+                blue = (b * 0.84f).coerceIn(0f, 1f)
+            )
+        } else {
+            primaryColor
+        }
+        val lightPrimaryLum = 0.299f * lightModePrimary.red + 0.587f * lightModePrimary.green + 0.114f * lightModePrimary.blue
+        val lightOnPrimary = if (lightPrimaryLum > 0.5f) Color(0xFF121214) else Color(0xFFFFFFFF)
+
+        lightColorScheme(
+            primary = lightModePrimary,
+            onPrimary = lightOnPrimary,
+            primaryContainer = primaryColor.copy(alpha = 0.18f),
+            onPrimaryContainer = Color(0xFF191C1E),
+            secondary = Color(0xFF4F616E),
+            onSecondary = Color(0xFFFFFFFF),
+            secondaryContainer = Color(0xFFDCE4EC),
+            onSecondaryContainer = Color(0xFF0B1D29),
+            tertiary = Color(0xFF63597C),
+            onTertiary = Color(0xFFFFFFFF),
+            tertiaryContainer = Color(0xFFE9DDFF),
+            onTertiaryContainer = Color(0xFF1F1635),
+            background = bgColor,
+            onBackground = Color(0xFF191C1E),
+            surface = surfaceColor,
+            onSurface = Color(0xFF191C1E),
+            surfaceVariant = surfaceVariantColor,
+            onSurfaceVariant = Color(0xFF44474E),
+            surfaceContainer = surfaceContainerColor,
+            surfaceContainerHigh = surfaceContainerHighColor,
+            surfaceContainerHighest = surfaceContainerHighestColor,
+            outline = Color(0xFF74777F),
+            outlineVariant = Color(0xFFC4C7D0)
+        )
+    }
+}
+
+/**
  * Single source of truth resolving exact ColorScheme for presets.
  */
 fun getThemeColorScheme(
     preset: AppThemePreset,
     darkTheme: Boolean,
-    context: android.content.Context
+    context: android.content.Context,
+    customPrimary: Long = 0xFFFFD600L,
+    customBgMode: String = "OLED"
 ): ColorScheme {
     val isDynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
@@ -60,7 +182,7 @@ fun getThemeColorScheme(
         preset == AppThemePreset.OLED_MONOCHROME -> if (darkTheme) OledMonochromeDarkColorScheme else OledMonochromeLightColorScheme
         preset == AppThemePreset.OLED_AMBER -> if (darkTheme) OledAmberDarkColorScheme else OledAmberLightColorScheme
         preset == AppThemePreset.OLED_EMERALD -> if (darkTheme) OledEmeraldDarkColorScheme else OledEmeraldLightColorScheme
-        preset == AppThemePreset.CUSTOM -> if (darkTheme) CustomDarkColorScheme else CustomLightColorScheme
+        preset == AppThemePreset.CUSTOM -> buildCustomColorScheme(Color(customPrimary), customBgMode, darkTheme)
 
         preset == AppThemePreset.DYNAMIC && isDynamicAvailable -> {
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -86,14 +208,25 @@ fun getThemeColorScheme(
 fun SourZapTheme(
     themePreset: String = "DYNAMIC",
     darkTheme: Boolean = isSystemInDarkTheme(),
+    customPrimary: Long = 0xFFFFD600L,
+    customBgMode: String = "OLED",
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
-    val preset = AppThemePreset.values().firstOrNull { it.id == themePreset } ?: AppThemePreset.DYNAMIC
+    val preset = AppThemePreset.entries.firstOrNull { it.id == themePreset } ?: AppThemePreset.DYNAMIC
 
-    // OLED presets always force dark status bar and true black
-    val isEffectiveDark = if (preset.isOledPreset) true else darkTheme
-    val colorScheme: ColorScheme = getThemeColorScheme(preset, darkTheme, context)
+    // Determine if effective theme requires dark status bar
+    val isEffectiveDark = when {
+        preset.isOledPreset -> true
+        preset == AppThemePreset.CUSTOM -> when (customBgMode) {
+            "LIGHT" -> false
+            "DARK_SLATE", "OLED" -> true
+            else -> darkTheme
+        }
+        else -> darkTheme
+    }
+    val colorScheme: ColorScheme = getThemeColorScheme(preset, darkTheme, context, customPrimary, customBgMode)
+
 
     val view = LocalView.current
     if (!view.isInEditMode) {
