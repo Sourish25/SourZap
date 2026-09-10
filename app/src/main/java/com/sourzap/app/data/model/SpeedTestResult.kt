@@ -15,6 +15,17 @@ data class SpeedTestResult(
         val sdf = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
         return sdf.format(java.util.Date(timestamp))
     }
+
+    companion object {
+        fun formatThroughputAutoRanged(mbps: Float): String {
+            return when {
+                mbps >= 1000f -> String.format(java.util.Locale.US, "%.2f Gbps", mbps / 1000f)
+                mbps >= 1f -> String.format(java.util.Locale.US, "%.1f Mbps", mbps)
+                mbps >= 0.001f -> String.format(java.util.Locale.US, "%.1f Kbps", mbps * 1000f)
+                else -> String.format(java.util.Locale.US, "%.0f bps", mbps * 1_000_000f)
+            }
+        }
+    }
 }
 
 enum class SpeedTestPhase {

@@ -349,7 +349,7 @@ class M3EmpiricalChallengeTest {
         val themeEntries = AppThemePreset.entries
         val filterEntries = TrafficFilterTab.entries
 
-        assertEquals(16, themeEntries.size)
+        assertEquals(20, themeEntries.size)
         assertEquals(5, filterEntries.size)
 
         // Verify identical instance (no new array allocations)

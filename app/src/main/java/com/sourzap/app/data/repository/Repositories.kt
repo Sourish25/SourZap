@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
+import com.sourzap.app.service.core.DohResolver
+
 class StrategyRepository(private val context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("sourzap_strategies", Context.MODE_PRIVATE)
     private val lock = Any()
@@ -26,18 +28,30 @@ class StrategyRepository(private val context: Context) {
         _customStrategy = MutableStateFlow(loadedCustom)
         customStrategy = _customStrategy.asStateFlow()
 
+        val savedDohName = prefs.getString("selected_doh_provider", null)
+        val savedDoh = savedDohName?.let {
+            try { DohProvider.valueOf(it) } catch (_: Exception) { null }
+        } ?: loadedCustom.dohProvider
+
         val selectedId = prefs.getString("selected_strategy_id", BypassStrategy.AUTO_PILOT.id) ?: BypassStrategy.AUTO_PILOT.id
-        val initialStrategy = when (selectedId) {
+        val baseStrategy = when (selectedId) {
             loadedCustom.id -> loadedCustom
             else -> BypassStrategy.DEFAULT_PRESETS.find { it.id == selectedId } ?: BypassStrategy.AUTO_PILOT
         }
+        val initialStrategy = baseStrategy.copy(dohProvider = savedDoh)
         _currentStrategy = MutableStateFlow(initialStrategy)
         currentStrategy = _currentStrategy.asStateFlow()
+        DohResolver.defaultProvider = savedDoh
     }
 
     fun selectStrategy(strategy: BypassStrategy) {
         synchronized(lock) {
-            _currentStrategy.value = strategy
+            val savedDohName = prefs.getString("selected_doh_provider", null)
+            val userDoh = savedDohName?.let {
+                try { DohProvider.valueOf(it) } catch (_: Exception) { null }
+            } ?: _currentStrategy.value.dohProvider
+            val strategyToApply = strategy.copy(dohProvider = userDoh)
+            _currentStrategy.value = strategyToApply
             prefs.edit().putString("selected_strategy_id", strategy.id).apply()
         }
     }
@@ -54,6 +68,8 @@ class StrategyRepository(private val context: Context) {
 
     fun setDohProvider(provider: DohProvider) {
         synchronized(lock) {
+            prefs.edit().putString("selected_doh_provider", provider.name).apply()
+            DohResolver.defaultProvider = provider
             val updatedCurrent = _currentStrategy.value.copy(dohProvider = provider)
             val updatedCustom = _customStrategy.value.copy(dohProvider = provider)
             _currentStrategy.value = updatedCurrent

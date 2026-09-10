@@ -340,13 +340,13 @@ fun TorrentProxyDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFFE8F5E9))
+                                .background(MaterialTheme.colorScheme.primaryContainer)
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
-                            Text("Proxy reachable! Latency: ${res.latencyMs} ms", color = Color(0xFF1B5E20), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            Text("Proxy reachable! Latency: ${res.latencyMs} ms", color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                     is TestResult.Failure -> {
@@ -354,13 +354,13 @@ fun TorrentProxyDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFFFFEBEE))
+                                .background(MaterialTheme.colorScheme.errorContainer)
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = Color(0xFFC62828), modifier = Modifier.size(16.dp))
-                            Text("Unreachable: ${res.error}", color = Color(0xFFB71C1C), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                            Text("Unreachable: ${res.error}", color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                     else -> {}

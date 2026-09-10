@@ -489,7 +489,7 @@ fun ExpressiveSpeedGauge(
 ) {
     val animatedSpeed by animateFloatAsState(
         targetValue = speedMbps,
-        animationSpec = spring(dampingRatio = 0.72f, stiffness = 180f),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
         label = "SpeedNeedle"
     )
 
@@ -903,6 +903,28 @@ fun ExpressiveWavyProgressIndicator(
     }
 }
 
+object FloatingDockSpecs {
+    val ContainerHeight = 66.dp
+    val ContainerMaxWidth = 500.dp
+    val ContainerCornerRadius = 34.dp
+    val ItemHeight = 50.dp
+    val ItemCornerRadius = 26.dp
+    val IconSize = 26.dp
+    const val SelectedScale = 1.08f
+    const val UnselectedScale = 1.0f
+
+    val DefaultItems = listOf(
+        DockItem("dashboard", "Home", Icons.Rounded.Home),
+        DockItem("torrents", "Torrents", Icons.Rounded.Download),
+        DockItem("speedtest", "Speed", Icons.Rounded.Speed),
+        DockItem("traffic", "Traffic", Icons.Rounded.StackedLineChart),
+        DockItem("settings", "Settings", Icons.Rounded.Settings)
+    )
+
+    fun itemTabContentDescription(label: String): String = "$label tab"
+    fun itemIconContentDescription(label: String): String = label
+}
+
 /**
  * Thick, Floating Navigation Dock Tailored for Smartphone Thumbs and Tablet Center Positioning
  */
@@ -913,16 +935,10 @@ fun FloatingExpressiveDock(
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalHapticFeedback.current
-    val dockShape = RoundedCornerShape(34.dp)
-    val itemShape = RoundedCornerShape(26.dp)
+    val dockShape = RoundedCornerShape(FloatingDockSpecs.ContainerCornerRadius)
+    val itemShape = RoundedCornerShape(FloatingDockSpecs.ItemCornerRadius)
 
-    val items = listOf(
-        DockItem("dashboard", "Home", Icons.Rounded.Home),
-        DockItem("torrents", "Torrents", Icons.Rounded.Download),
-        DockItem("speedtest", "Speed", Icons.Rounded.Speed),
-        DockItem("traffic", "Traffic", Icons.Rounded.StackedLineChart),
-        DockItem("settings", "Settings", Icons.Rounded.Settings)
-    )
+    val items = FloatingDockSpecs.DefaultItems
 
     Box(
         modifier = modifier
@@ -936,9 +952,9 @@ fun FloatingExpressiveDock(
             shadowElevation = 10.dp,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
             modifier = Modifier
-                .widthIn(max = 500.dp)
+                .widthIn(max = FloatingDockSpecs.ContainerMaxWidth)
                 .fillMaxWidth()
-                .height(66.dp)
+                .height(FloatingDockSpecs.ContainerHeight)
         ) {
             Row(
                 modifier = Modifier
@@ -951,7 +967,7 @@ fun FloatingExpressiveDock(
                     val isSelected = currentRoute == item.route
 
                     val animatedScale by animateFloatAsState(
-                        targetValue = if (isSelected) 1.03f else 1f,
+                        targetValue = if (isSelected) FloatingDockSpecs.SelectedScale else FloatingDockSpecs.UnselectedScale,
                         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
                         label = "DockItemScale"
                     )
@@ -962,44 +978,27 @@ fun FloatingExpressiveDock(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(52.dp)
+                            .height(FloatingDockSpecs.ItemHeight)
                             .scale(animatedScale)
                             .clip(itemShape)
                             .background(pillBg)
                             .semantics {
                                 role = Role.Tab
                                 selected = isSelected
-                                contentDescription = "${item.label} tab"
+                                contentDescription = FloatingDockSpecs.itemTabContentDescription(item.label)
                             }
                             .clickable {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onNavigate(item.route)
-                            }
-                            .padding(horizontal = 3.dp, vertical = 2.dp),
+                            },
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = item.icon,
-                                contentDescription = item.label,
-                                tint = itemColor,
-                                modifier = Modifier.size(19.dp)
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = item.label,
-                                fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
-                                fontSize = 10.5.sp,
-                                letterSpacing = (-0.1).sp,
-                                color = itemColor,
-                                textAlign = TextAlign.Center,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                        Icon(
+                            imageVector = item.icon,
+                            contentDescription = FloatingDockSpecs.itemIconContentDescription(item.label),
+                            tint = itemColor,
+                            modifier = Modifier.size(FloatingDockSpecs.IconSize)
+                        )
                     }
                 }
             }

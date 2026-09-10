@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -559,6 +560,44 @@ fun TorrentScreen() {
 
 }
 
+object TorrentHeaderActionClusterSpecs {
+    val PillHeight = 44.dp
+    val ShieldPillWidth = 48.dp
+    val ShieldIconSize = 20.dp
+    val PauseButtonSize = 38.dp
+    val PauseIconSize = 20.dp
+    val ResumeButtonSize = 38.dp
+    val ResumeIconSize = 22.dp
+    const val ShieldContentDescription = "Torrent Proxy Settings"
+    const val PauseAllContentDescription = "Pause All"
+    const val ResumeAllContentDescription = "Resume All"
+
+    data class ShieldVisualConfig(
+        val isProxyEnabled: Boolean,
+        val backgroundAlpha: Float,
+        val borderAlpha: Float,
+        val iconAlpha: Float
+    )
+
+    fun getShieldVisualConfig(proxyEnabled: Boolean): ShieldVisualConfig {
+        return if (proxyEnabled) {
+            ShieldVisualConfig(
+                isProxyEnabled = true,
+                backgroundAlpha = 1.0f,
+                borderAlpha = 1.0f,
+                iconAlpha = 1.0f
+            )
+        } else {
+            ShieldVisualConfig(
+                isProxyEnabled = false,
+                backgroundAlpha = 0.12f,
+                borderAlpha = 0.35f,
+                iconAlpha = 0.8f
+            )
+        }
+    }
+}
+
 @Composable
 private fun TorrentHeader(
     stats: TorrentSessionStats,
@@ -588,55 +627,86 @@ private fun TorrentHeader(
         }
 
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(
+            // Harmonized Shield Pill (matches Resume button accent)
+            Surface(
                 onClick = onOpenProxy,
+                shape = RoundedCornerShape(percent = 50),
+                color = if (proxyEnabled) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                },
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = if (proxyEnabled) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                    }
+                ),
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (proxyEnabled) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainerHighest
+                    .height(TorrentHeaderActionClusterSpecs.PillHeight)
+                    .width(TorrentHeaderActionClusterSpecs.ShieldPillWidth)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.Shield,
+                        contentDescription = TorrentHeaderActionClusterSpecs.ShieldContentDescription,
+                        tint = if (proxyEnabled) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                        },
+                        modifier = Modifier.size(TorrentHeaderActionClusterSpecs.ShieldIconSize)
                     )
-            ) {
-                Icon(
-                    Icons.Rounded.Shield,
-                    contentDescription = "Torrent Proxy Settings",
-                    tint = if (proxyEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
+                }
             }
 
-            IconButton(
-                onClick = onPauseAll,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            // Layered Playback Pill Container
+            Surface(
+                shape = RoundedCornerShape(percent = 50),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                modifier = Modifier.height(TorrentHeaderActionClusterSpecs.PillHeight)
             ) {
-                Icon(
-                    Icons.Rounded.Pause,
-                    contentDescription = "Pause All",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
+                Row(
+                    modifier = Modifier.padding(3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    // Pause Button inside outer pill
+                    IconButton(
+                        onClick = onPauseAll,
+                        modifier = Modifier.size(TorrentHeaderActionClusterSpecs.PauseButtonSize)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Pause,
+                            contentDescription = TorrentHeaderActionClusterSpecs.PauseAllContentDescription,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(TorrentHeaderActionClusterSpecs.PauseIconSize)
+                        )
+                    }
 
-            IconButton(
-                onClick = onResumeAll,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer)
-            ) {
-                Icon(
-                    Icons.Rounded.PlayArrow,
-                    contentDescription = "Resume All",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
+                    // Overlaid Elevated Circular Resume All Button
+                    Box(
+                        modifier = Modifier
+                            .size(TorrentHeaderActionClusterSpecs.ResumeButtonSize)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary)
+                            .clickable(onClick = onResumeAll),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PlayArrow,
+                            contentDescription = TorrentHeaderActionClusterSpecs.ResumeAllContentDescription,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(TorrentHeaderActionClusterSpecs.ResumeIconSize)
+                        )
+                    }
+                }
             }
         }
     }

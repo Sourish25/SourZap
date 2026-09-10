@@ -78,6 +78,7 @@ import com.sourzap.app.ui.components.ExpressiveCard
 import com.sourzap.app.ui.components.ExpressiveChip
 import com.sourzap.app.ui.components.ExpressiveTrafficWave
 import com.sourzap.app.ui.components.ExpressiveWavyProgressIndicator
+import com.sourzap.app.ui.components.MarkdownText
 import com.sourzap.app.ui.components.HeroConnectButton
 import com.sourzap.app.ui.theme.NumberDisplayMedium
 import com.sourzap.app.ui.theme.NumberDisplaySmall
@@ -292,6 +293,34 @@ fun DashboardScreen(
                                             }
                                         }
                                         else -> {}
+                                    }
+                                }
+
+                                if (release != null && release.releaseNotes.isNotBlank()) {
+                                    var isChangelogExpanded by remember { mutableStateOf(false) }
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.35f))
+                                            .padding(10.dp)
+                                    ) {
+                                        MarkdownText(
+                                            markdown = release.releaseNotes,
+                                            textColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            maxLines = if (isChangelogExpanded) Int.MAX_VALUE else 3
+                                        )
+                                        if (release.releaseNotes.lines().size > 2) {
+                                            Text(
+                                                text = if (isChangelogExpanded) "Show less ▲" else "Changelog details ▼",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier
+                                                    .clickable { isChangelogExpanded = !isChangelogExpanded }
+                                                    .padding(top = 4.dp)
+                                            )
+                                        }
                                     }
                                 }
 

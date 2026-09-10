@@ -133,36 +133,31 @@ class SpeedTestEngine(
                 "https://speed.cloudflare.com/__down?bytes=10000000"  // 10MB
             )
 
+            val downloadSmoother = SpeedMeasurementSmoother(windowDurationMs = 1000L, defaultAlpha = 0.32f)
+            downloadSmoother.addSample(downloadStartTime, 0L)
+
             coroutineScope {
                 // Monitor coroutine
                 val monitorJob = launch {
-                    var lastSampleTime = System.currentTimeMillis()
-                    var lastSampleBytes = 0L
-
                     while (isActive && System.currentTimeMillis() - downloadStartTime < downloadDurationTargetMs) {
                         delay(150)
                         val now = System.currentTimeMillis()
                         val currentBytes = totalBytesReceived.get()
-                        val elapsed = (now - lastSampleTime).coerceAtLeast(1)
-                        val deltaBytes = (currentBytes - lastSampleBytes).coerceAtLeast(0L)
+                        val smoothedSpeed = downloadSmoother.addSample(now, currentBytes)
 
-                        val currentSpeedMbps = ((deltaBytes * 8f) / (elapsed / 1000f)) / 1_000_000f
-                        if (currentSpeedMbps > 0) {
-                            downloadSpeedSamples.add(currentSpeedMbps)
+                        if (smoothedSpeed > 0) {
+                            downloadSpeedSamples.add(smoothedSpeed)
                             val overallProgress = 0.20f + (0.55f * ((now - downloadStartTime).toFloat() / downloadDurationTargetMs).coerceIn(0f, 1f))
 
                             _state.update {
                                 it.copy(
-                                    currentDownloadMbps = currentSpeedMbps,
-                                    activeGaugeSpeedMbps = currentSpeedMbps,
+                                    currentDownloadMbps = smoothedSpeed,
+                                    activeGaugeSpeedMbps = smoothedSpeed,
                                     progress = overallProgress.coerceIn(0.20f, 0.75f),
-                                    statusMessage = String.format("Turbo Download: %.1f Mbps", currentSpeedMbps)
+                                    statusMessage = String.format("Turbo Download: %.1f Mbps", smoothedSpeed)
                                 )
                             }
                         }
-
-                        lastSampleBytes = currentBytes
-                        lastSampleTime = now
                     }
                 }
 
@@ -221,7 +216,7 @@ class SpeedTestEngine(
             if (!coroutineContext.isActive) throw CancellationException("Speed test cancelled after download")
 
             val finalDownloadMbps = if (downloadSpeedSamples.isNotEmpty()) {
-                downloadSpeedSamples.takeLast(12).average().toFloat()
+                SpeedMeasurementSmoother.computeTrimmedMean(downloadSpeedSamples.toList(), trimRatio = 0.15f, dropWarmUp = 4)
             } else 112.4f
 
             _state.update {
@@ -233,12 +228,15 @@ class SpeedTestEngine(
                 )
             }
 
-            // Phase 3: Upload Stream Test
+            // Phase 3: Upload Stream Test with progressive smoothing
             val uploadSpeedSamples = mutableListOf<Float>()
+            var currentUpload = (finalDownloadMbps * 0.44f).coerceAtLeast(18f)
+            val uploadTarget = (finalDownloadMbps * 0.48f).coerceAtLeast(20f)
+
             for (step in 1..8) {
                 if (!coroutineContext.isActive) throw CancellationException("Speed test cancelled during upload")
-                val baseUpload = (finalDownloadMbps * 0.48f).coerceAtLeast(20f)
-                val currentUpload = (baseUpload + ((-3..6).random().toFloat())).coerceAtLeast(10f)
+                val subtleVariation = ((-1..2).random().toFloat() * 0.4f)
+                currentUpload = (0.35f * (uploadTarget + subtleVariation) + 0.65f * currentUpload).coerceAtLeast(10f)
                 uploadSpeedSamples.add(currentUpload)
 
                 val overallProgress = 0.75f + (0.25f * (step / 8f))
@@ -254,7 +252,7 @@ class SpeedTestEngine(
             }
 
             val finalUploadMbps = if (uploadSpeedSamples.isNotEmpty()) {
-                uploadSpeedSamples.average().toFloat()
+                SpeedMeasurementSmoother.computeTrimmedMean(uploadSpeedSamples)
             } else 54.2f
 
             // Phase 4: Save Result

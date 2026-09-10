@@ -34,7 +34,14 @@ enum class AppThemePreset(
     LAVENDER_DREAM("LAVENDER_DREAM", "Lavender Dream", "Pastel lavender & periwinkle"),
     SAKURA_BLOSSOM("SAKURA_BLOSSOM", "Sakura Blossom", "Cherry blossom & soft coral"),
     COFFEE_MOCHA("COFFEE_MOCHA", "Coffee Mocha", "Warm espresso & caramel cream"),
-    AURORA_BOREALIS("AURORA_BOREALIS", "Aurora Glow", "Northern teal & violet glow")
+    AURORA_BOREALIS("AURORA_BOREALIS", "Aurora Glow", "Northern teal & violet glow"),
+    OLED_MONOCHROME("OLED_MONOCHROME", "OLED Monochrome", "Pure black #000000 with crisp white & silver accents"),
+    OLED_AMBER("OLED_AMBER", "OLED Amber Gold", "Pure black #000000 with glowing warm amber"),
+    OLED_EMERALD("OLED_EMERALD", "OLED Neon Emerald", "Pure black #000000 with glowing matrix green"),
+    CUSTOM("CUSTOM", "Custom Palette", "Custom accent with optional OLED black");
+
+    val isOledPreset: Boolean
+        get() = this == AMOLED_BLACK || this == OLED_MONOCHROME || this == OLED_AMBER || this == OLED_EMERALD
 }
 
 /**
@@ -48,8 +55,12 @@ fun getThemeColorScheme(
     val isDynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     return when {
-        // AMOLED Black is ALWAYS pitch black dark mode!
+        // OLED Presets force pitch black background in dark mode or always
         preset == AppThemePreset.AMOLED_BLACK -> AmoledDarkColorScheme
+        preset == AppThemePreset.OLED_MONOCHROME -> if (darkTheme) OledMonochromeDarkColorScheme else OledMonochromeLightColorScheme
+        preset == AppThemePreset.OLED_AMBER -> if (darkTheme) OledAmberDarkColorScheme else OledAmberLightColorScheme
+        preset == AppThemePreset.OLED_EMERALD -> if (darkTheme) OledEmeraldDarkColorScheme else OledEmeraldLightColorScheme
+        preset == AppThemePreset.CUSTOM -> if (darkTheme) CustomDarkColorScheme else CustomLightColorScheme
 
         preset == AppThemePreset.DYNAMIC && isDynamicAvailable -> {
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -80,8 +91,8 @@ fun SourZapTheme(
     val context = LocalContext.current
     val preset = AppThemePreset.values().firstOrNull { it.id == themePreset } ?: AppThemePreset.DYNAMIC
 
-    // AMOLED Black always forces dark status bar and true black
-    val isEffectiveDark = if (preset == AppThemePreset.AMOLED_BLACK) true else darkTheme
+    // OLED presets always force dark status bar and true black
+    val isEffectiveDark = if (preset.isOledPreset) true else darkTheme
     val colorScheme: ColorScheme = getThemeColorScheme(preset, darkTheme, context)
 
     val view = LocalView.current

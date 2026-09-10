@@ -38,6 +38,9 @@ import javax.net.ssl.X509TrustManager
  */
 object DohResolver {
 
+    @Volatile
+    var defaultProvider: DohProvider = DohProvider.CLOUDFLARE
+
     private var vpnServiceRef: VpnService? = null
 
     const val DEFAULT_CACHE_TTL_MS = 300_000L // 5 minutes standard TTL

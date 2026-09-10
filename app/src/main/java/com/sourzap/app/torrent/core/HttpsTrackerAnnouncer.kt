@@ -107,7 +107,7 @@ object HttpsTrackerAnnouncer {
                     val announceUrl = "$trackerUrl?info_hash=$urlEncodedHash&peer_id=$peerId&port=$port&uploaded=$uploadedBytes&downloaded=$downloadedBytes&left=$leftBytes&compact=1"
                     val request = Request.Builder()
                         .url(announceUrl)
-                        .header("User-Agent", "SourZap/2.8.8")
+                        .header("User-Agent", "SourZap/2.8.9")
                         .header("Accept", "*/*")
                         .build()
 
@@ -131,21 +131,19 @@ object HttpsTrackerAnnouncer {
 
         if (!handle.isValid) return@withContext 0
 
-        for ((ip, peerPort) in allDiscoveredPeers.take(35)) {
-            if (NetworkIpHelper.isSelfOrLocal(ip)) {
-                Log.d(TAG, "Skipping self/local peer $ip:$peerPort")
-                continue
-            }
-            try {
-                if (!handle.isValid) break
-                val ep = TcpEndpoint(ip, peerPort)
-                synchronized(handle) {
-                    if (handle.isValid) {
-                        handle.swig().connect_peer(ep.swig())
+        withContext(TorrentEngineManager.torrentWorkerDispatcher) {
+            for ((ip, peerPort) in allDiscoveredPeers.take(35)) {
+                if (NetworkIpHelper.isSelfOrLocal(ip)) {
+                    Log.d(TAG, "Skipping self/local peer $ip:$peerPort")
+                    continue
+                }
+                try {
+                    if (!handle.isValid) break
+                    if (TorrentEngineManager.injectPeerSafely(handle, ip, peerPort)) {
                         injectedCount++
                     }
-                }
-            } catch (_: Throwable) {}
+                } catch (_: Throwable) {}
+            }
         }
 
         if (injectedCount > 0) {

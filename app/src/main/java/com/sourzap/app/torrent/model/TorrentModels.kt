@@ -200,6 +200,12 @@ data class TorrentItem(
     val isCompleted: Boolean
         get() = state.isCompleted || progress >= 1.0f
 
+    val isPartialSelection: Boolean
+        get() = files.isNotEmpty() && files.any { it.isSkipped }
+
+    val rawTotalBytes: Long
+        get() = if (files.isNotEmpty()) files.sumOf { it.size } else totalBytes
+
     val progressPercent: Int
         get() = (progress * 100).toInt().coerceIn(0, 100)
 

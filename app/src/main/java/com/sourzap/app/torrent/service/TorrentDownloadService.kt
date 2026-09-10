@@ -188,7 +188,15 @@ class TorrentDownloadService : Service() {
         try {
             ensureNotificationChannel()
             val notification = buildNotification(stats)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // Android 14+ (API 34+) strictly requires a declared foregroundServiceType.
+                // Never fall back to untyped startForeground to avoid MissingForegroundServiceTypeException.
+                try {
+                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                } catch (e: Throwable) {
+                    Log.e(TAG, "startForeground with dataSync type failed on Android 14+: ${e.message}", e)
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 try {
                     startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
                 } catch (e: Throwable) {
@@ -197,8 +205,6 @@ class TorrentDownloadService : Service() {
                         startForeground(NOTIFICATION_ID, notification)
                     } catch (fatal: Throwable) {
                         Log.e(TAG, "Fatal startForeground error: ${fatal.message}")
-                        // Must call stopSelf() to prevent Android 14 killing app after 5s
-                        stopSelf()
                     }
                 }
             } else {
@@ -206,7 +212,6 @@ class TorrentDownloadService : Service() {
             }
         } catch (e: Throwable) {
             Log.e(TAG, "Error in startForegroundServiceNotification: ${e.message}")
-            stopSelf()
         }
     }
 

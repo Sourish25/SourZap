@@ -303,6 +303,209 @@ val AmoledDarkColorScheme = darkColorScheme(
 
 val AmoledLightColorScheme = OceanicLightColorScheme
 
+// 6a. OLED Monochrome (Pure Pitch Black #000000 with Clean White & Silver)
+val OledMonochromeDarkColorScheme = darkColorScheme(
+    primary = Color(0xFFFFFFFF),
+    onPrimary = Color(0xFF000000),
+    primaryContainer = Color(0xFF282828),
+    onPrimaryContainer = Color(0xFFFFFFFF),
+    secondary = Color(0xFFE0E0E0),
+    onSecondary = Color(0xFF000000),
+    secondaryContainer = Color(0xFF1E1E1E),
+    onSecondaryContainer = Color(0xFFFFFFFF),
+    tertiary = Color(0xFFBDBDBD),
+    onTertiary = Color(0xFF000000),
+    tertiaryContainer = Color(0xFF333333),
+    onTertiaryContainer = Color(0xFFFFFFFF),
+    background = Color(0xFF000000),
+    onBackground = Color(0xFFFFFFFF),
+    surface = Color(0xFF000000),
+    onSurface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFF1C1C1C),
+    onSurfaceVariant = Color(0xFFE0E0E0),
+    surfaceContainer = Color(0xFF0C0C0C),
+    surfaceContainerHigh = Color(0xFF141414),
+    surfaceContainerHighest = Color(0xFF1E1E1E),
+    outline = Color(0xFF757575),
+    outlineVariant = Color(0xFF383838)
+)
+
+val OledMonochromeLightColorScheme = lightColorScheme(
+    primary = Color(0xFF000000),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFE0E0E0),
+    onPrimaryContainer = Color(0xFF000000),
+    secondary = Color(0xFF424242),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFEEEEEE),
+    onSecondaryContainer = Color(0xFF000000),
+    tertiary = Color(0xFF616161),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFF5F5F5),
+    onTertiaryContainer = Color(0xFF000000),
+    background = Color(0xFFFFFFFF),
+    onBackground = Color(0xFF000000),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF000000),
+    surfaceVariant = Color(0xFFF0F0F0),
+    onSurfaceVariant = Color(0xFF212121),
+    surfaceContainer = Color(0xFFF8F8F8),
+    surfaceContainerHigh = Color(0xFFF2F2F2),
+    surfaceContainerHighest = Color(0xFFECECEC),
+    outline = Color(0xFF616161),
+    outlineVariant = Color(0xFFBDBDBD)
+)
+
+// 6b. OLED Amber Gold (Pitch Black #000000 with Glowing Amber)
+val OledAmberDarkColorScheme = darkColorScheme(
+    primary = Color(0xFFFFC107),
+    onPrimary = Color(0xFF000000),
+    primaryContainer = Color(0xFF4A3800),
+    onPrimaryContainer = Color(0xFFFFE082),
+    secondary = Color(0xFFFFD54F),
+    onSecondary = Color(0xFF261900),
+    secondaryContainer = Color(0xFF3E2D04),
+    onSecondaryContainer = Color(0xFFFFECB3),
+    tertiary = Color(0xFFFFAB00),
+    onTertiary = Color(0xFF241600),
+    tertiaryContainer = Color(0xFF402700),
+    onTertiaryContainer = Color(0xFFFFD180),
+    background = Color(0xFF000000),
+    onBackground = Color(0xFFFFFFFF),
+    surface = Color(0xFF000000),
+    onSurface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFF1E1A11),
+    onSurfaceVariant = Color(0xFFD6CDBF),
+    surfaceContainer = Color(0xFF0D0B04),
+    surfaceContainerHigh = Color(0xFF171408),
+    surfaceContainerHighest = Color(0xFF221E0F),
+    outline = Color(0xFF8A7F6E),
+    outlineVariant = Color(0xFF383226)
+)
+
+val OledAmberLightColorScheme = lightColorScheme(
+    primary = Color(0xFF825500),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFFFDDAE),
+    onPrimaryContainer = Color(0xFF2A1800),
+    secondary = Color(0xFF6E5B40),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFF8DFBB),
+    onSecondaryContainer = Color(0xFF261904),
+    tertiary = Color(0xFF4F6546),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFD1EABE),
+    onTertiaryContainer = Color(0xFF0D2008),
+    background = Color(0xFFFFF8F1),
+    onBackground = Color(0xFF1F1B13),
+    surface = Color(0xFFFFF8F1),
+    onSurface = Color(0xFF1F1B13),
+    surfaceVariant = Color(0xFFEFE0CF),
+    onSurfaceVariant = Color(0xFF4E4539),
+    outline = Color(0xFF807567),
+    outlineVariant = Color(0xFFD2C4B4)
+)
+
+// 6c. OLED Neon Emerald (Pitch Black #000000 with Glowing Matrix Green)
+val OledEmeraldDarkColorScheme = darkColorScheme(
+    primary = Color(0xFF00E676),
+    onPrimary = Color(0xFF000000),
+    primaryContainer = Color(0xFF004D26),
+    onPrimaryContainer = Color(0xFFB9F6CA),
+    secondary = Color(0xFF69F0AE),
+    onSecondary = Color(0xFF003819),
+    secondaryContainer = Color(0xFF005328),
+    onSecondaryContainer = Color(0xFFA7FCD0),
+    tertiary = Color(0xFF00BFA5),
+    onTertiary = Color(0xFF00372E),
+    tertiaryContainer = Color(0xFF004D40),
+    onTertiaryContainer = Color(0xFF64FFDA),
+    background = Color(0xFF000000),
+    onBackground = Color(0xFFFFFFFF),
+    surface = Color(0xFF000000),
+    onSurface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFF101B14),
+    onSurfaceVariant = Color(0xFFC0CEC3),
+    surfaceContainer = Color(0xFF040F08),
+    surfaceContainerHigh = Color(0xFF08180E),
+    surfaceContainerHighest = Color(0xFF0F2416),
+    outline = Color(0xFF75877A),
+    outlineVariant = Color(0xFF2B3830)
+)
+
+val OledEmeraldLightColorScheme = lightColorScheme(
+    primary = Color(0xFF006C38),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFF89F8AC),
+    onPrimaryContainer = Color(0xFF00210D),
+    secondary = Color(0xFF4F6352),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFD2E8D3),
+    onSecondaryContainer = Color(0xFF0D1F12),
+    tertiary = Color(0xFF3A646F),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFBEEAF7),
+    onTertiaryContainer = Color(0xFF001F26),
+    background = Color(0xFFF5FBF4),
+    onBackground = Color(0xFF171D18),
+    surface = Color(0xFFF5FBF4),
+    onSurface = Color(0xFF171D18),
+    surfaceVariant = Color(0xFFDCE5DC),
+    onSurfaceVariant = Color(0xFF414942),
+    outline = Color(0xFF717972),
+    outlineVariant = Color(0xFFC0C9C0)
+)
+
+// 6d. Custom Themes
+val CustomDarkColorScheme = darkColorScheme(
+    primary = Color(0xFF80D8FF),
+    onPrimary = Color(0xFF00344D),
+    primaryContainer = Color(0xFF004C6D),
+    onPrimaryContainer = Color(0xFFC2E8FF),
+    secondary = Color(0xFFB3E5FC),
+    onSecondary = Color(0xFF003549),
+    secondaryContainer = Color(0xFF004D68),
+    onSecondaryContainer = Color(0xFFBBE9FF),
+    tertiary = Color(0xFF82B1FF),
+    onTertiary = Color(0xFF002D6E),
+    tertiaryContainer = Color(0xFF004299),
+    onTertiaryContainer = Color(0xFFD6E3FF),
+    background = Color(0xFF000000),
+    onBackground = Color(0xFFFFFFFF),
+    surface = Color(0xFF000000),
+    onSurface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFF181C20),
+    onSurfaceVariant = Color(0xFFC2C7CF),
+    surfaceContainer = Color(0xFF0A0E12),
+    surfaceContainerHigh = Color(0xFF12161A),
+    surfaceContainerHighest = Color(0xFF1A1F24),
+    outline = Color(0xFF8C9199),
+    outlineVariant = Color(0xFF42474E)
+)
+
+val CustomLightColorScheme = lightColorScheme(
+    primary = Color(0xFF00658E),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFC7E7FF),
+    onPrimaryContainer = Color(0xFF001E2E),
+    secondary = Color(0xFF4F616E),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFD2E5F5),
+    onSecondaryContainer = Color(0xFF0B1D29),
+    tertiary = Color(0xFF63597C),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFE9DDFF),
+    onTertiaryContainer = Color(0xFF1F1635),
+    background = Color(0xFFFCFCFF),
+    onBackground = Color(0xFF191C1E),
+    surface = Color(0xFFFCFCFF),
+    onSurface = Color(0xFF191C1E),
+    surfaceVariant = Color(0xFFDDE3EA),
+    onSurfaceVariant = Color(0xFF41484D),
+    outline = Color(0xFF71787E),
+    outlineVariant = Color(0xFFC1C7CE)
+)
+
 // 7. Nordic Frost (Glacier & Arctic Blue)
 val NordicFrostDarkColorScheme = darkColorScheme(
     primary = Color(0xFF88C0D0),

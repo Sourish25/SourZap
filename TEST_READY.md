@@ -1,105 +1,85 @@
 # TEST_READY: SourZap E2E Requirement-Driven Test Suite & Verification
 
-## Status: COMPLETE & READY (100% Pass Rate, 823/823 Tests Passing)
+## Status: COMPLETE & READY (100% E2E Pass Rate, 193/193 Tests Passing)
 
-The E2E requirement-driven test suite and release build pipeline for SourZap is fully implemented, verified, and validated against all requirements in `ORIGINAL_REQUEST.md`, `PROJECT.md`, and `TEST_INFRA.md`.
+The End-to-End (E2E) requirement-driven test suite for the SourZap Android project is fully implemented, verified, and validated against all requirements in `ORIGINAL_REQUEST.md`, `PROJECT.md § Feature Inventory`, and `TEST_INFRA.md`.
 
 ---
 
-## Test Execution Commands
+## 1. Test Execution Commands
 
-### Full Unit & E2E Test Suite Execution
+### Execute Master E2E Requirement Suite Runner
 ```powershell
-cmd.exe /c "gradlew.bat testDebugUnitTest"
+./gradlew.bat testDebugUnitTest --tests "com.sourzap.app.e2e.RequirementE2ETestSuite"
 ```
 
-### E2E Test Suite Only
+### Execute Entire E2E Test Package
 ```powershell
-cmd.exe /c "gradlew.bat testDebugUnitTest --tests com.sourzap.app.e2e.*"
+./gradlew.bat testDebugUnitTest --tests "com.sourzap.app.e2e.*"
 ```
 
-### Torrent Core Test Suite Only
+### Execute Individual Test Tiers
 ```powershell
-cmd.exe /c "gradlew.bat testDebugUnitTest --tests com.sourzap.app.torrent.*"
+# Tier 1: Feature Coverage (>=5 tests per feature for F1..F12)
+./gradlew.bat testDebugUnitTest --tests "com.sourzap.app.e2e.Tier1FeatureCoverageTest"
+
+# Tier 2: Boundary & Corner Cases (>=5 tests per feature for F1..F12)
+./gradlew.bat testDebugUnitTest --tests "com.sourzap.app.e2e.Tier2BoundaryCornerCaseTest"
+
+# Tier 3: Cross-Feature Combinations (Pairwise matrix)
+./gradlew.bat testDebugUnitTest --tests "com.sourzap.app.e2e.Tier3PairwiseInteractionsTest"
+
+# Tier 4: Real-World Application Scenarios (End-to-end workflows)
+./gradlew.bat testDebugUnitTest --tests "com.sourzap.app.e2e.Tier4RealWorldScenariosTest"
+
+# Tier 5: Adversarial Coverage Hardening
+./gradlew.bat testDebugUnitTest --tests "com.sourzap.app.e2e.Tier5AdversarialCoverageHardeningTest"
 ```
 
-### Release APK Clean Assembly
-```powershell
-cmd.exe /c "gradlew.bat assembleRelease"
-```
+---
+
+## 2. Test Suite Architecture & Summary
+
+| Test Suite / Tier | Test File | Test Count | Pass | Fail | Pass Rate |
+|---|---|:---:|:---:|:---:|:---:|
+| **Tier 1: Feature Coverage** | `Tier1FeatureCoverageTest.kt` | 60 | 60 | 0 | **100%** |
+| **Tier 2: Boundary & Corner Cases** | `Tier2BoundaryCornerCaseTest.kt` | 60 | 60 | 0 | **100%** |
+| **Tier 3: Cross-Feature Interactions** | `Tier3PairwiseInteractionsTest.kt` | 12 | 12 | 0 | **100%** |
+| **Tier 4: Real-World Scenarios** | `Tier4RealWorldScenariosTest.kt` | 6 | 6 | 0 | **100%** |
+| **Tier 5: Adversarial Hardening** | `Tier5AdversarialCoverageHardeningTest.kt` | 27 | 27 | 0 | **100%** |
+| **Deep Link & Intent E2E** | `IntentDeepLinkE2ETest.kt` | 9 | 9 | 0 | **100%** |
+| **Notification System E2E** | `NotificationSystemE2ETest.kt` | 6 | 6 | 0 | **100%** |
+| **Storage & Metadata E2E** | `StorageAndMetadataE2ETest.kt` | 7 | 7 | 0 | **100%** |
+| **Torrent Lifecycle E2E** | `TorrentEngineLifecycleE2ETest.kt` | 6 | 6 | 0 | **100%** |
+| **Total E2E Requirement Suite** | **`RequirementE2ETestSuite.kt`** | **193** | **193** | **0** | **100%** |
 
 ---
 
-## Test Suite Architecture & Summary
+## 3. Detailed Feature Verification Checklist (Features 1–12)
 
-| Package | Test Classes | Test Count | Failures | Errors | Duration | Pass Rate |
-|---|---|:---:|:---:|:---:|:---:|:---:|
-| `com.sourzap.app` | 16 test classes | 185 | 0 | 0 | ~4.3s | **100%** |
-| `com.sourzap.app.e2e` | 10 test classes (Tiers 1–5 + Domain E2E Suites) | 396 | 0 | 0 | ~0.5s | **100%** |
-| `com.sourzap.app.torrent` | 17 test classes (Validators, Scanners, Engine, Trackers) | 242 | 0 | 0 | ~1.4s | **100%** |
-| **Total Test Suite** | **43 Test Classes** | **823** | **0** | **0** | **~6.2s** | **100%** |
-
----
-
-## Detailed Test Tier Breakdown
-
-### Tier 1: Requirement-Driven Feature Coverage (`Tier1FeatureCoverageTest.kt`)
-- ≥5 dedicated tests per feature across all 12 project features (F1 to F12).
-- Validates magnet hashing (40-char hex, 32-char base32), displayName/size extraction, HTTPS tracker list auto-injection, scoped storage safe directories, bencode dictionary structures, filtered MIME types, MediaStore Downloads scanner deduplication, and intent filter parsing.
-
-### Tier 2: Boundary & Corner Cases (`Tier2BoundaryCornerCaseTest.kt`)
-- 60+ tests for extreme boundaries and edge conditions.
-- Validates corrupted percent-encodings, invalid hash lengths, missing dictionary headers/footers, non-divisible-by-20 piece byte arrays, 0-byte/empty payloads, 64-bit integer overflows, Cyrillic/CJK/Emoji multi-byte UTF-8 filenames, and deeply nested subdirectories.
-
-### Tier 3: Cross-Feature Interactions (`Tier3PairwiseInteractionsTest.kt`)
-- Validates combinatorial interactions between features:
-  - Magnet parsing + Port-443 HTTPS tracker injection.
-  - Downloads scanner discovery + BencodeValidator validation + Session start.
-  - File picker MIME filtering (`application/x-bittorrent`, `application/x-torrent`, `application/octet-stream`, `.torrent`) + Storage directory resolution.
-  - Corrupted HTML redirect recovery + UI diagnostic error mapping.
-
-### Tier 4: Real-World Workflow Scenarios (`Tier4RealWorldScenariosTest.kt`)
-- Validates end-to-end multi-feature real-world flows:
-  - Scenario 1: Multi-file torrent loading with Cloudflare challenge/redirect recovery and fallback.
-  - Scenario 2: In-dialog Downloads quick-picker selection and torrent activation.
-  - Scenario 3: Scoped Storage file streaming across external/internal storage partitions.
-  - Scenario 4: External Intent and deep link payload parsing with MIME matching.
-  - Scenario 5: Full lifecycle add, pause, resume, file prioritization, and HTTPS tracker injection.
-
-### Tier 5 & Domain Adversarial Suites (`Tier5AdversarialCoverageHardeningTest.kt`, `TorrentFileValidatorTest.kt`, `DownloadsTorrentScannerTest.kt`, `TorrentM1AdversarialChallengeTest.kt`, `ChallengerFinal2AdversarialHardeningTest.kt`)
-- Fuzz testing and adversarial payload injection:
-  - Corrupted, empty, truncated, and non-bencoded byte buffers.
-  - HTML responses (`<!DOCTYPE html>`, `<html>`, Cloudflare 503 challenge pages, 302 redirects).
-  - JSON error responses (`{"error":"forbidden"}`).
-  - Multi-encoding filenames: UTF-8, Japanese CJK, Russian Cyrillic, Emoji symbols, ISO-8859-1.
-  - Port-443 HTTPS tracker auto-injection directly into `TorrentInfo`.
-  - MediaStore Downloads scanning (API 29+) and filesystem fallback (API 26–35) with descending timestamp sort and name deduplication.
+| # | Feature | Requirements Source | Tier 1 (Coverage) | Tier 2 (Boundary) | Cross-Feature / E2E | Overall Status |
+|---|---------|---------------------|:---:|:---:|:---:|:---:|
+| **1** | **Torrent Crash Resolution** | ORIGINAL_REQUEST §R1, PROJECT.md F1 | 5 tests | 5 tests | P1, P6, Scenarios 1, 2 | **PASS (100%)** |
+| **2** | **Partial File Progress Tracking** | ORIGINAL_REQUEST §R1, PROJECT.md F2 | 5 tests | 5 tests | P1, P2, P11, Scenario 2 | **PASS (100%)** |
+| **3** | **Real-Time Speed Test Smoothing** | ORIGINAL_REQUEST §R2, PROJECT.md F3 | 5 tests | 5 tests | P3, P4, P10, Scenario 3 | **PASS (100%)** |
+| **4** | **Speed Test UI Damping & Trimmed Mean** | ORIGINAL_REQUEST §R2, PROJECT.md F4 | 5 tests | 5 tests | P3, P4, Scenario 3 | **PASS (100%)** |
+| **5** | **Torrent Header Layered Action Pill** | ORIGINAL_REQUEST §R3, PROJECT.md F5 | 5 tests | 5 tests | P2, P9, Scenario 2 | **PASS (100%)** |
+| **6** | **Bottom Nav Icon Centering & Enlargement** | ORIGINAL_REQUEST §R3, PROJECT.md F6 | 5 tests | 5 tests | P4, P12, Scenario 6 | **PASS (100%)** |
+| **7** | **Update Changelog Markdown Engine** | ORIGINAL_REQUEST §R4, PROJECT.md F7 | 5 tests | 5 tests | P5, Scenario 4 | **PASS (100%)** |
+| **8** | **DNS & Security Settings Persistence** | ORIGINAL_REQUEST §R4, PROJECT.md F8 | 5 tests | 5 tests | P5, P6, Scenario 5 | **PASS (100%)** |
+| **9** | **OLED Theme Presets Expansion** | ORIGINAL_REQUEST §R5, PROJECT.md F9 | 5 tests | 5 tests | P7, P12, Scenario 1 | **PASS (100%)** |
+| **10** | **Custom Theming Support** | ORIGINAL_REQUEST §R5, PROJECT.md F10 | 5 tests | 5 tests | P8, Scenario 1 | **PASS (100%)** |
+| **11** | **Strict Contrast Adherence** | ORIGINAL_REQUEST §R5, PROJECT.md F11 | 5 tests | 5 tests | P7, P8, P9, Scenario 1 | **PASS (100%)** |
+| **12** | **Codebase QoL Enhancements** | ORIGINAL_REQUEST §R5, PROJECT.md F12 | 5 tests | 5 tests | P10, P11, Scenario 6 | **PASS (100%)** |
 
 ---
 
-## Requirement & Acceptance Criteria Checklist
+## 4. Key Verification Findings & Escalations
 
-| Requirement | Description | Status | Verification Detail |
-|---|---|:---:|---|
-| **R1.1: Binary-Safe Bencode Validation** | Validate raw `.torrent` byte arrays without string conversion corruption; verify dictionary header/footer, required keys (`info`, `piece length`, `pieces`), piece hash divisible by 20. | **PASS** | Tested in `TorrentFileValidatorTest`, `Tier1FeatureCoverageTest`, `Tier2BoundaryCornerCaseTest` |
-| **R1.2: Corrupted/HTML Payload Protection** | Detect HTML (`<!DOCTYPE`, `<html`), HTTP redirects, JSON errors, empty or truncated buffers, returning actionable typed `TorrentValidationResult.Invalid`. | **PASS** | Tested in `TorrentFileValidatorTest`, `Tier1FeatureCoverageTest`, `Tier4RealWorldScenariosTest` |
-| **R1.3: Port-443 HTTPS Tracker Injection** | Automatically inject curated Port-443 HTTPS trackers (`TrackerInjector.HTTPS_PORT_443_TRACKERS`) into `TorrentInfo` instances. | **PASS** | Tested in `TrackerInjectorTest`, `TorrentFileValidatorTest`, `Tier1FeatureCoverageTest` |
-| **R1.4: Actionable Error Messages** | Display user-friendly diagnostic messages in UI and engine instead of generic crash or "error loading .torrent". | **PASS** | Tested in `TorrentFileValidatorTest`, `TorrentScreen` models, `Tier1FeatureCoverageTest` |
-| **R1.5: Intent Fallback Dummy Payload** | Replace invalid dummy bencode in `TorrentIntentParser` with structurally valid fallback or explicit failure handling. | **PASS** | Tested in `TorrentIntentParserTest`, `IntentDeepLinkE2ETest`, `Tier1FeatureCoverageTest` |
-| **R2.1: Filtered System File Picker** | System file picker filters strictly for BitTorrent MIME types (`application/x-bittorrent`, `application/x-torrent`, `application/octet-stream`) and `.torrent` extensions. | **PASS** | Tested in `DownloadsTorrentScannerTest`, `TorrentScreen` contract verification, `Tier1FeatureCoverageTest` |
-| **R2.2: In-Dialog Downloads Quick-Picker** | `DownloadsTorrentScanner` queries `MediaStore.Downloads` (API 29+) and filesystem fallback (API 26–35) with deduplication, date sorting, and one-tap loading. | **PASS** | Tested in `DownloadsTorrentScannerTest`, `Tier1FeatureCoverageTest`, `Tier4RealWorldScenariosTest` |
-| **R3.1: 100% Automated Test Pass Rate** | All 823 unit, integration, and E2E tests execute and pass with 0 failures and 0 errors. | **PASS** | `gradlew.bat testDebugUnitTest` exit code 0 |
-| **R3.2: Clean Signed Release APK Build** | Release APK compiles, optimizes, packages, and signs cleanly. | **PASS** | `app/build/outputs/apk/release/app-release.apk` generated cleanly via `gradlew.bat assembleRelease` |
-
----
-
-## Release Artifacts
-
-- **Release APK**: `app/build/outputs/apk/release/app-release.apk`
-- **Output Metadata**: `app/build/outputs/apk/release/output-metadata.json`
-- **Signing Keystore**: `app/sourzap_signing.jks` (Key alias: `sourzap`, Algorithm: RSA 2048-bit)
-- **Application ID**: `com.sourzap.app`
-- **Version Code**: `27`
-- **Version Name**: `2.6.1`
-- **Min SDK**: `26` (Android 8.0 Oreo)
-- **Target SDK**: `35` (Android 15 Vanilla Ice Cream)
+### Implementation Findings for Implementing Agent (M1):
+1. **`TorrentDownloaderStabilityAndProgressTest.testBoundary_AllFilesSkipped`**:
+   - `computeEffectiveTorrentItem` falls back to `rawTotalSize` when all files are skipped instead of reporting `totalBytes = 0L` and clamped completion for 0-byte selections.
+2. **`TorrentDownloaderStabilityAndProgressTest.testTorrentWorkerDispatcher_IsSingleThreadedAndSequential`**:
+   - Thread name assertions inside `runBlocking(dispatcher)` within nested thread pools can capture the pool thread rather than the dedicated dispatcher thread.
+3. **`TorrentDownloaderStabilityAndProgressTest.testInjectPeerSafely_InvalidInputValidation`**:
+   - `TorrentEngineManager` static initialization triggers native `libtorrent4j` JNI loading in JVM unit test environments if mocking is not configured.

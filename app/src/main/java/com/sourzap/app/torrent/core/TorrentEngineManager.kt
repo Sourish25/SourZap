@@ -15,6 +15,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +30,8 @@ import org.libtorrent4j.SessionHandle
 import org.libtorrent4j.SessionManager
 import org.libtorrent4j.SessionParams
 import org.libtorrent4j.SettingsPack
+import org.libtorrent4j.TcpEndpoint
+import java.util.concurrent.Executors
 import org.libtorrent4j.Sha1Hash
 import org.libtorrent4j.TorrentHandle
 import org.libtorrent4j.TorrentInfo
@@ -89,6 +93,36 @@ interface TorrentEngineManager {
     fun observeStats(): StateFlow<TorrentSessionStats>
 
     companion object {
+        private val peerInjectionLock = Any()
+        private val torrentWorkerExecutor = Executors.newSingleThreadExecutor { r ->
+            Thread(r, "TorrentPeerInjector").apply { isDaemon = true }
+        }
+
+        @JvmStatic
+        val torrentWorkerDispatcher: CoroutineDispatcher = torrentWorkerExecutor.asCoroutineDispatcher()
+
+        @JvmStatic
+        fun injectPeerSafely(handle: TorrentHandle, ip: String, port: Int): Boolean {
+            if (ip.isBlank() || port <= 0 || port > 65535) return false
+            return try {
+                if (!handle.isValid) return false
+                synchronized(peerInjectionLock) {
+                    try {
+                        if (!handle.isValid) return@synchronized false
+                        val swigHandle = try { handle.swig() } catch (_: Throwable) { null } ?: return@synchronized false
+                        val ep = try { TcpEndpoint(ip, port) } catch (_: Throwable) { null } ?: return@synchronized false
+                        val swigEp = try { ep.swig() } catch (_: Throwable) { null } ?: return@synchronized false
+                        swigHandle.connect_peer(swigEp)
+                        true
+                    } catch (_: Throwable) {
+                        false
+                    }
+                }
+            } catch (_: Throwable) {
+                false
+            }
+        }
+
         fun create(config: TorrentSessionConfig = TorrentSessionConfig.DEFAULT): TorrentEngineManager {
             return LibtorrentEngineManager(config)
         }
@@ -128,7 +162,7 @@ class LibtorrentEngineManager(
     private var localDpiProxy: LocalDpiProxyServer? = null
 
     private val alertListener = object : AlertListener {
-        override fun types(): IntArray? = null // Listen to all alerts
+        override fun types(): IntArray? = HANDLED_ALERT_TYPES
 
         override fun alert(alert: Alert<*>) {
             try {
@@ -962,36 +996,14 @@ class LibtorrentEngineManager(
 
                 val infoName: String? = try { info?.files()?.name() } catch (_: Throwable) { null }
                 val name: String = meta.displayName ?: (if (!infoName.isNullOrEmpty()) infoName else fallbackName)
-                val progress: Float = try { status.progress() } catch (_: Throwable) { 0f }
+                val rawProgress: Float = try { status.progress() } catch (_: Throwable) { 0f }
                 val downRate: Long = try { status.downloadRate().toLong() } catch (_: Throwable) { 0L }
                 val upRate: Long = try { status.uploadRate().toLong() } catch (_: Throwable) { 0L }
-                val totalDone: Long = try { status.totalDone() } catch (_: Throwable) { 0L }
-                val totalSize: Long = try { info?.totalSize() ?: status.total() } catch (_: Throwable) { status.total() }
+                val rawTotalDone: Long = try { status.totalDone() } catch (_: Throwable) { 0L }
+                val rawTotalSize: Long = try { info?.totalSize() ?: status.total() } catch (_: Throwable) { status.total() }
                 val allTimeUpload: Long = try { status.allTimeUpload() } catch (_: Throwable) { 0L }
 
-                totalDownSpeed += downRate
-                totalUpSpeed += upRate
-                totalDownloaded += totalDone
-                totalUploaded += allTimeUpload
-                totalAllBytes += totalSize
-
-                when (state) {
-                    TorrentState.DOWNLOADING, TorrentState.ALLOCATING, TorrentState.METADATA -> activeCount++
-                    TorrentState.PAUSED -> pausedCount++
-                    TorrentState.SEEDING -> seedingCount++
-                    else -> {}
-                }
-
-                val remainingBytes: Long = totalSize - totalDone
-                val eta: Long = if (downRate > 0L && remainingBytes > 0L) {
-                    remainingBytes / downRate
-                } else if (progress >= 1.0f) {
-                    0L
-                } else {
-                    -1L
-                }
-                val shareRatio: Float = if (totalDone > 0L) allTimeUpload.toFloat() / totalDone.toFloat() else 0.0f
-
+                // 1. Build individual files list first
                 val files = mutableListOf<TorrentFileItem>()
                 if (info != null) {
                     try {
@@ -1023,17 +1035,77 @@ class LibtorrentEngineManager(
                     } catch (_: Throwable) {}
                 }
 
+                // 2. Determine if partial selection is active
+                val hasPartialFiles = files.isNotEmpty() && files.any { it.isSkipped }
+                val selectedFiles = if (hasPartialFiles) files.filter { !it.isSkipped } else files
+
+                // 3. Compute effective total bytes and downloaded bytes for selected files
+                val effectiveTotalSize: Long = if (hasPartialFiles) {
+                    selectedFiles.sumOf { it.size }
+                } else if (files.isNotEmpty()) {
+                    files.sumOf { it.size }
+                } else {
+                    rawTotalSize
+                }
+
+                val effectiveDownloadedBytes: Long = if (hasPartialFiles) {
+                    if (effectiveTotalSize > 0L) minOf(selectedFiles.sumOf { it.downloadedBytes }, effectiveTotalSize) else 0L
+                } else {
+                    minOf(rawTotalDone, effectiveTotalSize)
+                }
+
+                // 4. Compute accurate progress reflecting only selected files
+                val effectiveProgress: Float = if (effectiveTotalSize > 0L) {
+                    (effectiveDownloadedBytes.toFloat() / effectiveTotalSize.toFloat()).let {
+                        if (it.isNaN()) 0.0f else it.coerceIn(0.0f, 1.0f)
+                    }
+                } else if (hasPartialFiles && selectedFiles.isEmpty()) {
+                    1.0f
+                } else {
+                    if (rawProgress.isNaN()) 0f else rawProgress.coerceIn(0.0f, 1.0f)
+                }
+
+                // 5. Compute accurate remaining bytes and ETA
+                val remainingBytes: Long = (effectiveTotalSize - effectiveDownloadedBytes).coerceAtLeast(0L)
+                val eta: Long = if (downRate > 0L && remainingBytes > 0L) {
+                    remainingBytes / downRate
+                } else if (effectiveProgress >= 1.0f) {
+                    0L
+                } else {
+                    -1L
+                }
+                val shareRatio: Float = if (effectiveDownloadedBytes > 0L) allTimeUpload.toFloat() / effectiveDownloadedBytes.toFloat() else 0.0f
+
+                val itemState = if (effectiveProgress >= 1.0f && state == TorrentState.DOWNLOADING) {
+                    TorrentState.FINISHED
+                } else {
+                    state
+                }
+
+                totalDownSpeed += downRate
+                totalUpSpeed += upRate
+                totalDownloaded += effectiveDownloadedBytes
+                totalUploaded += allTimeUpload
+                totalAllBytes += effectiveTotalSize
+
+                when (itemState) {
+                    TorrentState.DOWNLOADING, TorrentState.ALLOCATING, TorrentState.METADATA -> activeCount++
+                    TorrentState.PAUSED -> pausedCount++
+                    TorrentState.SEEDING -> seedingCount++
+                    else -> {}
+                }
+
                 val isSequential = meta.isSequential
 
                 val item = TorrentItem(
                     id = id,
                     name = name,
-                    state = state,
-                    progress = progress,
+                    state = itemState,
+                    progress = effectiveProgress,
                     downloadSpeed = downRate,
                     uploadSpeed = upRate,
-                    totalBytes = totalSize,
-                    downloadedBytes = totalDone,
+                    totalBytes = effectiveTotalSize,
+                    downloadedBytes = effectiveDownloadedBytes,
                     uploadedBytes = allTimeUpload,
                     numSeeds = try { status.numSeeds() } catch (_: Throwable) { 0 },
                     numPeers = try { status.numPeers() } catch (_: Throwable) { 0 },
@@ -1141,6 +1213,27 @@ class LibtorrentEngineManager(
 
     companion object {
         private const val TAG = "TorrentEngineManager"
+
+        private val HANDLED_ALERT_TYPES: IntArray? by lazy {
+            try {
+                intArrayOf(
+                    AlertType.ADD_TORRENT.swig(),
+                    AlertType.METADATA_RECEIVED.swig(),
+                    AlertType.STATE_CHANGED.swig(),
+                    AlertType.TORRENT_FINISHED.swig(),
+                    AlertType.TORRENT_PAUSED.swig(),
+                    AlertType.TORRENT_RESUMED.swig(),
+                    AlertType.TORRENT_CHECKED.swig(),
+                    AlertType.TORRENT_REMOVED.swig(),
+                    AlertType.TORRENT_ERROR.swig(),
+                    AlertType.FILE_ERROR.swig(),
+                    AlertType.STORAGE_MOVED_FAILED.swig(),
+                    AlertType.SESSION_STATS.swig()
+                )
+            } catch (_: Throwable) {
+                null
+            }
+        }
 
         val PRIORITY_LIVE_TRACKERS = listOf(
             // Direct IP addresses (Zero DNS lookup, immune to ISP DNS poisoning)

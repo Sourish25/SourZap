@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import com.sourzap.app.ui.components.MarkdownText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -820,13 +821,31 @@ fun SettingsScreen(
                                                     )
                                                 }
                                             }
-                                            Text(
-                                                text = state.release.releaseNotes,
-                                                fontSize = 12.5.sp,
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
-                                                maxLines = 4,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
+                                            var isChangelogExpanded by remember { mutableStateOf(false) }
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.35f))
+                                                    .padding(10.dp)
+                                            ) {
+                                                MarkdownText(
+                                                    markdown = state.release.releaseNotes,
+                                                    textColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    maxLines = if (isChangelogExpanded) Int.MAX_VALUE else 6
+                                                )
+                                                if (state.release.releaseNotes.lines().size > 3) {
+                                                    Text(
+                                                        text = if (isChangelogExpanded) "Show less ▲" else "View full changelog ▼",
+                                                        fontSize = 11.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier
+                                                            .clickable { isChangelogExpanded = !isChangelogExpanded }
+                                                            .padding(top = 6.dp)
+                                                    )
+                                                }
+                                            }
 
                                             Button(
                                                 onClick = {
@@ -1010,12 +1029,19 @@ fun SettingsScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
                                     Text(
                                         text = "SourZap v$currentAppVersion",
                                         fontWeight = FontWeight.Black,
                                         fontSize = 18.sp,
                                         color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                clipboardManager.setText(androidx.compose.ui.text.AnnotatedString("v$currentAppVersion (27)"))
+                                                android.widget.Toast.makeText(context, "Version copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
                                     )
                                     ExpressiveChip(
                                         text = "MIT LICENSE",

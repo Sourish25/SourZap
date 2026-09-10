@@ -104,22 +104,22 @@ fun SpeedTestScreen(
     // Spring-animated diagnostic metric values
     val animatedPing by animateFloatAsState(
         targetValue = state.currentPingMs,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
         label = "AnimPing"
     )
     val animatedJitter by animateFloatAsState(
         targetValue = state.currentJitterMs,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
         label = "AnimJitter"
     )
     val animatedDownload by animateFloatAsState(
         targetValue = state.currentDownloadMbps,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
         label = "AnimDL"
     )
     val animatedUpload by animateFloatAsState(
         targetValue = state.currentUploadMbps,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
         label = "AnimUL"
     )
 
