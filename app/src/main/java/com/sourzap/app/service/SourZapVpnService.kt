@@ -30,6 +30,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.InetAddress
@@ -54,14 +55,24 @@ class SourZapVpnService : VpnService() {
         val dstIp: InetAddress,
         val srcPort: Int,
         val dstPort: Int,
-        val queryBytes: ByteArray,
-        val vpnOutput: FileOutputStream
+        val queryBytes: ByteArray
     )
 
     private var dnsChannel = Channel<DnsQueryTask>(
         capacity = 256,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
+
+    private val tunPriorityWriteChannel = Channel<ByteArray>(
+        capacity = 2048,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+
+    private val tunWriteChannel = Channel<ByteArray>(
+        capacity = 8192,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    private var tunWriterJob: Job? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
@@ -203,6 +214,7 @@ class SourZapVpnService : VpnService() {
         TrafficMonitor.stopMonitoring()
         unregisterNetworkCallback()
         notificationJob?.cancel()
+        tunWriterJob?.cancel()
         proxyServer?.stop()
         tcpRelay?.closeAll()
         udpRelay?.closeAll()
@@ -217,21 +229,69 @@ class SourZapVpnService : VpnService() {
         stopSelf()
     }
 
+    private fun startTunWriter(outputStream: FileOutputStream) {
+        tunWriterJob?.cancel()
+        tunWriterJob = serviceScope.launch(Dispatchers.IO) {
+            while (serviceScope.isActive && isRunning) {
+                // Strict QoS priority scheduling: drain all available gaming/priority packets first
+                var sentPriority = false
+                while (true) {
+                    val priorityPacket = tunPriorityWriteChannel.tryReceive().getOrNull() ?: break
+                    sentPriority = true
+                    try {
+                        outputStream.write(priorityPacket)
+                    } catch (_: Exception) {}
+                }
+                if (sentPriority) continue
+
+                // When priority queue is empty, await next packet from either channel using select
+                try {
+                    select<Unit> {
+                        tunPriorityWriteChannel.onReceive { packet ->
+                            try {
+                                outputStream.write(packet)
+                            } catch (_: Exception) {}
+                        }
+                        tunWriteChannel.onReceive { packet ->
+                            try {
+                                outputStream.write(packet)
+                            } catch (_: Exception) {}
+                        }
+                    }
+                } catch (_: Exception) {
+                    if (!isRunning) break
+                }
+            }
+        }
+    }
+
+    private fun writeTunEgress(packet: ByteArray, isPriority: Boolean = false) {
+        if (isPriority || TunTcpRelay.isPacketPriority(packet)) {
+            val queued = tunPriorityWriteChannel.trySend(packet).isSuccess
+            if (!queued) {
+                tunWriteChannel.trySend(packet)
+            }
+        } else {
+            tunWriteChannel.trySend(packet)
+        }
+    }
+
     private suspend fun runPacketLoop(vpnPfd: ParcelFileDescriptor) {
         val inputStream = FileInputStream(vpnPfd.fileDescriptor)
         val outputStream = FileOutputStream(vpnPfd.fileDescriptor)
         val packetBuffer = ByteArrayPool.obtainPacketBuffer()
 
-        tcpRelay = TunTcpRelay(this, outputStream, serviceScope)
-        udpRelay = TunUdpRelay(this, outputStream, serviceScope)
-        startDnsWorkers(outputStream)
+        startTunWriter(outputStream)
+        tcpRelay = TunTcpRelay(this, outputStream, serviceScope, tunWriteChannel, tunPriorityWriteChannel)
+        udpRelay = TunUdpRelay(this, outputStream, serviceScope, tunWriteChannel)
+        startDnsWorkers()
 
         try {
             while (serviceScope.isActive && isRunning) {
                 try {
                     val length = inputStream.read(packetBuffer)
                     if (length > 0) {
-                        processPacket(packetBuffer, length, outputStream)
+                        processPacket(packetBuffer, length)
                     }
                 } catch (e: Exception) {
                     if (!isRunning) break
@@ -243,7 +303,7 @@ class SourZapVpnService : VpnService() {
         }
     }
 
-    private fun startDnsWorkers(outputStream: FileOutputStream) {
+    private fun startDnsWorkers() {
         repeat(16) {
             serviceScope.launch {
                 for (task in dnsChannel) {
@@ -262,11 +322,7 @@ class SourZapVpnService : VpnService() {
                                 payload = responseWire
                             )
 
-                            try {
-                                synchronized(outputStream) {
-                                    outputStream.write(replyPacket)
-                                }
-                            } catch (_: Exception) {}
+                            writeTunEgress(replyPacket, isPriority = true)
 
                             TrafficMonitor.addConnectionLog(
                                 ConnectionLog(
@@ -284,7 +340,7 @@ class SourZapVpnService : VpnService() {
         }
     }
 
-    private fun processPacket(buffer: ByteArray, length: Int, vpnOutput: FileOutputStream) {
+    private fun processPacket(buffer: ByteArray, length: Int) {
         if (length < 20) return
 
         val version = (buffer[0].toInt() shr 4) and 0x0F
@@ -300,11 +356,7 @@ class SourZapVpnService : VpnService() {
                     srcIp = ipv6Header.srcIp,
                     dstIp = ipv6Header.dstIp
                 )
-                try {
-                    synchronized(vpnOutput) {
-                        vpnOutput.write(icmpv6Packet)
-                    }
-                } catch (_: Exception) {}
+                writeTunEgress(icmpv6Packet, isPriority = true)
 
                 TrafficMonitor.addConnectionLog(
                     ConnectionLog(
@@ -340,7 +392,7 @@ class SourZapVpnService : VpnService() {
 
             if (dstPort == 53 && udpPayloadLen > 0) { // DNS Query
                 val queryBytes = buffer.copyOfRange(udpPayloadOffset, udpPayloadOffset + udpPayloadLen)
-                dnsChannel.trySend(DnsQueryTask(srcIp, dstIp, srcPort, dstPort, queryBytes, vpnOutput))
+                dnsChannel.trySend(DnsQueryTask(srcIp, dstIp, srcPort, dstPort, queryBytes))
             } else if (dstPort == 443 && strategy.blockQuic) {
                 // Instantly reject QUIC with RFC 792 ICMP Destination Unreachable (Port Unreachable: Type 3 Code 3)
                 // Google Chrome & YouTube immediately fallback to fast TCP in 0ms without delay
@@ -351,11 +403,7 @@ class SourZapVpnService : VpnService() {
                     srcIp = srcIp,
                     dstIp = dstIp
                 )
-                try {
-                    synchronized(vpnOutput) {
-                        vpnOutput.write(icmpPacket)
-                    }
-                } catch (_: Exception) {}
+                writeTunEgress(icmpPacket, isPriority = true)
 
                 TrafficMonitor.addConnectionLog(
                     ConnectionLog(

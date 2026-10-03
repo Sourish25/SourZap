@@ -17,6 +17,10 @@ import org.junit.runners.Suite
     Tier2BoundaryCornerCaseTest::class,
     Tier3PairwiseInteractionsTest::class,
     Tier4RealWorldScenariosTest::class,
-    Tier5AdversarialCoverageHardeningTest::class
+    Tier5AdversarialCoverageHardeningTest::class,
+    com.sourzap.app.stress.TorrentLifecycleStressTest::class,
+    com.sourzap.app.stress.VpnLongevityThroughputTest::class,
+    com.sourzap.app.stress.GamingPort9339QoSTest::class,
+    com.sourzap.app.stress.CrossFeatureCombinationStressTest::class
 )
 class RequirementE2ETestSuite

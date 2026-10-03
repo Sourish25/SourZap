@@ -381,7 +381,7 @@ class LocalDpiProxyServer(
 
                     var outgoingHeaderBytes = finalHeaderStr.toByteArray(Charsets.ISO_8859_1)
 
-                    if (strategy.httpHostMod) {
+                    if (strategy.httpHostMod && !DpiEngine.isCriticalPassthrough(targetHost.lowercase())) {
                         outgoingHeaderBytes = HttpParser.desyncHttpPayload(outgoingHeaderBytes, outgoingHeaderBytes.size)
                     }
 

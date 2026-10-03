@@ -45,8 +45,14 @@ class TorrentDownloadService : Service() {
         startForegroundServiceNotification(TorrentSessionStats())
         val app = application as? SourZapApp ?: return
         val manager = app.torrentEngineManager
-        if (!manager.isSessionRunning()) {
-            manager.startSession(this)
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                if (!manager.isSessionRunning()) {
+                    manager.startSession(applicationContext)
+                }
+            } catch (e: Throwable) {
+                Log.e(TAG, "Failed to start torrent session in background", e)
+            }
         }
         observeSessionStats()
     }
@@ -85,6 +91,11 @@ class TorrentDownloadService : Service() {
             }
             ACTION_STOP_SERVICE -> {
                 releaseLocks()
+                try {
+                    manager?.stopSession()
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Error stopping session on ACTION_STOP_SERVICE: ${e.message}")
+                }
                 try {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                 } catch (_: Throwable) {}
@@ -195,6 +206,9 @@ class TorrentDownloadService : Service() {
                     startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
                 } catch (e: Throwable) {
                     Log.e(TAG, "startForeground with dataSync type failed on Android 14+: ${e.message}", e)
+                    try {
+                        stopSelf()
+                    } catch (_: Throwable) {}
                 }
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 try {
@@ -205,13 +219,26 @@ class TorrentDownloadService : Service() {
                         startForeground(NOTIFICATION_ID, notification)
                     } catch (fatal: Throwable) {
                         Log.e(TAG, "Fatal startForeground error: ${fatal.message}")
+                        try {
+                            stopSelf()
+                        } catch (_: Throwable) {}
                     }
                 }
             } else {
-                startForeground(NOTIFICATION_ID, notification)
+                try {
+                    startForeground(NOTIFICATION_ID, notification)
+                } catch (fatal: Throwable) {
+                    Log.e(TAG, "Fatal startForeground error: ${fatal.message}")
+                    try {
+                        stopSelf()
+                    } catch (_: Throwable) {}
+                }
             }
         } catch (e: Throwable) {
-            Log.e(TAG, "Error in startForegroundServiceNotification: ${e.message}")
+            Log.e(TAG, "Error in startForegroundServiceNotification: ${e.message}", e)
+            try {
+                stopSelf()
+            } catch (_: Throwable) {}
         }
     }
 
@@ -290,6 +317,12 @@ class TorrentDownloadService : Service() {
         releaseLocks()
         statsJob?.cancel()
         serviceScope.cancel()
+        try {
+            val app = application as? SourZapApp
+            app?.torrentEngineManager?.stopSession()
+        } catch (e: Throwable) {
+            Log.w(TAG, "Error stopping session in onDestroy: ${e.message}")
+        }
         super.onDestroy()
     }
 

@@ -97,7 +97,7 @@ class TorrentSessionConfigTest {
     fun testHighThroughputSwarmTuning() {
         val config = TorrentSessionConfig.DEFAULT
 
-        assertEquals(500, config.connectionsLimit)
+        assertEquals(200, config.connectionsLimit)
         assertEquals(4000, config.maxPeerlistSize)
         assertEquals(100, config.torrentConnectBoost)
         assertEquals(30, config.connectionSpeed)
@@ -106,8 +106,8 @@ class TorrentSessionConfigTest {
         assertEquals(20, config.requestTimeout)
         assertEquals(20, config.wholePiecesThreshold)
         assertEquals(64 * 1024 * 1024, config.cacheSize)
-        assertEquals(1048576, config.sendSocketBufferSize) // 1 MB
-        assertEquals(2097152, config.recvSocketBufferSize) // 2 MB
+        assertEquals(65536, config.sendSocketBufferSize) // 64 KB
+        assertEquals(131072, config.recvSocketBufferSize) // 128 KB
         assertEquals(4, config.aioThreads)
         assertTrue(config.announceToAllTrackers)
         assertTrue(config.announceToAllTiers)

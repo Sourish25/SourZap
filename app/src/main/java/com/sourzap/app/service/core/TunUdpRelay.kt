@@ -26,7 +26,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class TunUdpRelay(
     private val vpnService: VpnService,
     private val vpnOutput: FileOutputStream,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val tunWriteQueue: Channel<ByteArray>? = null
 ) {
     private val POOL_SIZE = 8
     private val sockets = ArrayList<DatagramSocket>(POOL_SIZE)
@@ -36,6 +37,9 @@ class TunUdpRelay(
         Thread(r, "SourZap-TunUdpWorker").apply { isDaemon = true }
     }
     private val udpDispatcher = udpExecutor.asCoroutineDispatcher()
+
+    private val localTunWriteChannel = tunWriteQueue ?: Channel<ByteArray>(capacity = 8192, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    private var tunWriterJob: Job? = null
 
     companion object {
         private const val MAX_NAT_ENTRIES = 4096
@@ -63,10 +67,12 @@ class TunUdpRelay(
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
 
-    // Primary exact match: "RemoteHost:RemotePort#SocketIndex" -> ClientMapping
+    // Primary exact match: "$srcPort->$dstIp:$dstPort" -> ClientMapping
     private val exactNatTable = ConcurrentHashMap<String, ClientMapping>()
     // Secondary host match: "RemoteHost#SocketIndex" -> ClientMapping
     private val hostNatTable = ConcurrentHashMap<String, ClientMapping>()
+    // Reverse lookup index: "RemoteHost:RemotePort" -> ClientMapping
+    private val endpointNatTable = ConcurrentHashMap<String, ClientMapping>()
     // Dedicated gaming NAT table for Supercell (Port 9339) and low-latency gaming
     private val gamingNatTable = ConcurrentHashMap<String, ClientMapping>()
 
@@ -74,6 +80,17 @@ class TunUdpRelay(
     private var senderJob: Job? = null
 
     init {
+        if (tunWriteQueue == null) {
+            tunWriterJob = scope.launch(udpDispatcher) {
+                for (packet in localTunWriteChannel) {
+                    if (!scope.isActive || !isRunning.get()) break
+                    try {
+                        vpnOutput.write(packet)
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+
         for (i in 0 until POOL_SIZE) {
             try {
                 val s = DatagramSocket()
@@ -122,6 +139,13 @@ class TunUdpRelay(
                         hostIter.remove()
                     }
                 }
+                val endpointIter = endpointNatTable.entries.iterator()
+                while (endpointIter.hasNext()) {
+                    val entry = endpointIter.next()
+                    if (now - entry.value.lastSeen > NAT_IDLE_TIMEOUT_MS) {
+                        endpointIter.remove()
+                    }
+                }
                 val gamingIter = gamingNatTable.entries.iterator()
                 while (gamingIter.hasNext()) {
                     val entry = gamingIter.next()
@@ -145,8 +169,9 @@ class TunUdpRelay(
         val socketIndex = (srcPort and 0x7FFFFFFF) % sockets.size
 
         val mapping = ClientMapping(srcIp, srcPort, System.currentTimeMillis())
-        val natKeyExact = "${dstIp.hostAddress}:$dstPort#$socketIndex"
+        val natKeyExact = "$srcPort->${dstIp.hostAddress}:$dstPort"
         val natKeyHost = "${dstIp.hostAddress}#$socketIndex"
+        val endpointKey = "${dstIp.hostAddress}:$dstPort"
 
         if (isGamingPort(dstPort)) {
             val gamingKey = "${dstIp.hostAddress}:$dstPort"
@@ -160,6 +185,7 @@ class TunUdpRelay(
 
         exactNatTable[natKeyExact] = mapping
         hostNatTable[natKeyHost] = mapping
+        endpointNatTable[endpointKey] = mapping
 
         // Non-blocking enqueue to prevent TUN reader loop stall
         sendChannel.trySend(OutgoingUdpPacket(socketIndex, dstIp, dstPort, payload))
@@ -182,6 +208,13 @@ class TunUdpRelay(
             val entry = hostIter.next()
             if (now - entry.value.lastSeen > threshold) {
                 hostIter.remove()
+            }
+        }
+        val endpointIter = endpointNatTable.entries.iterator()
+        while (endpointIter.hasNext()) {
+            val entry = endpointIter.next()
+            if (now - entry.value.lastSeen > threshold) {
+                endpointIter.remove()
             }
         }
         // Fallback eviction if table is still saturated to prevent dropping new UDP connections
@@ -211,14 +244,15 @@ class TunUdpRelay(
                     val remotePort = recvPacket.port
 
                     if (len > 0) {
-                        val natKeyExact = "${remoteAddress.hostAddress}:$remotePort#$socketIndex"
+                        val endpointKey = "${remoteAddress.hostAddress}:$remotePort"
                         val natKeyHost = "${remoteAddress.hostAddress}#$socketIndex"
                         val gamingKey = "${remoteAddress.hostAddress}:$remotePort"
 
-                        // O(1) Collision-Free Lookups (Gaming priority -> Exact port match -> Host IP fallback)
+                        // O(1) Collision-Free Lookups (Gaming priority -> Exact endpoint match -> Suffix match -> Host IP fallback)
                         val isGaming = isGamingPort(remotePort)
                         val client = (if (isGaming) gamingNatTable[gamingKey] else null)
-                            ?: exactNatTable[natKeyExact]
+                            ?: endpointNatTable[endpointKey]
+                            ?: exactNatTable.entries.firstOrNull { it.key.endsWith("->$endpointKey") }?.value
                             ?: hostNatTable[natKeyHost]
 
                         if (client != null) {
@@ -236,9 +270,7 @@ class TunUdpRelay(
                                 payloadLen = len
                             )
 
-                            synchronized(vpnOutput) {
-                                vpnOutput.write(replyIpPacket)
-                            }
+                            localTunWriteChannel.trySend(replyIpPacket)
                         }
                     }
                 } catch (_: Exception) {
@@ -254,6 +286,7 @@ class TunUdpRelay(
         isRunning.set(false)
         cleanerJob?.cancel()
         senderJob?.cancel()
+        tunWriterJob?.cancel()
         sendChannel.close()
         sockets.forEach {
             try { it.close() } catch (_: Exception) {}
@@ -261,6 +294,8 @@ class TunUdpRelay(
         sockets.clear()
         exactNatTable.clear()
         hostNatTable.clear()
+        gamingNatTable.clear()
+        endpointNatTable.clear()
         try {
             udpExecutor.shutdownNow()
         } catch (_: Exception) {}

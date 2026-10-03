@@ -581,13 +581,18 @@ class M1EmpiricalChallengeTest {
     @Test
     fun testTunTcpRelay_SendQueueCapacityAndDropOldestBackpressure() {
         runBlocking {
-            val sendQueue = Channel<ByteArray>(capacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+            // Lossless queue with BufferOverflow.SUSPEND guarantees zero silent drops
+            val sendQueue = Channel<ByteArray>(capacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
 
-            for (i in 1..100) {
+            for (i in 1..64) {
                 val payload = byteArrayOf(i.toByte())
                 val res = sendQueue.trySend(payload)
-                assertTrue("trySend must always succeed with DROP_OLDEST", res.isSuccess)
+                assertTrue("trySend must succeed when capacity is available", res.isSuccess)
             }
+
+            // Pushing 65th packet must NOT drop oldest; it must signal backpressure (failure on trySend)
+            val overflowRes = sendQueue.trySend(byteArrayOf(65.toByte()))
+            assertFalse("trySend must reject overflow with lossless backpressure instead of dropping", overflowRes.isSuccess)
 
             var count = 0
             var firstVal = -1
@@ -598,7 +603,7 @@ class M1EmpiricalChallengeTest {
             }
 
             assertEquals(64, count)
-            assertEquals(37, firstVal)
+            assertEquals(1, firstVal) // 0 drops: first packet is fully preserved in FIFO order
             sendQueue.close()
         }
     }

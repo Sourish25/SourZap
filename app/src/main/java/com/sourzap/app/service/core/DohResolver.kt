@@ -144,6 +144,10 @@ object DohResolver {
 
     // Singleflight in-flight domain query deduplication map
     private val inFlightDomainQueries = ConcurrentHashMap<String, Deferred<List<InetAddress>>>()
+    // Singleflight in-flight wire query deduplication map
+    private val inFlightWireQueries = ConcurrentHashMap<WireQuestionKey, Deferred<ByteArray?>>()
+
+    private val dnsDispatcher = Dispatchers.IO.limitedParallelism(16)
 
     private val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
         override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
@@ -264,33 +268,43 @@ object DohResolver {
         domainCache.clear()
         wireCache.clear()
         inFlightDomainQueries.clear()
+        inFlightWireQueries.clear()
     }
 
     fun getCacheSize(): Int = domainCache.size()
 
     private data class DohEndpoint(val url: String, val hostHeader: String)
 
-    private fun queryUdpDns(queryBytes: ByteArray, serverIp: String): ByteArray? {
+    private fun queryUdpDns(
+        queryBytes: ByteArray,
+        serverIp: String,
+        onSocketCreated: (DatagramSocket) -> Unit = {}
+    ): ByteArray? {
+        var socket: DatagramSocket? = null
         try {
-            DatagramSocket().use { socket ->
-                vpnServiceRef?.protect(socket)
-                socket.soTimeout = 1500
-                val sendPacket = DatagramPacket(queryBytes, queryBytes.size, InetAddress.getByName(serverIp), 53)
-                socket.send(sendPacket)
-                val buf = ByteArray(4096)
-                val recvPacket = DatagramPacket(buf, buf.size)
-                socket.receive(recvPacket)
-                val len = recvPacket.length
-                if (len >= 12 && isValidDnsResponse(buf, len)) {
-                    val res = buf.copyOfRange(0, len)
-                    if (queryBytes.size >= 2) {
-                        res[0] = queryBytes[0]
-                        res[1] = queryBytes[1]
-                    }
-                    return res
+            val s = DatagramSocket()
+            socket = s
+            onSocketCreated(s)
+            vpnServiceRef?.protect(s)
+            s.soTimeout = 1500
+            val sendPacket = DatagramPacket(queryBytes, queryBytes.size, InetAddress.getByName(serverIp), 53)
+            s.send(sendPacket)
+            val buf = ByteArray(4096)
+            val recvPacket = DatagramPacket(buf, buf.size)
+            s.receive(recvPacket)
+            val len = recvPacket.length
+            if (len >= 12 && isValidDnsResponse(buf, len)) {
+                val res = buf.copyOfRange(0, len)
+                if (queryBytes.size >= 2) {
+                    res[0] = queryBytes[0]
+                    res[1] = queryBytes[1]
                 }
+                return res
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        } finally {
+            try { socket?.close() } catch (_: Exception) {}
+        }
         return null
     }
 
@@ -311,7 +325,7 @@ object DohResolver {
      * Resolves a domain to a list of IP addresses.
      * Uses in-memory thread-safe LRU caching (0ms hit) with TTL and Singleflight deduplication.
      */
-    suspend fun resolve(domain: String, provider: DohProvider = DohProvider.CLOUDFLARE): List<InetAddress> = withContext(Dispatchers.IO) {
+    suspend fun resolve(domain: String, provider: DohProvider = DohProvider.CLOUDFLARE): List<InetAddress> = withContext(dnsDispatcher) {
         val normalizedDomain = domain.trim().lowercase().removeSuffix(".")
         if (normalizedDomain.isEmpty()) return@withContext emptyList()
 
@@ -334,7 +348,7 @@ object DohResolver {
 
         // 3. Singleflight coalescing: coalesce concurrent requests for the exact same domain
         val deferred = inFlightDomainQueries.computeIfAbsent(normalizedDomain) {
-            async(Dispatchers.IO) {
+            async(dnsDispatcher) {
                 try {
                     val queryWire = buildDnsQueryWire(normalizedDomain)
                     val responseBytes = executeParallelDnsQuery(queryWire, provider)
@@ -368,9 +382,9 @@ object DohResolver {
 
     /**
      * Resolves wire DNS query bytes received from UDP port 53 and returns wire DNS response bytes.
-     * Uses in-memory wire caching (0ms hit) and parallel racing across UDP & DoH.
+     * Uses in-memory wire caching (0ms hit), singleflight deduplication, and bounded parallel racing across UDP & DoH.
      */
-    suspend fun resolveWireQuery(queryBytes: ByteArray, provider: DohProvider = DohProvider.CLOUDFLARE): ByteArray? = withContext(Dispatchers.IO) {
+    suspend fun resolveWireQuery(queryBytes: ByteArray, provider: DohProvider = DohProvider.CLOUDFLARE): ByteArray? = withContext(dnsDispatcher) {
         if (queryBytes.size < 12) return@withContext null
 
         val questionKey = WireQuestionKey.fromQuery(queryBytes)
@@ -386,65 +400,85 @@ object DohResolver {
             }
         }
 
-        val res = executeParallelDnsQuery(queryBytes, provider)
-        if (res != null && questionKey != null && res.size >= 12) {
-            val parseResult = parseDnsResponseWireWithTtl(res)
-            wireCache.put(questionKey, res.copyOf(), parseResult.ttlMs)
-        }
-        res
-    }
-
-    /**
-     * High-speed parallel DNS racer: races fast protected UDP DNS and encrypted DoH across
-     * multiple redundant bootstrap IPs and fallback providers simultaneously.
-     * Proactively cancels child coroutines upon receiving the first valid winner to eliminate latency barriers.
-     */
-    private suspend fun executeParallelDnsQuery(queryBytes: ByteArray, provider: DohProvider): ByteArray? = coroutineScope {
-        // Collect endpoints prioritized by user preference, followed by backup providers
-        val primaryIps = listOf(provider.bootstrapIp) + provider.backupIps
-        val primaryHost = provider.hostHeader.ifEmpty { "cloudflare-dns.com" }
-
-        val dohEndpoints = mutableListOf<DohEndpoint>()
-        // 1. Primary provider endpoints
-        primaryIps.forEach { ip ->
-            dohEndpoints.add(DohEndpoint("https://$ip/dns-query", primaryHost))
+        if (questionKey == null) {
+            return@withContext executeParallelDnsQuery(queryBytes, provider)
         }
 
-        // 2. Fallback provider endpoints
-        val fallbackProviders = DohProvider.values().filter { it != provider }
-        fallbackProviders.forEach { fallback ->
-            val host = fallback.hostHeader.ifEmpty { "dns.google" }
-            dohEndpoints.add(DohEndpoint("https://${fallback.bootstrapIp}/dns-query", host))
-            fallback.backupIps.firstOrNull()?.let { backupIp ->
-                dohEndpoints.add(DohEndpoint("https://$backupIp/dns-query", host))
+        // In-Flight Singleflight Deduplication for wire queries
+        val deferred = inFlightWireQueries.computeIfAbsent(questionKey) {
+            async(dnsDispatcher) {
+                try {
+                    val res = executeParallelDnsQuery(queryBytes, provider)
+                    if (res != null && res.size >= 12) {
+                        val parseResult = parseDnsResponseWireWithTtl(res)
+                        wireCache.put(questionKey, res.copyOf(), parseResult.ttlMs)
+                    }
+                    res
+                } finally {
+                    inFlightWireQueries.remove(questionKey)
+                }
             }
         }
 
-        val udpServers = listOf(
+        val res = deferred.await()
+        if (res != null && res.size >= 12) {
+            val response = res.copyOf()
+            response[0] = queryBytes[0]
+            response[1] = queryBytes[1]
+            response
+        } else {
+            res
+        }
+    }
+
+    /**
+     * High-speed bounded parallel DNS racer: races top 2-3 fast protected UDP DNS and top 2 encrypted DoH endpoints
+     * on a dedicated bounded dispatcher. Proactively cancels child OkHttp calls and closes DatagramSockets
+     * upon receiving the first valid winner to eliminate thread pool starvation and socket timeout latency barriers.
+     */
+    private suspend fun executeParallelDnsQuery(queryBytes: ByteArray, provider: DohProvider): ByteArray? = coroutineScope {
+        val primaryHost = provider.hostHeader.ifEmpty { "cloudflare-dns.com" }
+
+        // Bound to top 2-3 UDP endpoints
+        val udpServers = listOfNotNull(
             provider.bootstrapIp,
-            "1.1.1.1",
-            "8.8.8.8",
-            "9.9.9.9",
-            "94.140.14.14",
-            "1.0.0.1",
-            "8.8.4.4",
-            "149.112.112.112"
-        ).distinct()
+            provider.backupIps.firstOrNull() ?: (if (provider.bootstrapIp != "1.1.1.1") "1.1.1.1" else "8.8.8.8"),
+            if (provider.bootstrapIp != "8.8.8.8" && !provider.backupIps.contains("8.8.8.8")) "8.8.8.8" else "1.1.1.1"
+        ).distinct().take(3)
+
+        // Bound to top 2 DoH endpoints
+        val fallbackProvider = DohProvider.values().firstOrNull { it != provider } ?: DohProvider.GOOGLE
+        val fallbackHost = fallbackProvider.hostHeader.ifEmpty { "dns.google" }
+
+        val dohEndpoints = listOf(
+            DohEndpoint("https://${provider.bootstrapIp}/dns-query", primaryHost),
+            if (provider.backupIps.isNotEmpty()) {
+                DohEndpoint("https://${provider.backupIps.first()}/dns-query", primaryHost)
+            } else {
+                DohEndpoint("https://${fallbackProvider.bootstrapIp}/dns-query", fallbackHost)
+            }
+        ).distinct().take(2)
 
         val totalTasks = udpServers.size + dohEndpoints.size
         val resultChannel = Channel<ByteArray?>(totalTasks)
 
-        // 1. Fast Protected UDP DNS Queries
+        val activeSockets = java.util.Collections.synchronizedList(mutableListOf<DatagramSocket>())
+        val activeCalls = java.util.Collections.synchronizedList(mutableListOf<okhttp3.Call>())
+
+        // 1. Fast Protected UDP DNS Queries (Bounded & trackable)
         udpServers.forEach { serverIp ->
-            async(Dispatchers.IO) {
-                val res = queryUdpDns(queryBytes, serverIp)
+            async(dnsDispatcher) {
+                val res = queryUdpDns(queryBytes, serverIp) { s ->
+                    activeSockets.add(s)
+                }
                 resultChannel.send(res)
             }
         }
 
-        // 2. Encrypted DoH HTTPS Queries
+        // 2. Encrypted DoH HTTPS Queries (Bounded & cancelable)
         dohEndpoints.forEach { endpoint ->
-            async(Dispatchers.IO) {
+            async(dnsDispatcher) {
+                var call: okhttp3.Call? = null
                 try {
                     val requestBody = queryBytes.toRequestBody("application/dns-message".toMediaType())
                     val request = Request.Builder()
@@ -454,7 +488,11 @@ object DohResolver {
                         .addHeader("Accept", "application/dns-message")
                         .build()
 
-                    httpClient.newCall(request).execute().use { response ->
+                    val c = httpClient.newCall(request)
+                    call = c
+                    activeCalls.add(c)
+
+                    c.execute().use { response ->
                         if (response.isSuccessful) {
                             val responseBytes = response.body?.bytes()
                             if (responseBytes != null && responseBytes.size >= 12 && isValidDnsResponse(responseBytes, responseBytes.size)) {
@@ -467,7 +505,10 @@ object DohResolver {
                             }
                         }
                     }
-                } catch (_: Exception) {}
+                } catch (_: Exception) {
+                } finally {
+                    call?.let { activeCalls.remove(it) }
+                }
                 resultChannel.send(null)
             }
         }
@@ -479,7 +520,12 @@ object DohResolver {
             completed++
             if (res != null) {
                 winningBytes = res
-                // Proactively cancel all pending slower racer tasks so coroutineScope returns immediately
+                // Proactively abort all slower racer tasks immediately in 0ms:
+                // 1. Cancel OkHttp calls to abort active HTTP/2 or TCP streams
+                activeCalls.forEach { try { it.cancel() } catch (_: Exception) {} }
+                // 2. Close DatagramSockets to unblock blocking socket.receive() syscalls immediately
+                activeSockets.forEach { try { it.close() } catch (_: Exception) {} }
+                // 3. Cancel coroutine children
                 coroutineContext[Job]?.cancelChildren()
                 break
             }

@@ -12,8 +12,12 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.libtorrent4j.TcpEndpoint
 import org.libtorrent4j.TorrentHandle
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
@@ -29,6 +33,16 @@ object HttpsTrackerAnnouncer {
 
     private val lastAnnounceTimes = ConcurrentHashMap<String, Long>()
 
+    private val announcerExecutor = Executors.newFixedThreadPool(8) { r ->
+        Thread(r, "HttpsTrackerAnnouncer-Worker").apply { isDaemon = true }
+    }
+    val announcerDispatcher: CoroutineDispatcher = announcerExecutor.asCoroutineDispatcher()
+
+    private val dnsExecutor = Executors.newFixedThreadPool(4) { r ->
+        Thread(r, "HttpsTrackerAnnouncer-DNS").apply { isDaemon = true }
+    }
+    private val dnsDispatcher: CoroutineDispatcher = dnsExecutor.asCoroutineDispatcher()
+
     val WORKING_TRACKERS = (listOf(
         // HTTPS Port 443 (Immune to DPI and Port blocks)
         "https://tracker.pmman.tech:443/announce",
@@ -40,11 +54,20 @@ object HttpsTrackerAnnouncer {
 
     private val dohDns = object : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
+            // 1. Non-blocking in-memory cache lookup
+            val cached = DohTrackerResolver.getCachedIps(hostname)
+            if (!cached.isNullOrEmpty()) {
+                return cached
+            }
+
+            // 2. Query DoH on independent dedicated dispatcher without starving Dispatchers.IO
             return try {
-                val resolved = runBlocking(Dispatchers.IO) {
-                    DohResolver.resolve(hostname)
+                val resolved = runBlocking(dnsDispatcher) {
+                    withTimeoutOrNull(3000L) {
+                        DohResolver.resolve(hostname)
+                    }
                 }
-                if (resolved.isNotEmpty()) resolved else Dns.SYSTEM.lookup(hostname)
+                if (!resolved.isNullOrEmpty()) resolved else Dns.SYSTEM.lookup(hostname)
             } catch (_: Throwable) {
                 try {
                     Dns.SYSTEM.lookup(hostname)
@@ -70,7 +93,7 @@ object HttpsTrackerAnnouncer {
         hexInfoHash: String,
         peerId: String = "-SZ2840-012345678901",
         force: Boolean = false
-    ): Int = withContext(Dispatchers.IO) {
+    ): Int = withContext(announcerDispatcher) {
         val hashLower = hexInfoHash.lowercase()
         val now = System.currentTimeMillis()
 
@@ -101,13 +124,18 @@ object HttpsTrackerAnnouncer {
             NetworkIpHelper.refreshPublicIp()
         } catch (_: Throwable) {}
 
+        // Asynchronously pre-resolve tracker hosts with DohTrackerResolver (zero runBlocking, non-blocking)
+        try {
+            DohTrackerResolver.preResolveTrackers(WORKING_TRACKERS)
+        } catch (_: Throwable) {}
+
         val deferredAnnounces = WORKING_TRACKERS.map { trackerUrl ->
-            async {
+            async(announcerDispatcher) {
                 try {
                     val announceUrl = "$trackerUrl?info_hash=$urlEncodedHash&peer_id=$peerId&port=$port&uploaded=$uploadedBytes&downloaded=$downloadedBytes&left=$leftBytes&compact=1"
                     val request = Request.Builder()
                         .url(announceUrl)
-                        .header("User-Agent", "SourZap/2.9.2")
+                        .header("User-Agent", "qBittorrent/4.6.5")
                         .header("Accept", "*/*")
                         .build()
 

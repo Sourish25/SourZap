@@ -176,7 +176,7 @@ object DpiEngine {
         }
     }
 
-    private fun isCriticalPassthrough(hostname: String): Boolean {
+    fun isCriticalPassthrough(hostname: String): Boolean {
         if (hostname.isEmpty()) return false
 
         // Google Search, APIs, Firebase, Auth (Excluding YouTube/Video CDN)
@@ -195,14 +195,14 @@ object DpiEngine {
         ) return true
 
         // Cloudflare Protection, Captcha & Infrastructure
-        if (hostname.contains("cloudflare.com") || hostname.contains("cloudflare.net") ||
-            hostname.contains("cloudflare-dns.com") || hostname.contains("cf-ipfs.com") ||
-            hostname.contains("challenges.cloudflare.com") || hostname.contains("turnstile.cloudflare.com") ||
-            hostname.contains("hcaptcha.com") || hostname.contains("recaptcha.net") ||
+        if (hostname.contains("cloudflare") || hostname.contains("turnstile") ||
+            hostname.contains("recaptcha") || hostname.contains("hcaptcha") ||
+            hostname.contains("cf-ipfs.com") || hostname.contains("cf-assets.com") ||
             hostname.contains("arkoselabs.com") || hostname.contains("funcaptcha.com") ||
-            hostname.contains("datadome.co") || hostname.contains("perimeterx.net") ||
-            hostname.contains("humansecurity.com") || hostname.contains("kasada.io") ||
-            hostname.contains("incapsula.com") || hostname.contains("imperva.com")
+            hostname.contains("datadome") || hostname.contains("perimeterx") ||
+            hostname.contains("humansecurity") || hostname.contains("kasada") ||
+            hostname.contains("incapsula") || hostname.contains("imperva") ||
+            hostname.contains("auth0.com") || hostname.contains("okta.com")
         ) return true
 
         // Major AI & Modern Services with strict JA3/JA4 Bot Mitigation

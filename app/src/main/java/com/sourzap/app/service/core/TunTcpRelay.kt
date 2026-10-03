@@ -12,6 +12,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
 import java.io.FileOutputStream
@@ -33,7 +34,9 @@ import java.util.concurrent.atomic.AtomicLong
 class TunTcpRelay(
     private val vpnService: VpnService,
     private val vpnOutput: FileOutputStream,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val tunWriteQueue: Channel<ByteArray>? = null,
+    private val tunPriorityWriteQueue: Channel<ByteArray>? = null
 ) {
     private val sessions = ConcurrentHashMap<String, TcpSession>()
     private val isRunning = AtomicBoolean(true)
@@ -41,11 +44,17 @@ class TunTcpRelay(
 
     private val tcpDispatcher = Dispatchers.IO.limitedParallelism(512)
     private var scavengerJob: Job? = null
+    private val localTunWriteChannel = tunWriteQueue ?: Channel<ByteArray>(capacity = 8192, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    private val localTunPriorityChannel = tunPriorityWriteQueue ?: Channel<ByteArray>(capacity = 2048, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    private var tunWriterJob: Job? = null
 
     companion object {
         val EMPTY_BYTE_ARRAY = ByteArray(0)
         const val MAX_SEGMENT_SIZE = 1400 // Fits comfortably in standard 1500 MTU
         const val IDLE_TIMEOUT_MS = 120_000L // 2 minutes idle timeout
+        const val GAMING_IDLE_TIMEOUT_MS = 600_000L // 10 minutes extended idle timeout for gaming sessions (Supercell Clash of Clans, etc.)
+        const val GAMING_CONNECT_TIMEOUT_MS = 10_000 // 10 seconds connect timeout for gaming ports
+        const val DEFAULT_CONNECT_TIMEOUT_MS = 3_000 // 3 seconds standard connect timeout
         const val LINGER_TIMEOUT_MS = 3_000L // 3 seconds TIME_WAIT / CLOSED linger
         const val MAX_CONCURRENT_CONNECTING = 256
         const val MAX_SESSIONS = 8192
@@ -56,8 +65,22 @@ class TunTcpRelay(
         fun isPriorityPort(port: Int): Boolean =
             isGamingPort(port) || port == 80 || port == 443 || port == 853 || port == 53
 
+        fun isPacketPriority(packet: ByteArray): Boolean {
+            if (packet.size < 24) return false
+            val version = (packet[0].toInt() shr 4) and 0x0F
+            if (version == 4) {
+                val ihl = (packet[0].toInt() and 0x0F) * 4
+                if (packet.size >= ihl + 4) {
+                    val srcPort = ((packet[ihl].toInt() and 0xFF) shl 8) or (packet[ihl + 1].toInt() and 0xFF)
+                    val dstPort = ((packet[ihl + 2].toInt() and 0xFF) shl 8) or (packet[ihl + 3].toInt() and 0xFF)
+                    return isGamingPort(srcPort) || isGamingPort(dstPort)
+                }
+            }
+            return false
+        }
+
         const val MAX_HANDSHAKE_BUFFER_SIZE = 4096
-        const val HANDSHAKE_BUFFER_TIMEOUT_MS = 150L
+        const val HANDSHAKE_BUFFER_TIMEOUT_MS = 500L
 
         /**
          * Determines if an accumulated TCP payload contains a complete handshake structure
@@ -145,7 +168,7 @@ class TunTcpRelay(
         val isConnected: AtomicBoolean = AtomicBoolean(false),
         val isHandshakeDesynced: AtomicBoolean = AtomicBoolean(false),
         val isClosed: AtomicBoolean = AtomicBoolean(false),
-        val sendQueue: Channel<ByteArray> = Channel(capacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST),
+        val sendQueue: Channel<ByteArray> = Channel(capacity = 512, onBufferOverflow = BufferOverflow.SUSPEND),
         var socket: Socket? = null,
         var upstreamOut: OutputStream? = null,
         var streamJob: Job? = null,
@@ -153,6 +176,37 @@ class TunTcpRelay(
     )
 
     init {
+        if (tunWriteQueue == null) {
+            tunWriterJob = scope.launch(Dispatchers.IO) {
+                while (scope.isActive && isRunning.get()) {
+                    // Strict QoS priority scheduling: drain all available priority packets first
+                    var sentPriority = false
+                    while (true) {
+                        val priorityPacket = localTunPriorityChannel.tryReceive().getOrNull() ?: break
+                        sentPriority = true
+                        try {
+                            vpnOutput.write(priorityPacket)
+                        } catch (_: Exception) {}
+                    }
+                    if (sentPriority) continue
+
+                    // When priority queue is empty, wait for next packet from either channel using select
+                    try {
+                        select<Unit> {
+                            localTunPriorityChannel.onReceive { packet ->
+                                try { vpnOutput.write(packet) } catch (_: Exception) {}
+                            }
+                            localTunWriteChannel.onReceive { packet ->
+                                try { vpnOutput.write(packet) } catch (_: Exception) {}
+                            }
+                        }
+                    } catch (_: Exception) {
+                        if (!isRunning.get()) break
+                    }
+                }
+            }
+        }
+
         scavengerJob = scope.launch(Dispatchers.Default) {
             while (isActive && isRunning.get()) {
                 delay(5000)
@@ -161,10 +215,11 @@ class TunTcpRelay(
                 while (iterator.hasNext()) {
                     val entry = iterator.next()
                     val session = entry.value
+                    val timeout = if (isGamingPort(session.dstPort)) GAMING_IDLE_TIMEOUT_MS else IDLE_TIMEOUT_MS
                     val isExpired = if (session.state == TcpState.CLOSED || session.state == TcpState.SERVER_FIN_SENT) {
                         now - session.lastActivity > LINGER_TIMEOUT_MS
                     } else {
-                        now - session.lastActivity > IDLE_TIMEOUT_MS
+                        now - session.lastActivity > timeout
                     }
                     if (isExpired) {
                         closeSessionInternal(session, forceRemove = true)
@@ -403,23 +458,39 @@ class TunTcpRelay(
         if (payloadLen > 0) {
             // Data Payload received from App
             val payload = buffer.copyOfRange(payloadOffset, length)
-            session.clientSeq.updateAndGet { (seqNum + payloadLen) and 0xFFFFFFFFL }
 
-            // Send immediate ACK back to app so its TCP window stays wide open
-            val ackPacket = PacketParser.buildTcpPacket(
-                srcIp = dstIp,
-                dstIp = srcIp,
-                srcPort = dstPort,
-                dstPort = srcPort,
-                seqNum = session.serverSeq.get(),
-                ackNum = session.clientSeq.get(),
-                flags = 0x10, // ACK
-                payload = EMPTY_BYTE_ARRAY
-            )
-            writeTunPacket(ackPacket)
-
-            // Enqueue in sequential FIFO channel
-            session.sendQueue.trySend(payload)
+            // Lossless backpressure: safely enqueue before acknowledging to client OS
+            val enqueued = session.sendQueue.trySend(payload).isSuccess
+            if (enqueued) {
+                // Safely enqueued in lossless FIFO queue: advance clientSeq and synthesize ACK
+                session.clientSeq.updateAndGet { (seqNum + payloadLen) and 0xFFFFFFFFL }
+                val ackPacket = PacketParser.buildTcpPacket(
+                    srcIp = dstIp,
+                    dstIp = srcIp,
+                    srcPort = dstPort,
+                    dstPort = srcPort,
+                    seqNum = session.serverSeq.get(),
+                    ackNum = session.clientSeq.get(),
+                    flags = 0x10, // ACK
+                    payload = EMPTY_BYTE_ARRAY
+                )
+                writeTunPacket(ackPacket)
+            } else {
+                // SendQueue saturated: do NOT advance clientSeq or acknowledge uncommitted bytes!
+                // Synthesize RFC zero-window flow control ACK for current sequence to apply lossless backpressure
+                val backpressureAck = PacketParser.buildTcpPacket(
+                    srcIp = dstIp,
+                    dstIp = srcIp,
+                    srcPort = dstPort,
+                    dstPort = srcPort,
+                    seqNum = session.serverSeq.get(),
+                    ackNum = session.clientSeq.get(),
+                    flags = 0x10, // ACK
+                    payload = EMPTY_BYTE_ARRAY,
+                    windowSize = 0 // Zero-window backpressure
+                )
+                writeTunPacket(backpressureAck)
+            }
         }
     }
 
@@ -429,15 +500,21 @@ class TunTcpRelay(
             activeConnectingCount.incrementAndGet()
             TrafficMonitor.onConnectionOpened()
             var localSocket: Socket? = null
+            val isGaming = isGamingPort(session.dstPort)
             try {
                 val socket = Socket().apply {
-                    receiveBufferSize = 2097152 // 2MB Turbo Receive Buffer
-                    sendBufferSize = 1048576    // 1MB Send Buffer
+                    receiveBufferSize = if (isGaming) 65536 else 131072 // 64KB for gaming (bufferbloat elimination) vs 128KB mobile default
+                    sendBufferSize = 65536     // 64KB Standard Mobile Send Buffer
                     tcpNoDelay = true           // Disable Nagle's algorithm
-                    keepAlive = true
-                    soTimeout = 45000           // 45s read timeout to prune zombie sockets
-                    trafficClass = 0x08         // IPTOS_THROUGHPUT
-                    setPerformancePreferences(0, 1, 2)
+                    keepAlive = true            // Enable socket keepalive
+                    soTimeout = if (isGaming) 30000 else 10000           // 30s for gaming to prevent idling disconnects vs 10s default
+                    if (isGaming) {
+                        trafficClass = 0x10     // IPTOS_LOWDELAY
+                        setPerformancePreferences(1, 2, 0) // connectionTime=1, latency=2, bandwidth=0
+                    } else {
+                        trafficClass = 0x08     // IPTOS_THROUGHPUT
+                        setPerformancePreferences(0, 1, 2) // connectionTime=0, latency=1, bandwidth=2
+                    }
                 }
                 localSocket = socket
                 session.socket = socket
@@ -448,7 +525,8 @@ class TunTcpRelay(
                 }
 
                 vpnService.protect(socket)
-                socket.connect(InetSocketAddress(session.dstIp, session.dstPort), 3000)
+                val connectTimeout = if (isGaming) GAMING_CONNECT_TIMEOUT_MS else DEFAULT_CONNECT_TIMEOUT_MS
+                socket.connect(InetSocketAddress(session.dstIp, session.dstPort), connectTimeout)
 
                 if (session.isClosed.get() || !isRunning.get()) {
                     try { socket.close() } catch (_: Exception) {}
@@ -469,6 +547,28 @@ class TunTcpRelay(
                         var handshakeBuffer: ByteArrayOutputStream? = ByteArrayOutputStream(1024)
 
                         while (scope.isActive && isRunning.get() && session.isConnected.get()) {
+                            if (isGaming) {
+                                // Gaming traffic (Supercell Clash of Clans port 9339, etc.):
+                                // Pure zero-latency stream passthrough with zero buffering delay
+                                val payload = session.sendQueue.receiveCatching().getOrNull() ?: break
+                                session.lastActivity = System.currentTimeMillis()
+                                upstreamOut.write(payload)
+                                upstreamOut.flush()
+                                if (!session.isHandshakeDesynced.get()) {
+                                    session.isHandshakeDesynced.set(true)
+                                    TrafficMonitor.addConnectionLog(
+                                        ConnectionLog(
+                                            domain = session.dstIp.hostAddress ?: "Gaming Server",
+                                            port = session.dstPort,
+                                            protocol = "GAMING",
+                                            technique = "ZERO_LATENCY_PASSTHROUGH",
+                                            bytesTransferred = payload.size.toLong()
+                                        )
+                                    )
+                                }
+                                continue
+                            }
+
                             if (!session.isHandshakeDesynced.get()) {
                                 val currentBufSize = handshakeBuffer?.size() ?: 0
 
@@ -518,21 +618,14 @@ class TunTcpRelay(
                                         else -> session.dstIp.hostAddress ?: "Socket"
                                     }
 
-                                    val isGaming = isGamingPort(session.dstPort)
-                                    if (isGaming) {
-                                        upstreamOut.write(currentBuf)
-                                        upstreamOut.flush()
-                                        appliedTechnique = "GAMING_PASSTHROUGH"
-                                    } else {
-                                        DpiEngine.desyncAndSend(
-                                            socket = socket,
-                                            outputStream = upstreamOut,
-                                            payload = currentBuf,
-                                            length = currentBuf.size,
-                                            strategy = strategy,
-                                            onTechniqueApplied = { appliedTechnique = it }
-                                        )
-                                    }
+                                    DpiEngine.desyncAndSend(
+                                        socket = socket,
+                                        outputStream = upstreamOut,
+                                        payload = currentBuf,
+                                        length = currentBuf.size,
+                                        strategy = strategy,
+                                        onTechniqueApplied = { appliedTechnique = it }
+                                    )
 
                                     TrafficMonitor.addConnectionLog(
                                         ConnectionLog(
@@ -563,48 +656,51 @@ class TunTcpRelay(
                     }
                 }
 
-                // Downstream reader loop - Zero-allocation packet synthesis directly from pooled buffer
+                // Downstream reader loop - High-throughput wire-speed streaming
                 val input = socket.getInputStream()
-                val readBuffer = ByteArrayPool.obtainStreamBuffer()
+                val readBuffer = ByteArrayPool.obtain32k()
                 try {
-                    var bytesRead = input.read(readBuffer)
-                    while (scope.isActive && bytesRead != -1 && session.isConnected.get() && isRunning.get()) {
-                        if (bytesRead > 0) {
-                            session.lastActivity = System.currentTimeMillis()
-                            TrafficMonitor.recordRxBytes(bytesRead.toLong())
-
-                            var offset = 0
-                            while (offset < bytesRead) {
-                                val chunkLen = minOf(bytesRead - offset, MAX_SEGMENT_SIZE)
-                                val currentSeq = session.serverSeq.getAndUpdate { (it + chunkLen) and 0xFFFFFFFFL }
-                                val dataPacket = PacketParser.buildTcpPacket(
-                                    srcIp = session.dstIp,
-                                    dstIp = session.srcIp,
-                                    srcPort = session.dstPort,
-                                    dstPort = session.srcPort,
-                                    seqNum = currentSeq,
-                                    ackNum = session.clientSeq.get(),
-                                    flags = 0x18, // PSH | ACK
-                                    payload = readBuffer,
-                                    payloadOffset = offset,
-                                    payloadLen = chunkLen
-                                )
-                                writeTunPacket(dataPacket)
-                                offset += chunkLen
-                            }
-                        }
-                        bytesRead = try {
+                    while (scope.isActive && session.isConnected.get() && isRunning.get()) {
+                        val bytesRead = try {
                             input.read(readBuffer)
                         } catch (_: java.net.SocketTimeoutException) {
-                            if (!session.isConnected.get() || System.currentTimeMillis() - session.lastActivity > IDLE_TIMEOUT_MS) {
+                            val timeout = if (isGaming) GAMING_IDLE_TIMEOUT_MS else IDLE_TIMEOUT_MS
+                            if (!session.isConnected.get() || System.currentTimeMillis() - session.lastActivity > timeout) {
                                 -1
                             } else {
-                                0
+                                continue
                             }
+                        }
+
+                        if (bytesRead <= 0) {
+                            break // Upstream EOF reached
+                        }
+
+                        session.lastActivity = System.currentTimeMillis()
+                        TrafficMonitor.recordRxBytes(bytesRead.toLong())
+
+                        var offset = 0
+                        while (offset < bytesRead) {
+                            val chunkLen = minOf(bytesRead - offset, MAX_SEGMENT_SIZE)
+                            val currentSeq = session.serverSeq.getAndUpdate { (it + chunkLen) and 0xFFFFFFFFL }
+                            val dataPacket = PacketParser.buildTcpPacket(
+                                srcIp = session.dstIp,
+                                dstIp = session.srcIp,
+                                srcPort = session.dstPort,
+                                dstPort = session.srcPort,
+                                seqNum = currentSeq,
+                                ackNum = session.clientSeq.get(),
+                                flags = 0x18, // PSH | ACK
+                                payload = readBuffer,
+                                payloadOffset = offset,
+                                payloadLen = chunkLen
+                            )
+                            writeTunPacket(dataPacket, isGaming)
+                            offset += chunkLen
                         }
                     }
                 } finally {
-                    ByteArrayPool.recycleStreamBuffer(readBuffer)
+                    ByteArrayPool.recycle32k(readBuffer)
                 }
 
                 // Upstream EOF reached: send FIN-ACK to client app TUN interface
@@ -621,7 +717,7 @@ class TunTcpRelay(
                         payload = EMPTY_BYTE_ARRAY
                     )
                     session.serverSeq.updateAndGet { (it + 1) and 0xFFFFFFFFL }
-                    writeTunPacket(finAck)
+                    writeTunPacket(finAck, isGaming)
                 }
             } catch (_: Exception) {
                 try { localSocket?.close() } catch (_: Exception) {}
@@ -639,7 +735,7 @@ class TunTcpRelay(
                     flags = 0x14, // RST | ACK
                     payload = EMPTY_BYTE_ARRAY
                 )
-                writeTunPacket(rstPacket)
+                writeTunPacket(rstPacket, isGaming)
             } finally {
                 if (wasConnecting.compareAndSet(true, false)) {
                     activeConnectingCount.decrementAndGet()
@@ -650,12 +746,16 @@ class TunTcpRelay(
         }
     }
 
-    private fun writeTunPacket(packet: ByteArray) {
-        try {
-            synchronized(vpnOutput) {
-                vpnOutput.write(packet)
+    private fun writeTunPacket(packet: ByteArray, isPriority: Boolean? = null) {
+        val priority = isPriority ?: isPacketPriority(packet)
+        if (priority) {
+            val queued = localTunPriorityChannel.trySend(packet).isSuccess
+            if (!queued) {
+                localTunWriteChannel.trySend(packet)
             }
-        } catch (_: Exception) {}
+        } else {
+            localTunWriteChannel.trySend(packet)
+        }
     }
 
     private fun closeSessionInternal(session: TcpSession, forceRemove: Boolean) {
@@ -677,6 +777,7 @@ class TunTcpRelay(
     fun closeAll() {
         isRunning.set(false)
         scavengerJob?.cancel()
+        tunWriterJob?.cancel()
         sessions.values.forEach { closeSessionInternal(it, forceRemove = true) }
         sessions.clear()
     }

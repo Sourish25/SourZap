@@ -45,7 +45,7 @@ class TorrentEngineLifecycleE2ETest {
         assertTrue("RC4 preference must be active", config.preferRc4)
 
         // Swarm Saturation
-        assertEquals(500, config.connectionsLimit)
+        assertEquals(200, config.connectionsLimit)
         assertEquals(4000, config.maxPeerlistSize)
         assertEquals(1500, config.maxOutRequestQueue)
         assertTrue("DHT must be enabled", config.enableDht)

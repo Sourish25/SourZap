@@ -33,7 +33,7 @@ data class TorrentSessionConfig(
     val preferRc4: Boolean = true,
 
     // 4. High Throughput & Rapid Peer Acquisition (Aria2-like Swarm Aggressiveness)
-    val connectionsLimit: Int = 500,
+    val connectionsLimit: Int = 200,
     val maxPeerlistSize: Int = 4000,
     val torrentConnectBoost: Int = 100,
     val connectionSpeed: Int = 30,
@@ -42,8 +42,8 @@ data class TorrentSessionConfig(
     val requestTimeout: Int = 20,
     val wholePiecesThreshold: Int = 20,
     val cacheSize: Int = 64 * 1024 * 1024,
-    val sendSocketBufferSize: Int = 1048576, // 1 MB
-    val recvSocketBufferSize: Int = 2097152, // 2 MB
+    val sendSocketBufferSize: Int = 65536, // 64 KB
+    val recvSocketBufferSize: Int = 131072, // 128 KB
     val aioThreads: Int = 4,
 
     // 5. Parallel Tracker Saturation (Announce to ALL Trackers & Tiers concurrently)
@@ -63,7 +63,7 @@ data class TorrentSessionConfig(
     val activeDownloads: Int = 20,
     val activeSeeds: Int = 20,
     val activeLimit: Int = 40,
-    val userAgent: String = "SourZap/2.9.2 libtorrent4j/2.1.0",
+    val userAgent: String = "SourZap/2.9.3 libtorrent4j/2.1.0",
 
     // 8. SOCKS5 / HTTP Proxy Configuration
     val proxyConfig: TorrentProxyConfig = TorrentProxyConfig.DEFAULT

@@ -18,6 +18,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -93,7 +95,9 @@ interface TorrentEngineManager {
     fun observeStats(): StateFlow<TorrentSessionStats>
 
     companion object {
-        private val peerInjectionLock = Any()
+        internal val peerInjectionLock = Any()
+        private val activeSessionRunning = AtomicBoolean(true)
+
         private val torrentWorkerExecutor = Executors.newSingleThreadExecutor { r ->
             Thread(r, "TorrentPeerInjector").apply { isDaemon = true }
         }
@@ -102,12 +106,22 @@ interface TorrentEngineManager {
         val torrentWorkerDispatcher: CoroutineDispatcher = torrentWorkerExecutor.asCoroutineDispatcher()
 
         @JvmStatic
+        fun setSessionRunning(running: Boolean) {
+            activeSessionRunning.set(running)
+        }
+
+        @JvmStatic
+        fun isSessionActive(): Boolean = activeSessionRunning.get()
+
+        @JvmStatic
         fun injectPeerSafely(handle: TorrentHandle, ip: String, port: Int): Boolean {
             if (ip.isBlank() || port <= 0 || port > 65535) return false
+            if (!activeSessionRunning.get()) return false
             return try {
                 if (!handle.isValid) return false
                 synchronized(peerInjectionLock) {
                     try {
+                        if (!activeSessionRunning.get()) return@synchronized false
                         if (!handle.isValid) return@synchronized false
                         val swigHandle = try { handle.swig() } catch (_: Throwable) { null } ?: return@synchronized false
                         val ep = try { TcpEndpoint(ip, port) } catch (_: Throwable) { null } ?: return@synchronized false
@@ -138,6 +152,15 @@ class LibtorrentEngineManager(
 
     private val sessionManager = SessionManager()
     private val isRunning = AtomicBoolean(false)
+    private val sessionLifecycleLock = Any()
+
+    private data class CachedFileInfo(
+        val index: Int,
+        val path: String,
+        val size: Long
+    )
+    private val cachedFilesMap = ConcurrentHashMap<String, List<CachedFileInfo>>()
+    private val cachedTotalSizeMap = ConcurrentHashMap<String, Long>()
 
     private val engineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var telemetryJob: Job? = null
@@ -279,55 +302,59 @@ class LibtorrentEngineManager(
     }
 
     override fun startSession(context: Context?) {
-        if (isRunning.compareAndSet(false, true)) {
-            try {
-                sessionManager.addListener(alertListener)
-                val settingsPack = config.createSettingsPack()
+        synchronized(sessionLifecycleLock) {
+            if (isRunning.compareAndSet(false, true)) {
+                TorrentEngineManager.setSessionRunning(true)
+                try {
+                    sessionManager.addListener(alertListener)
+                    val settingsPack = config.createSettingsPack()
 
-                // 1. Dynamic IPv4 listen interface with UPnP and NAT-PMP port forwarding
-                settingsPack.setString(settings_pack.string_types.listen_interfaces.swigValue(), "0.0.0.0:0")
-                settingsPack.setBoolean(settings_pack.bool_types.enable_upnp.swigValue(), true)
-                settingsPack.setBoolean(settings_pack.bool_types.enable_natpmp.swigValue(), true)
+                    // 1. Dynamic IPv4 listen interface with UPnP and NAT-PMP port forwarding
+                    settingsPack.setString(settings_pack.string_types.listen_interfaces.swigValue(), "0.0.0.0:0")
+                    settingsPack.setBoolean(settings_pack.bool_types.enable_upnp.swigValue(), true)
+                    settingsPack.setBoolean(settings_pack.bool_types.enable_natpmp.swigValue(), true)
 
-                // 2. Dual Transport with uTP hole punching alongside TCP
-                settingsPack.setBoolean(settings_pack.bool_types.enable_outgoing_utp.swigValue(), true)
-                settingsPack.setBoolean(settings_pack.bool_types.enable_incoming_utp.swigValue(), true)
-                settingsPack.setBoolean(settings_pack.bool_types.enable_outgoing_tcp.swigValue(), true)
-                settingsPack.setBoolean(settings_pack.bool_types.enable_incoming_tcp.swigValue(), true)
-                settingsPack.setInteger(settings_pack.int_types.mixed_mode_algorithm.swigValue(), TorrentSessionConfig.PEER_PROPORTIONAL)
+                    // 2. Dual Transport with uTP hole punching alongside TCP
+                    settingsPack.setBoolean(settings_pack.bool_types.enable_outgoing_utp.swigValue(), true)
+                    settingsPack.setBoolean(settings_pack.bool_types.enable_incoming_utp.swigValue(), true)
+                    settingsPack.setBoolean(settings_pack.bool_types.enable_outgoing_tcp.swigValue(), true)
+                    settingsPack.setBoolean(settings_pack.bool_types.enable_incoming_tcp.swigValue(), true)
+                    settingsPack.setInteger(settings_pack.int_types.mixed_mode_algorithm.swigValue(), TorrentSessionConfig.PEER_PROPORTIONAL)
 
-                // 3. Disable Local Service Discovery (LSD) so the engine never connects to itself on LAN
-                settingsPack.setBoolean(settings_pack.bool_types.enable_lsd.swigValue(), false)
+                    // 3. Disable Local Service Discovery (LSD) so the engine never connects to itself on LAN
+                    settingsPack.setBoolean(settings_pack.bool_types.enable_lsd.swigValue(), false)
 
-                // 4. Message Stream Encryption (MSE / PE) - Force RC4 payload encryption to evade ISP DPI resets
-                settingsPack.setInteger(settings_pack.int_types.out_enc_policy.swigValue(), TorrentSessionConfig.ENC_POLICY_FORCED)
-                settingsPack.setInteger(settings_pack.int_types.in_enc_policy.swigValue(), TorrentSessionConfig.ENC_POLICY_ENABLED)
-                settingsPack.setInteger(settings_pack.int_types.allowed_enc_level.swigValue(), TorrentSessionConfig.ENC_LEVEL_RC4)
-                settingsPack.setBoolean(settings_pack.bool_types.prefer_rc4.swigValue(), true)
+                    // 4. Message Stream Encryption (MSE / PE) - Force RC4 payload encryption to evade ISP DPI resets
+                    settingsPack.setInteger(settings_pack.int_types.out_enc_policy.swigValue(), TorrentSessionConfig.ENC_POLICY_FORCED)
+                    settingsPack.setInteger(settings_pack.int_types.in_enc_policy.swigValue(), TorrentSessionConfig.ENC_POLICY_ENABLED)
+                    settingsPack.setInteger(settings_pack.int_types.allowed_enc_level.swigValue(), TorrentSessionConfig.ENC_LEVEL_RC4)
+                    settingsPack.setBoolean(settings_pack.bool_types.prefer_rc4.swigValue(), true)
 
-                // 5. Direct IP DHT bootstrap routers (immune to ISP DNS poisoning)
-                val directIpDhtNodes = "67.215.246.10:6881,87.98.162.88:6881,212.129.33.59:6881,185.157.221.247:25401,34.203.221.232:6881,82.221.103.244:6881,router.bittorrent.com:6881,dht.transmissionbt.com:6881,dht.libtorrent.org:25401"
-                settingsPack.setString(settings_pack.string_types.dht_bootstrap_nodes.swigValue(), directIpDhtNodes)
-                settingsPack.setBoolean(settings_pack.bool_types.enable_dht.swigValue(), true)
+                    // 5. Direct IP DHT bootstrap routers (immune to ISP DNS poisoning)
+                    val directIpDhtNodes = "67.215.246.10:6881,87.98.162.88:6881,212.129.33.59:6881,185.157.221.247:25401,34.203.221.232:6881,82.221.103.244:6881,router.bittorrent.com:6881,dht.transmissionbt.com:6881,dht.libtorrent.org:25401"
+                    settingsPack.setString(settings_pack.string_types.dht_bootstrap_nodes.swigValue(), directIpDhtNodes)
+                    settingsPack.setBoolean(settings_pack.bool_types.enable_dht.swigValue(), true)
 
-                // 6. Apply saved SOCKS5/HTTP Proxy Settings if configured
-                val appContext = context ?: try { com.sourzap.app.SourZapApp.instance } catch (_: Throwable) { null }
-                if (appContext != null) {
-                    try {
-                        val repo = TorrentProxyRepository(appContext)
-                        TorrentSessionConfig.applyProxyTo(settingsPack, repo.config.value)
-                    } catch (t: Throwable) {
-                        Log.w(TAG, "Could not load saved proxy config", t)
+                    // 6. Apply saved SOCKS5/HTTP Proxy Settings if configured
+                    val appContext = context ?: try { com.sourzap.app.SourZapApp.instance } catch (_: Throwable) { null }
+                    if (appContext != null) {
+                        try {
+                            val repo = TorrentProxyRepository(appContext)
+                            TorrentSessionConfig.applyProxyTo(settingsPack, repo.config.value)
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "Could not load saved proxy config", t)
+                        }
                     }
-                }
 
-                val sessionParams = SessionParams(settingsPack)
-                sessionManager.start(sessionParams)
-                startTelemetryLoop()
-                Log.i(TAG, "BitTorrent native session started successfully with TCP-priority mixed transport, MSE encryption, and direct IP DHT.")
-            } catch (e: Throwable) {
-                Log.e(TAG, "Failed to start BitTorrent session", e)
-                isRunning.set(false)
+                    val sessionParams = SessionParams(settingsPack)
+                    sessionManager.start(sessionParams)
+                    startTelemetryLoop()
+                    Log.i(TAG, "BitTorrent native session started successfully with TCP-priority mixed transport, MSE encryption, and direct IP DHT.")
+                } catch (e: Throwable) {
+                    Log.e(TAG, "Failed to start BitTorrent session", e)
+                    isRunning.set(false)
+                    TorrentEngineManager.setSessionRunning(false)
+                }
             }
         }
     }
@@ -347,25 +374,54 @@ class LibtorrentEngineManager(
 
     override fun stopSession() {
         if (isRunning.compareAndSet(true, false)) {
-            telemetryJob?.cancel()
+            TorrentEngineManager.setSessionRunning(false)
+
+            // 1. Cancel and join telemetry coroutine to guarantee updateTorrentsAndStats has stopped
+            val job = telemetryJob
             telemetryJob = null
+            job?.cancel()
             try {
-                sessionManager.removeListener(alertListener)
-                sessionManager.stop()
-                torrentHandles.clear()
-                torrentMetadataMap.clear()
-                _torrents.value = emptyList()
-                _stats.value = TorrentSessionStats()
+                runBlocking(Dispatchers.Default) {
+                    withTimeoutOrNull(2000L) {
+                        job?.join()
+                    }
+                }
+            } catch (_: Throwable) {}
 
-                // Stop embedded proxy
-                try {
-                    localDpiProxy?.stop()
-                    localDpiProxy = null
-                } catch (_: Throwable) {}
+            // 2. Synchronize lifecycle and peer injection locks to prevent JNI calls during/after session abort
+            synchronized(sessionLifecycleLock) {
+                synchronized(TorrentEngineManager.peerInjectionLock) {
+                    try {
+                        sessionManager.removeListener(alertListener)
 
-                Log.i(TAG, "BitTorrent session stopped cleanly.")
-            } catch (e: Throwable) {
-                Log.e(TAG, "Error stopping BitTorrent session", e)
+                        // Safely pause remaining active torrent handles before stopping native session
+                        for ((_, handle) in torrentHandles) {
+                            try {
+                                if (handle.isValid) {
+                                    handle.pause()
+                                }
+                            } catch (_: Throwable) {}
+                        }
+
+                        sessionManager.stop()
+                        torrentHandles.clear()
+                        torrentMetadataMap.clear()
+                        cachedFilesMap.clear()
+                        cachedTotalSizeMap.clear()
+                        _torrents.value = emptyList()
+                        _stats.value = TorrentSessionStats()
+
+                        // Stop embedded proxy
+                        try {
+                            localDpiProxy?.stop()
+                            localDpiProxy = null
+                        } catch (_: Throwable) {}
+
+                        Log.i(TAG, "BitTorrent session stopped cleanly.")
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "Error stopping BitTorrent session", e)
+                    }
+                }
             }
         }
     }
@@ -925,7 +981,16 @@ class LibtorrentEngineManager(
                 if (pending != null && pending.isNotEmpty()) {
                     val libPriorities = pending.map { it.toLibtorrentPriority() }.toTypedArray()
                     try {
-                        handle.prioritizeFiles(libPriorities)
+                        val numFiles = try { handle.torrentFile()?.files()?.numFiles() } catch (_: Throwable) { null }
+                        if (numFiles != null && libPriorities.size == numFiles) {
+                            handle.prioritizeFiles(libPriorities)
+                        } else {
+                            for ((i, p) in pending.withIndex()) {
+                                try {
+                                    handle.filePriority(i, p.toLibtorrentPriority())
+                                } catch (_: Throwable) {}
+                            }
+                        }
                     } catch (_: Throwable) {
                         for ((i, p) in pending.withIndex()) {
                             try {
@@ -942,6 +1007,8 @@ class LibtorrentEngineManager(
     private fun handleTorrentRemoved(id: String) {
         torrentHandles.remove(id)
         pendingPrioritiesMap.remove(id)
+        cachedFilesMap.remove(id)
+        cachedTotalSizeMap.remove(id)
         _torrents.value = _torrents.value.filter { it.id != id }
     }
 
@@ -960,6 +1027,7 @@ class LibtorrentEngineManager(
 
     @Synchronized
     private fun updateTorrentsAndStats() {
+        if (!isRunning.get()) return
         val allIds = (torrentMetadataMap.keys + torrentHandles.keys).toSet()
         val items = mutableListOf<TorrentItem>()
 
@@ -973,16 +1041,46 @@ class LibtorrentEngineManager(
         var seedingCount = 0
 
         for (id in allIds) {
+            if (!isRunning.get()) return
             try {
                 val handle = findHandle(id) ?: continue
                 if (!handle.isValid) continue
                 val status: TorrentStatus = try { handle.status() } catch (_: Throwable) { continue }
                 val state = mapTorrentState(handle, status)
                 val hasMeta = try { status.hasMetadata() } catch (_: Throwable) { false }
-                val info: TorrentInfo? = if (hasMeta) {
-                    try { handle.torrentFile() } catch (_: Throwable) { null }
-                } else {
-                    null
+
+                // Check or populate cached static file metadata to avoid thousands of JNI allocations per second
+                var cachedFiles = cachedFilesMap[id]
+                var rawTotalSize = cachedTotalSizeMap[id] ?: status.total()
+
+                var info: TorrentInfo? = null
+                if (cachedFiles == null && hasMeta) {
+                    info = try { handle.torrentFile() } catch (_: Throwable) { null }
+                    if (info != null) {
+                        try {
+                            val fileStorage: FileStorage = info.files()
+                            val numFiles = fileStorage.numFiles()
+                            val fileList = ArrayList<CachedFileInfo>(numFiles)
+                            var computedTotal = 0L
+                            for (i in 0 until numFiles) {
+                                val sz = try { fileStorage.fileSize(i) } catch (_: Throwable) { 0L }
+                                computedTotal += sz
+                                fileList.add(
+                                    CachedFileInfo(
+                                        index = i,
+                                        path = try { fileStorage.filePath(i) } catch (_: Throwable) { "" },
+                                        size = sz
+                                    )
+                                )
+                            }
+                            cachedFilesMap[id] = fileList
+                            cachedFiles = fileList
+                            if (computedTotal > 0L) {
+                                cachedTotalSizeMap[id] = computedTotal
+                                rawTotalSize = computedTotal
+                            }
+                        } catch (_: Throwable) {}
+                    }
                 }
 
                 val hName: String = try { status.name() ?: "" } catch (_: Throwable) { "" }
@@ -1000,31 +1098,29 @@ class LibtorrentEngineManager(
                 val downRate: Long = try { status.downloadRate().toLong() } catch (_: Throwable) { 0L }
                 val upRate: Long = try { status.uploadRate().toLong() } catch (_: Throwable) { 0L }
                 val rawTotalDone: Long = try { status.totalDone() } catch (_: Throwable) { 0L }
-                val rawTotalSize: Long = try { info?.totalSize() ?: status.total() } catch (_: Throwable) { status.total() }
                 val allTimeUpload: Long = try { status.allTimeUpload() } catch (_: Throwable) { 0L }
 
-                // 1. Build individual files list first
+                // 1. Build individual files list using cached file metadata
                 val files = mutableListOf<TorrentFileItem>()
-                if (info != null) {
+                if (cachedFiles != null && cachedFiles.isNotEmpty()) {
                     try {
-                        val fileStorage: FileStorage = info.files()
-                        val numFiles = fileStorage.numFiles()
                         val fileProgress: LongArray? = try { handle.fileProgress() } catch (_: Throwable) { null }
                         val priorities: Array<org.libtorrent4j.Priority>? = try { handle.filePriorities() } catch (_: Throwable) { null }
-                        for (i in 0 until numFiles) {
-                            if (!handle.isValid) break
+                        for (cf in cachedFiles) {
+                            if (!handle.isValid || !isRunning.get()) break
+                            val i = cf.index
                             val p = if (priorities != null && i < priorities.size) {
                                 Priority.fromLibtorrent(priorities[i])
                             } else {
                                 try { Priority.fromLibtorrent(handle.filePriority(i)) } catch (_: Throwable) { Priority.NORMAL }
                             }
                             val bytes: Long = if (fileProgress != null && i < fileProgress.size) fileProgress[i] else 0L
-                            val fileSize: Long = try { fileStorage.fileSize(i) } catch (_: Throwable) { 0L }
+                            val fileSize: Long = cf.size
                             val fileProg: Float = if (fileSize > 0L) (bytes.toFloat() / fileSize.toFloat()).let { if (it.isNaN()) 0f else it.coerceIn(0.0f, 1.0f) } else 0.0f
                             files.add(
                                 TorrentFileItem(
                                     index = i,
-                                    path = try { fileStorage.filePath(i) } catch (_: Throwable) { "" },
+                                    path = cf.path,
                                     size = fileSize,
                                     downloadedBytes = bytes,
                                     progress = fileProg,
@@ -1199,7 +1295,21 @@ class LibtorrentEngineManager(
                 return normalized
             }
         }
-        return candidate?.lowercase() ?: "hash_${System.currentTimeMillis()}"
+        val btmhMatch = Regex("xt=urn:btmh:1220([a-fA-F0-9]{64})", RegexOption.IGNORE_CASE).find(uri)
+        val btmhCandidate = btmhMatch?.groupValues?.get(1)?.lowercase()
+        if (btmhCandidate != null) {
+            return btmhCandidate.take(40)
+        }
+        val hexMatch = Regex("([a-fA-F0-9]{40})").find(uri)
+        val hexCandidate = hexMatch?.groupValues?.get(1)?.lowercase()
+        if (hexCandidate != null) {
+            return hexCandidate
+        }
+        val candidateClean = candidate?.filter { it in "0123456789abcdefABCDEF" }?.take(40)?.lowercase()
+        if (!candidateClean.isNullOrEmpty() && candidateClean.length == 40) {
+            return candidateClean
+        }
+        return String.format("%040x", System.currentTimeMillis())
     }
 
     private data class TorrentMetadata(

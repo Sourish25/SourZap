@@ -15,6 +15,11 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.Executors
+
 /**
  * Subsystem to detect local interface IPs and WAN public IP.
  * Prevents "Ghost Peer" self-connection loops where trackers return the device's
@@ -26,13 +31,30 @@ object NetworkIpHelper {
     private val cachedPublicIp = AtomicReference<String?>(null)
     private val localIps = ConcurrentHashMap.newKeySet<String>()
 
+    private val netHelperExecutor = Executors.newFixedThreadPool(4) { r ->
+        Thread(r, "NetworkIpHelper-Worker").apply { isDaemon = true }
+    }
+    val netHelperDispatcher: CoroutineDispatcher = netHelperExecutor.asCoroutineDispatcher()
+
+    private val dnsExecutor = Executors.newFixedThreadPool(4) { r ->
+        Thread(r, "NetworkIpHelper-DNS").apply { isDaemon = true }
+    }
+    private val dnsDispatcher: CoroutineDispatcher = dnsExecutor.asCoroutineDispatcher()
+
     private val dohDns = object : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
+            val cached = DohTrackerResolver.getCachedIps(hostname)
+            if (!cached.isNullOrEmpty()) {
+                return cached
+            }
+
             return try {
-                val resolved = runBlocking(Dispatchers.IO) {
-                    DohResolver.resolve(hostname)
+                val resolved = runBlocking(dnsDispatcher) {
+                    withTimeoutOrNull(3000L) {
+                        DohResolver.resolve(hostname)
+                    }
                 }
-                if (resolved.isNotEmpty()) resolved else Dns.SYSTEM.lookup(hostname)
+                if (!resolved.isNullOrEmpty()) resolved else Dns.SYSTEM.lookup(hostname)
             } catch (_: Throwable) {
                 try {
                     Dns.SYSTEM.lookup(hostname)
@@ -88,18 +110,28 @@ object NetworkIpHelper {
     /**
      * Queries external lightweight IP discovery endpoints to cache the WAN IP.
      */
-    suspend fun refreshPublicIp(): String? = withContext(Dispatchers.IO) {
+    suspend fun refreshPublicIp(): String? = withContext(netHelperDispatcher) {
         val endpoints = listOf(
             "https://api.ipify.org",
             "https://1.1.1.1/cdn-cgi/trace",
             "https://checkip.amazonaws.com"
         )
 
+        // Asynchronously pre-resolve domain endpoints
+        for (url in endpoints) {
+            try {
+                val host = DohTrackerResolver.extractHost(url)
+                if (host != null && !DohTrackerResolver.isIpLiteral(host)) {
+                    DohTrackerResolver.resolveHost(host)
+                }
+            } catch (_: Throwable) {}
+        }
+
         for (url in endpoints) {
             try {
                 val request = Request.Builder()
                     .url(url)
-                    .header("User-Agent", "SourZap/2.8.7")
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                     .build()
 
                 httpClient.newCall(request).execute().use { response ->
