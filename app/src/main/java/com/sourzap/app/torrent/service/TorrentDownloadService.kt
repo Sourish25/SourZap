@@ -199,46 +199,33 @@ class TorrentDownloadService : Service() {
         try {
             ensureNotificationChannel()
             val notification = buildNotification(stats)
+            var started = false
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                // Android 14+ (API 34+) strictly requires a declared foregroundServiceType.
-                // Never fall back to untyped startForeground to avoid MissingForegroundServiceTypeException.
+                // Android 14+ (API 34+) prefers declared dataSync foregroundServiceType
                 try {
                     startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                    started = true
                 } catch (e: Throwable) {
-                    Log.e(TAG, "startForeground with dataSync type failed on Android 14+: ${e.message}", e)
-                    try {
-                        stopSelf()
-                    } catch (_: Throwable) {}
+                    Log.w(TAG, "startForeground with dataSync type failed on Android 14+, falling back: ${e.message}")
                 }
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 try {
                     startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                    started = true
                 } catch (e: Throwable) {
-                    Log.w(TAG, "startForeground with dataSync type failed: ${e.message}")
-                    try {
-                        startForeground(NOTIFICATION_ID, notification)
-                    } catch (fatal: Throwable) {
-                        Log.e(TAG, "Fatal startForeground error: ${fatal.message}")
-                        try {
-                            stopSelf()
-                        } catch (_: Throwable) {}
-                    }
+                    Log.w(TAG, "startForeground with dataSync type failed, falling back: ${e.message}")
                 }
-            } else {
+            }
+
+            if (!started) {
                 try {
                     startForeground(NOTIFICATION_ID, notification)
                 } catch (fatal: Throwable) {
                     Log.e(TAG, "Fatal startForeground error: ${fatal.message}")
-                    try {
-                        stopSelf()
-                    } catch (_: Throwable) {}
                 }
             }
         } catch (e: Throwable) {
             Log.e(TAG, "Error in startForegroundServiceNotification: ${e.message}", e)
-            try {
-                stopSelf()
-            } catch (_: Throwable) {}
         }
     }
 
@@ -299,7 +286,7 @@ class TorrentDownloadService : Service() {
         val progressPercent = (stats.aggregateProgress * 100).toInt().coerceIn(0, 100)
 
         return NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(title)
             .setContentText(content)
             .setContentIntent(openAppPendingIntent)
@@ -307,9 +294,9 @@ class TorrentDownloadService : Service() {
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setProgress(100, progressPercent, false)
-            .addAction(android.R.drawable.ic_media_pause, "Pause All", pausePendingIntent)
-            .addAction(android.R.drawable.ic_media_play, "Resume All", resumePendingIntent)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Dismiss", stopPendingIntent)
+            .addAction(R.drawable.ic_notif_pause, "Pause All", pausePendingIntent)
+            .addAction(R.drawable.ic_notif_play, "Resume All", resumePendingIntent)
+            .addAction(R.drawable.ic_notif_close, "Dismiss", stopPendingIntent)
             .build()
     }
 
@@ -317,12 +304,6 @@ class TorrentDownloadService : Service() {
         releaseLocks()
         statsJob?.cancel()
         serviceScope.cancel()
-        try {
-            val app = application as? SourZapApp
-            app?.torrentEngineManager?.stopSession()
-        } catch (e: Throwable) {
-            Log.w(TAG, "Error stopping session in onDestroy: ${e.message}")
-        }
         super.onDestroy()
     }
 

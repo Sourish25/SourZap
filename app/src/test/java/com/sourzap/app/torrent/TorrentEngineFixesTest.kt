@@ -147,8 +147,11 @@ class TorrentEngineFixesTest {
         try {
             val handleClass = Class.forName("org.libtorrent4j.TorrentHandle")
             assertNotNull(handleClass)
-            val statusClass = Class.forName("org.libtorrent4j.TorrentStatus")
-            assertNotNull(statusClass)
+            val smClass = Class.forName("org.libtorrent4j.SessionManager")
+            val downloadMethods = smClass.methods.filter { it.name == "download" }
+            for (m in downloadMethods) {
+                println("DOWNLOAD_METHOD: ${m.name}(${m.parameterTypes.map { it.simpleName }.joinToString()})")
+            }
         } catch (_: Throwable) {
             // Expected on host JVM without native binaries
             assertTrue(true)

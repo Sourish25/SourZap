@@ -359,14 +359,14 @@ class UpdateManager(private val context: Context) {
         }
 
         return NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle("Downloading SourZap Update")
             .setContentText(contentText)
             .setProgress(100, progressPercent, totalBytes <= 0)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .addAction(0, "Cancel", cancelPendingIntent)
+            .addAction(R.drawable.ic_notif_close, "Cancel", cancelPendingIntent)
     }
 
     private fun showProgressNotification(progress: Float, downloadedBytes: Long, totalBytes: Long) {
@@ -393,13 +393,13 @@ class UpdateManager(private val context: Context) {
         )
 
         return NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle("SourZap Update Ready")
             .setContentText("Download complete • Tap to install")
             .setContentIntent(installPendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .addAction(0, "Install", installPendingIntent)
+            .addAction(R.drawable.ic_notif_play, "Install", installPendingIntent)
     }
 
     private fun showCompletedNotification(apkFile: File) {

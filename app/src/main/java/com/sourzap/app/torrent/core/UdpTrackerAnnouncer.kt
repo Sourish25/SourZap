@@ -90,7 +90,7 @@ object UdpTrackerAnnouncer {
         if (!handle.isValid) return@withContext 0
 
         withContext(TorrentEngineManager.torrentWorkerDispatcher) {
-            for ((ip, peerPort) in allDiscoveredPeers.take(35)) {
+            for ((ip, peerPort) in allDiscoveredPeers.take(15)) {
                 if (NetworkIpHelper.isSelfOrLocal(ip)) {
                     Log.d(TAG, "Skipping self/local peer $ip:$peerPort")
                     continue
@@ -99,6 +99,7 @@ object UdpTrackerAnnouncer {
                     if (!handle.isValid) break
                     if (TorrentEngineManager.injectPeerSafely(handle, ip, peerPort)) {
                         injectedCount++
+                        kotlinx.coroutines.delay(15L)
                     }
                 } catch (_: Throwable) {}
             }

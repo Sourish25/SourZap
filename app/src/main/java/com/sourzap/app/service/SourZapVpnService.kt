@@ -456,11 +456,11 @@ class SourZapVpnService : VpnService() {
         )
 
         return NotificationCompat.Builder(this, getString(R.string.vpn_channel_id))
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(title)
             .setContentText(content)
             .setContentIntent(pendingIntent)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Disconnect", stopIntent)
+            .addAction(R.drawable.ic_notif_close, "Disconnect", stopIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)

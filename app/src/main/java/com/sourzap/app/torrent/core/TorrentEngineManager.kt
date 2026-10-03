@@ -97,6 +97,7 @@ interface TorrentEngineManager {
     companion object {
         internal val peerInjectionLock = Any()
         private val activeSessionRunning = AtomicBoolean(true)
+        private val IPV4_PATTERN = Regex("^(\\d{1,3}\\.){3}\\d{1,3}$")
 
         private val torrentWorkerExecutor = Executors.newSingleThreadExecutor { r ->
             Thread(r, "TorrentPeerInjector").apply { isDaemon = true }
@@ -114,17 +115,59 @@ interface TorrentEngineManager {
         fun isSessionActive(): Boolean = activeSessionRunning.get()
 
         @JvmStatic
+        fun isValidIpAddress(ip: String): Boolean {
+            val trimmed = ip.trim()
+            if (trimmed.isEmpty()) return false
+            if (IPV4_PATTERN.matches(trimmed)) {
+                val parts = trimmed.split(".")
+                if (parts.size != 4) return false
+                for (p in parts) {
+                    val num = p.toIntOrNull() ?: return false
+                    if (num !in 0..255) return false
+                }
+                return trimmed != "0.0.0.0" && trimmed != "255.255.255.255"
+            }
+            return trimmed.contains(":")
+        }
+
+        @JvmStatic
+        fun isHandlePaused(status: TorrentStatus?): Boolean {
+            if (status == null) return false
+            return try {
+                val flags = status.flags()
+                if (flags != null) {
+                    flags.and_(org.libtorrent4j.TorrentFlags.PAUSED).non_zero()
+                } else {
+                    false
+                }
+            } catch (_: Throwable) {
+                try {
+                    val m = status.javaClass.getMethod("isPaused")
+                    m.invoke(status) as? Boolean ?: false
+                } catch (_: Throwable) {
+                    false
+                }
+            }
+        }
+
+        @JvmStatic
         fun injectPeerSafely(handle: TorrentHandle, ip: String, port: Int): Boolean {
-            if (ip.isBlank() || port <= 0 || port > 65535) return false
+            if (port <= 0 || port > 65535) return false
             if (!activeSessionRunning.get()) return false
+            val cleanIp = ip.trim()
+            if (!isValidIpAddress(cleanIp)) return false
+
             return try {
                 if (!handle.isValid) return false
                 synchronized(peerInjectionLock) {
                     try {
                         if (!activeSessionRunning.get()) return@synchronized false
                         if (!handle.isValid) return@synchronized false
+                        val status = try { handle.status() } catch (_: Throwable) { null } ?: return@synchronized false
+                        if (isHandlePaused(status)) return@synchronized false
+
                         val swigHandle = try { handle.swig() } catch (_: Throwable) { null } ?: return@synchronized false
-                        val ep = try { TcpEndpoint(ip, port) } catch (_: Throwable) { null } ?: return@synchronized false
+                        val ep = try { TcpEndpoint(cleanIp, port) } catch (_: Throwable) { null } ?: return@synchronized false
                         val swigEp = try { ep.swig() } catch (_: Throwable) { null } ?: return@synchronized false
                         swigHandle.connect_peer(swigEp)
                         true
@@ -161,6 +204,21 @@ class LibtorrentEngineManager(
     )
     private val cachedFilesMap = ConcurrentHashMap<String, List<CachedFileInfo>>()
     private val cachedTotalSizeMap = ConcurrentHashMap<String, Long>()
+    private val addedTrackersMap = ConcurrentHashMap<String, MutableSet<String>>()
+
+    private fun addTrackerSafely(handle: TorrentHandle, id: String, trackerUrl: String) {
+        if (trackerUrl.isBlank() || !handle.isValid) return
+        val set = addedTrackersMap.getOrPut(id) { Collections.synchronizedSet(mutableSetOf()) }
+        if (set.add(trackerUrl)) {
+            synchronized(TorrentEngineManager.peerInjectionLock) {
+                try {
+                    if (handle.isValid && TorrentEngineManager.isSessionActive()) {
+                        handle.addTracker(AnnounceEntry(trackerUrl))
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
+    }
 
     private val engineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var telemetryJob: Job? = null
@@ -408,6 +466,7 @@ class LibtorrentEngineManager(
                         torrentMetadataMap.clear()
                         cachedFilesMap.clear()
                         cachedTotalSizeMap.clear()
+                        addedTrackersMap.clear()
                         _torrents.value = emptyList()
                         _stats.value = TorrentSessionStats()
 
@@ -651,7 +710,11 @@ class LibtorrentEngineManager(
     override fun pauseTorrent(id: String) {
         try {
             val handle = findHandle(id) ?: return
-            handle.pause()
+            synchronized(TorrentEngineManager.peerInjectionLock) {
+                if (handle.isValid) {
+                    handle.pause()
+                }
+            }
             triggerRefresh()
         } catch (_: Throwable) {}
     }
@@ -659,10 +722,14 @@ class LibtorrentEngineManager(
     override fun resumeTorrent(id: String) {
         try {
             val handle = findHandle(id) ?: return
-            handle.resume()
-            try {
-                handle.forceReannounce()
-            } catch (_: Throwable) {}
+            synchronized(TorrentEngineManager.peerInjectionLock) {
+                if (handle.isValid) {
+                    handle.resume()
+                    try {
+                        handle.forceReannounce()
+                    } catch (_: Throwable) {}
+                }
+            }
             triggerRefresh()
         } catch (_: Throwable) {}
     }
@@ -672,7 +739,9 @@ class LibtorrentEngineManager(
             val handle = findHandle(id)
             if (handle != null) {
                 val options = if (deleteFiles) SessionHandle.DELETE_FILES else SessionHandle.DELETE_PARTFILE
-                sessionManager.remove(handle, options)
+                synchronized(TorrentEngineManager.peerInjectionLock) {
+                    sessionManager.remove(handle, options)
+                }
             }
         } catch (_: Throwable) {}
         torrentHandles.remove(id)
@@ -683,10 +752,14 @@ class LibtorrentEngineManager(
     override fun recheckTorrent(id: String) {
         try {
             val handle = findHandle(id) ?: return
-            handle.forceRecheck()
-            try {
-                handle.forceReannounce()
-            } catch (_: Throwable) {}
+            synchronized(TorrentEngineManager.peerInjectionLock) {
+                if (handle.isValid) {
+                    handle.forceRecheck()
+                    try {
+                        handle.forceReannounce()
+                    } catch (_: Throwable) {}
+                }
+            }
             triggerRefresh()
         } catch (_: Throwable) {}
     }
@@ -694,7 +767,11 @@ class LibtorrentEngineManager(
     override fun setFilePriority(id: String, fileIndex: Int, priority: Priority) {
         try {
             val handle = findHandle(id) ?: return
-            handle.filePriority(fileIndex, priority.toLibtorrentPriority())
+            synchronized(TorrentEngineManager.peerInjectionLock) {
+                if (handle.isValid) {
+                    handle.filePriority(fileIndex, priority.toLibtorrentPriority())
+                }
+            }
             triggerRefresh()
         } catch (_: Throwable) {}
     }
@@ -704,13 +781,17 @@ class LibtorrentEngineManager(
             val handle = findHandle(id)
             if (handle != null) {
                 val libPriorities = priorities.map { it.toLibtorrentPriority() }.toTypedArray()
-                try {
-                    handle.prioritizeFiles(libPriorities)
-                } catch (_: Throwable) {
-                    for ((i, p) in priorities.withIndex()) {
+                synchronized(TorrentEngineManager.peerInjectionLock) {
+                    if (handle.isValid) {
                         try {
-                            handle.filePriority(i, p.toLibtorrentPriority())
-                        } catch (_: Throwable) {}
+                            handle.prioritizeFiles(libPriorities)
+                        } catch (_: Throwable) {
+                            for ((i, p) in priorities.withIndex()) {
+                                try {
+                                    handle.filePriority(i, p.toLibtorrentPriority())
+                                } catch (_: Throwable) {}
+                            }
+                        }
                     }
                 }
             } else {
@@ -739,16 +820,20 @@ class LibtorrentEngineManager(
                     it.name.equals("sequential_download", ignoreCase = true)
                 }?.get(null)
                 if (seqFlag != null) {
-                    if (sequential) {
-                        val setMethod = handle.javaClass.methods.firstOrNull {
-                            it.name.equals("setFlags", ignoreCase = true) || it.name.equals("set_flags", ignoreCase = true)
+                    synchronized(TorrentEngineManager.peerInjectionLock) {
+                        if (handle.isValid) {
+                            if (sequential) {
+                                val setMethod = handle.javaClass.methods.firstOrNull {
+                                    it.name.equals("setFlags", ignoreCase = true) || it.name.equals("set_flags", ignoreCase = true)
+                                }
+                                setMethod?.invoke(handle, seqFlag)
+                            } else {
+                                val unsetMethod = handle.javaClass.methods.firstOrNull {
+                                    it.name.equals("unsetFlags", ignoreCase = true) || it.name.equals("unset_flags", ignoreCase = true)
+                                }
+                                unsetMethod?.invoke(handle, seqFlag)
+                            }
                         }
-                        setMethod?.invoke(handle, seqFlag)
-                    } else {
-                        val unsetMethod = handle.javaClass.methods.firstOrNull {
-                            it.name.equals("unsetFlags", ignoreCase = true) || it.name.equals("unset_flags", ignoreCase = true)
-                        }
-                        unsetMethod?.invoke(handle, seqFlag)
                     }
                 }
             }
@@ -761,10 +846,12 @@ class LibtorrentEngineManager(
     override fun getTorrentInfo(id: String): TorrentInfo? {
         val handle = findHandle(id) ?: return null
         return try {
-            if (handle.status().hasMetadata()) {
-                handle.torrentFile()
-            } else {
-                null
+            synchronized(TorrentEngineManager.peerInjectionLock) {
+                if (handle.isValid && handle.status().hasMetadata()) {
+                    handle.torrentFile()
+                } else {
+                    null
+                }
             }
         } catch (_: Throwable) {
             null
@@ -776,7 +863,11 @@ class LibtorrentEngineManager(
         allIds.forEach { id ->
             try {
                 val handle = findHandle(id)
-                handle?.pause()
+                synchronized(TorrentEngineManager.peerInjectionLock) {
+                    if (handle != null && handle.isValid) {
+                        handle.pause()
+                    }
+                }
             } catch (_: Throwable) {}
         }
         triggerRefresh()
@@ -787,7 +878,11 @@ class LibtorrentEngineManager(
         allIds.forEach { id ->
             try {
                 val handle = findHandle(id)
-                handle?.resume()
+                synchronized(TorrentEngineManager.peerInjectionLock) {
+                    if (handle != null && handle.isValid) {
+                        handle.resume()
+                    }
+                }
             } catch (_: Throwable) {}
         }
         triggerRefresh()
@@ -830,7 +925,11 @@ class LibtorrentEngineManager(
                         for ((_, handle) in torrentHandles) {
                             try {
                                 if (!handle.isValid) continue
-                                val status = try { handle.status() } catch (_: Throwable) { null } ?: continue
+                                val status = try {
+                                    synchronized(TorrentEngineManager.peerInjectionLock) {
+                                        if (handle.isValid) handle.status() else null
+                                    }
+                                } catch (_: Throwable) { null } ?: continue
                                 val isPaused = isTorrentPaused(status)
                                 val state = status.state()
                                 if (!isPaused && state != TorrentStatus.State.CHECKING_FILES &&
@@ -838,17 +937,23 @@ class LibtorrentEngineManager(
                                     status.progress() < 1.0f
                                 ) {
                                     if (status.downloadRate() == 0 || status.numPeers() < 5) {
-                                        try { handle.forceDHTAnnounce() } catch (_: Throwable) {}
-                                        try { handle.forceReannounce(0, -1) } catch (_: Throwable) { handle.forceReannounce() }
-                                        engineScope.launch {
-                                            try {
-                                                if (!handle.isValid) return@launch
-                                                val hashHex = try { handle.infoHash().toHex() } catch (_: Throwable) { "" }
-                                                if (hashHex.isNotEmpty()) {
+                                        val hashHex = synchronized(TorrentEngineManager.peerInjectionLock) {
+                                            if (handle.isValid) {
+                                                try { handle.forceDHTAnnounce() } catch (_: Throwable) {}
+                                                try { handle.forceReannounce(0, -1) } catch (_: Throwable) {
+                                                    try { handle.forceReannounce() } catch (_: Throwable) {}
+                                                }
+                                                try { handle.infoHash().toHex() } catch (_: Throwable) { "" }
+                                            } else ""
+                                        }
+                                        if (hashHex.isNotEmpty()) {
+                                            engineScope.launch {
+                                                try {
+                                                    if (!handle.isValid) return@launch
                                                     UdpTrackerAnnouncer.announceAndInjectPeers(handle, hashHex)
                                                     HttpsTrackerAnnouncer.announceAndInjectPeers(handle, hashHex)
-                                                }
-                                            } catch (_: Throwable) {}
+                                                } catch (_: Throwable) {}
+                                            }
                                         }
                                     }
                                 }
@@ -877,7 +982,11 @@ class LibtorrentEngineManager(
         try {
             val handle = findHandle(id) ?: return
             if (!torrentMetadataMap.containsKey(id)) {
-                val status = try { handle.status() } catch (_: Throwable) { null }
+                val status = try {
+                    synchronized(TorrentEngineManager.peerInjectionLock) {
+                        if (handle.isValid) handle.status() else null
+                    }
+                } catch (_: Throwable) { null }
                 val hName: String = try { status?.name() ?: "" } catch (_: Throwable) { "" }
                 val displayName: String = if (hName.isNotEmpty()) hName else id
                 val meta = TorrentMetadata(
@@ -889,23 +998,23 @@ class LibtorrentEngineManager(
                 torrentMetadataMap[id] = meta
             }
 
-            // 1. Auto-inject verified Port-443 HTTPS trackers and high-capacity public trackers
+            // 1. Auto-inject verified Port-443 HTTPS trackers and high-capacity public trackers with de-duplication
             for (tr in TrackerInjector.HTTPS_PORT_443_TRACKERS) {
-                try {
-                    handle.addTracker(AnnounceEntry(tr))
-                } catch (_: Throwable) {}
+                addTrackerSafely(handle, id, tr)
             }
             for (tr in PRIORITY_LIVE_TRACKERS) {
-                try {
-                    handle.addTracker(AnnounceEntry(tr))
-                } catch (_: Throwable) {}
+                addTrackerSafely(handle, id, tr)
             }
 
             // Immediately force announce across all tracker tiers and DHT
-            try { handle.forceReannounce(0, -1) } catch (_: Throwable) {
-                try { handle.forceReannounce() } catch (_: Throwable) {}
+            synchronized(TorrentEngineManager.peerInjectionLock) {
+                if (handle.isValid) {
+                    try { handle.forceReannounce(0, -1) } catch (_: Throwable) {
+                        try { handle.forceReannounce() } catch (_: Throwable) {}
+                    }
+                    try { handle.forceDHTAnnounce() } catch (_: Throwable) {}
+                }
             }
-            try { handle.forceDHTAnnounce() } catch (_: Throwable) {}
 
             // Apply pending priorities if available
             val pending = pendingPrioritiesMap.remove(id)
@@ -920,9 +1029,7 @@ class LibtorrentEngineManager(
                     val allTrackers = PRIORITY_LIVE_TRACKERS + TrackerInjector.HTTPS_PORT_443_TRACKERS
                     val resolvedUrls = DohTrackerResolver.resolveTrackersToDirectIpUrls(allTrackers)
                     for (rUrl in resolvedUrls) {
-                        try {
-                            handle.addTracker(AnnounceEntry(rUrl))
-                        } catch (_: Throwable) {}
+                        addTrackerSafely(handle, id, rUrl)
                     }
 
                     // 2. Announce to high-capacity UDP trackers and HTTPS trackers in parallel
@@ -950,14 +1057,16 @@ class LibtorrentEngineManager(
 
             // Auto-inject Port-443 HTTPS trackers when metadata arrives for magnet downloads
             for (tr in TrackerInjector.HTTPS_PORT_443_TRACKERS) {
-                try {
-                    handle.addTracker(AnnounceEntry(tr))
-                } catch (_: Throwable) {}
+                addTrackerSafely(handle, id, tr)
             }
-            try { handle.forceReannounce(0, -1) } catch (_: Throwable) {
-                try { handle.forceReannounce() } catch (_: Throwable) {}
+            synchronized(TorrentEngineManager.peerInjectionLock) {
+                if (handle.isValid) {
+                    try { handle.forceReannounce(0, -1) } catch (_: Throwable) {
+                        try { handle.forceReannounce() } catch (_: Throwable) {}
+                    }
+                    try { handle.forceDHTAnnounce() } catch (_: Throwable) {}
+                }
             }
-            try { handle.forceDHTAnnounce() } catch (_: Throwable) {}
 
             engineScope.launch {
                 try {
@@ -966,8 +1075,16 @@ class LibtorrentEngineManager(
             }
 
             val info: TorrentInfo? = try {
-                val hasMeta = try { handle.status().hasMetadata() } catch (_: Throwable) { false }
-                if (hasMeta) handle.torrentFile() else null
+                val hasMeta = try {
+                    synchronized(TorrentEngineManager.peerInjectionLock) {
+                        if (handle.isValid) handle.status().hasMetadata() else false
+                    }
+                } catch (_: Throwable) { false }
+                if (hasMeta) {
+                    synchronized(TorrentEngineManager.peerInjectionLock) {
+                        if (handle.isValid) handle.torrentFile() else null
+                    }
+                } else null
             } catch (_: Throwable) {
                 null
             }
@@ -980,22 +1097,24 @@ class LibtorrentEngineManager(
                 val pending = pendingPrioritiesMap.remove(id)
                 if (pending != null && pending.isNotEmpty()) {
                     val libPriorities = pending.map { it.toLibtorrentPriority() }.toTypedArray()
-                    try {
-                        val numFiles = try { handle.torrentFile()?.files()?.numFiles() } catch (_: Throwable) { null }
-                        if (numFiles != null && libPriorities.size == numFiles) {
-                            handle.prioritizeFiles(libPriorities)
-                        } else {
+                    synchronized(TorrentEngineManager.peerInjectionLock) {
+                        try {
+                            val numFiles = try { handle.torrentFile()?.files()?.numFiles() } catch (_: Throwable) { null }
+                            if (numFiles != null && libPriorities.size == numFiles) {
+                                handle.prioritizeFiles(libPriorities)
+                            } else {
+                                for ((i, p) in pending.withIndex()) {
+                                    try {
+                                        handle.filePriority(i, p.toLibtorrentPriority())
+                                    } catch (_: Throwable) {}
+                                }
+                            }
+                        } catch (_: Throwable) {
                             for ((i, p) in pending.withIndex()) {
                                 try {
                                     handle.filePriority(i, p.toLibtorrentPriority())
                                 } catch (_: Throwable) {}
                             }
-                        }
-                    } catch (_: Throwable) {
-                        for ((i, p) in pending.withIndex()) {
-                            try {
-                                handle.filePriority(i, p.toLibtorrentPriority())
-                            } catch (_: Throwable) {}
                         }
                     }
                 }
@@ -1009,6 +1128,7 @@ class LibtorrentEngineManager(
         pendingPrioritiesMap.remove(id)
         cachedFilesMap.remove(id)
         cachedTotalSizeMap.remove(id)
+        addedTrackersMap.remove(id)
         _torrents.value = _torrents.value.filter { it.id != id }
     }
 
@@ -1045,7 +1165,11 @@ class LibtorrentEngineManager(
             try {
                 val handle = findHandle(id) ?: continue
                 if (!handle.isValid) continue
-                val status: TorrentStatus = try { handle.status() } catch (_: Throwable) { continue }
+                val status: TorrentStatus = try {
+                    synchronized(TorrentEngineManager.peerInjectionLock) {
+                        if (handle.isValid) handle.status() else null
+                    }
+                } catch (_: Throwable) { null } ?: continue
                 val state = mapTorrentState(handle, status)
                 val hasMeta = try { status.hasMetadata() } catch (_: Throwable) { false }
 
@@ -1055,7 +1179,11 @@ class LibtorrentEngineManager(
 
                 var info: TorrentInfo? = null
                 if (cachedFiles == null && hasMeta) {
-                    info = try { handle.torrentFile() } catch (_: Throwable) { null }
+                    info = try {
+                        synchronized(TorrentEngineManager.peerInjectionLock) {
+                            if (handle.isValid) handle.torrentFile() else null
+                        }
+                    } catch (_: Throwable) { null }
                     if (info != null) {
                         try {
                             val fileStorage: FileStorage = info.files()
@@ -1104,15 +1232,26 @@ class LibtorrentEngineManager(
                 val files = mutableListOf<TorrentFileItem>()
                 if (cachedFiles != null && cachedFiles.isNotEmpty()) {
                     try {
-                        val fileProgress: LongArray? = try { handle.fileProgress() } catch (_: Throwable) { null }
-                        val priorities: Array<org.libtorrent4j.Priority>? = try { handle.filePriorities() } catch (_: Throwable) { null }
+                        val (fileProgress, priorities) = synchronized(TorrentEngineManager.peerInjectionLock) {
+                            if (handle.isValid) {
+                                val fp = try { handle.fileProgress() } catch (_: Throwable) { null }
+                                val pr = try { handle.filePriorities() } catch (_: Throwable) { null }
+                                Pair(fp, pr)
+                            } else {
+                                Pair(null, null)
+                            }
+                        }
                         for (cf in cachedFiles) {
                             if (!handle.isValid || !isRunning.get()) break
                             val i = cf.index
                             val p = if (priorities != null && i < priorities.size) {
                                 Priority.fromLibtorrent(priorities[i])
                             } else {
-                                try { Priority.fromLibtorrent(handle.filePriority(i)) } catch (_: Throwable) { Priority.NORMAL }
+                                try {
+                                    synchronized(TorrentEngineManager.peerInjectionLock) {
+                                        if (handle.isValid) Priority.fromLibtorrent(handle.filePriority(i)) else Priority.NORMAL
+                                    }
+                                } catch (_: Throwable) { Priority.NORMAL }
                             }
                             val bytes: Long = if (fileProgress != null && i < fileProgress.size) fileProgress[i] else 0L
                             val fileSize: Long = cf.size

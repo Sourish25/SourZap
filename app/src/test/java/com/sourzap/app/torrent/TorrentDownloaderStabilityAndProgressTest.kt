@@ -345,9 +345,10 @@ class TorrentDownloaderStabilityAndProgressTest {
         val threadNames = java.util.Collections.synchronizedSet(mutableSetOf<String>())
         val latch = CountDownLatch(10)
 
+        val scope = kotlinx.coroutines.CoroutineScope(dispatcher)
         for (i in 0 until 10) {
             val idx = i
-            kotlinx.coroutines.GlobalScope.launch(dispatcher) {
+            scope.launch {
                 threadNames.add(Thread.currentThread().name)
                 executionOrder.add(idx)
                 latch.countDown()
@@ -357,6 +358,29 @@ class TorrentDownloaderStabilityAndProgressTest {
         assertTrue("All tasks should complete on dispatcher", latch.await(5, TimeUnit.SECONDS))
         println("DISPATCHER THREAD NAMES: $threadNames")
         assertTrue("All tasks executed sequentially on dispatcher", executionOrder.size == 10)
+    }
+
+    @Test
+    fun testPeerInjection_IpValidation() {
+        // Valid IPv4
+        assertTrue(TorrentEngineManager.isValidIpAddress("1.1.1.1"))
+        assertTrue(TorrentEngineManager.isValidIpAddress("192.168.1.1"))
+        assertTrue(TorrentEngineManager.isValidIpAddress("8.8.8.8"))
+        assertTrue(TorrentEngineManager.isValidIpAddress("127.0.0.1"))
+
+        // Valid IPv6
+        assertTrue(TorrentEngineManager.isValidIpAddress("2001:41d0:203:4cca:5::"))
+        assertTrue(TorrentEngineManager.isValidIpAddress("::1"))
+
+        // Invalid IPs
+        assertFalse(TorrentEngineManager.isValidIpAddress(""))
+        assertFalse(TorrentEngineManager.isValidIpAddress(" "))
+        assertFalse(TorrentEngineManager.isValidIpAddress("0.0.0.0"))
+        assertFalse(TorrentEngineManager.isValidIpAddress("255.255.255.255"))
+        assertFalse(TorrentEngineManager.isValidIpAddress("999.1.1.1"))
+        assertFalse(TorrentEngineManager.isValidIpAddress("1.2.3.4.5"))
+        assertFalse(TorrentEngineManager.isValidIpAddress("invalid_host"))
+        assertFalse(TorrentEngineManager.isValidIpAddress("tracker.opentrackr.org"))
     }
 
     // =========================================================================
